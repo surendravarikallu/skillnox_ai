@@ -1,0 +1,274 @@
+I want you to **build a complete full-stack AI project from scratch** inside Replit. Do **NOT** use external APIs (NO OpenAI, NO Gemini, NO API keys). Build and train all models **locally** using Python.
+
+Build the following project:
+
+# **AI-Powered Interview & Resume Screening System for 3rd & 4th Year Students**
+
+A complete AI-driven interview preparation and evaluation platform.
+
+---
+
+# 1. Project Structure
+
+```
+root/
+ ├── frontend/ (React + Tailwind)
+ ├── backend/ (Node.js + Express)
+ ├── python-ai/
+ │    ├── models/
+ │    ├── datasets/
+ │    ├── training/
+ │    ├── inference/
+ │    ├── utils/
+ │    └── services/
+ ├── database/
+ ├── docs/
+ ├── README.md
+ └── run.sh
+```
+
+---
+
+# 2. Frontend Requirements (React + Tailwind)
+
+## Student Portal:
+
+* Login / Register
+* Dashboard
+* Upload Resume
+* Upload JD
+* Start Mock Interview (Technical / Behavioral / HR)
+* Start Company Interview
+* Start Project Explanation Round
+* Start GD Round
+* View Scores (emotion, voice, answers)
+* Improvement suggestions
+* Personality report
+* Placement probability graph
+
+## Admin Portal:
+
+* Login
+* Student analytics
+* Skill gap analysis
+* JD/Resume match reports
+* GD/HR/Technical performance reports
+* Export data
+
+---
+
+# 3. Backend Requirements (Node.js + Express)
+
+Endpoints:
+
+* Auth (login/register)
+* Resume upload & evaluation
+* JD upload & comparison
+* Interview initiation
+* Technical/HR/Behavioral interviews
+* Company simulator
+* GD round
+* Project round
+* Emotion/Voice/Answer analysis
+* Personality detection
+* Placement probability
+* Admin dashboards
+
+Backend should communicate with Python AI using local microservice calls.
+
+---
+
+# 4. Python AI Modules (Local Training)
+
+Build AI models inside `/python-ai/` using PyTorch/TensorFlow.
+
+### NLP Models:
+
+* Resume parser
+* JD skill extractor
+* Technical Q&A evaluator
+* HR evaluator
+* Project round evaluator
+* Personality model
+* Company question generator
+* GD topic generator
+* Answer quality rating model
+
+### Vision Model:
+
+* Emotion detection (CNN, trained on FER2013)
+
+### Audio Model:
+
+* Voice analysis (librosa + PyTorch)
+* Whisper tiny (local) for speech-to-text
+
+### ML Model:
+
+* Placement probability predictor
+
+---
+
+# 5. Interviewer Gender Logic
+
+* Interview 1 & 2 → Opposite gender avatar
+* Interview 3+ → Random gender
+
+---
+
+# 6. Company Interview Simulator
+
+Simulate patterns from:
+
+* TCS
+* Infosys
+* Wipro
+* Accenture
+* Cognizant
+* Capgemini
+* Amazon (basic)
+
+Include MCQs, coding questions, HR questions.
+
+---
+
+# 7. Group Discussion Simulator
+
+AI generates topic → Student speaks → Analyze:
+
+* Leadership
+* Vocabulary
+* Logic
+* Confidence
+* Communication flow
+
+---
+
+# 8. Project Explanation Round
+
+AI asks:
+
+* Architecture
+* Tech stack
+* Role
+* Challenges
+* Real understanding
+
+Evaluate clarity + depth.
+
+---
+
+# 9. HR Round Simulation
+
+Analyze:
+
+* Attitude
+* Confidence
+* Culture fit
+* Stability
+* Communication
+
+Predict HR clearance probability.
+
+---
+
+# 10. Personality Type Detection
+
+Based on interview responses:
+
+* Introvert/Extrovert
+* Thinker/Feeler
+* Logical/Creative
+* Planner/Spontaneous
+
+---
+
+# 11. Placement Probability Model
+
+Input features:
+
+* Resume score
+* JD score
+* Technical score
+* HR score
+* GD score
+* Emotion score
+* Voice score
+* Personality
+
+Output:
+
+* Placement probability for 30/60/90 days
+
+---
+
+# 12. Database (PostgreSQL)
+
+Tables:
+
+* students
+* admins
+* interviews
+* resume_scores
+* jd_scores
+* technical_scores
+* hr_scores
+* gd_scores
+* personality_types
+* placement_probabilities
+* system_logs
+
+---
+
+# 13. Training Scripts
+
+```
+train_nlp_models.py
+train_emotion_model.py
+train_voice_model.py
+train_personality_model.py
+train_placement_model.py
+generate_synthetic_data.py
+```
+
+Models must be saved locally.
+
+---
+
+# 14. Accuracy Enhancements
+
+* Data augmentation (images/text/audio)
+* Embedding similarity
+* Confidence thresholds
+* Cross-model validation
+* Synthetic dataset expansion
+
+---
+
+# 15. Final Output Requirements
+
+Replit must generate:
+
+* Full frontend
+* Full backend
+* All AI microservices
+* Locally trained AI models
+* Database
+* Analytics dashboard
+* Complete documentation
+* Full README
+* Run instructions
+
+---
+
+# 16. Important Instructions
+
+* Do NOT use external AI APIs
+* Everything must run locally
+* Produce full working code
+* Provide complete setup instructions
+* Do not skip any feature
+
+---
+
+**Build the entire system now.**
