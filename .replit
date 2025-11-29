@@ -14,6 +14,14 @@ run = ["npm", "run", "start"]
 localPort = 5000
 externalPort = 80
 
+[[ports]]
+localPort = 38293
+externalPort = 3000
+
+[[ports]]
+localPort = 46727
+externalPort = 3001
+
 [env]
 PORT = "5000"
 
@@ -37,3 +45,6 @@ author = "agent"
 task = "shell.exec"
 args = "npm run dev"
 waitForPort = 5000
+
+[agent]
+integrations = ["javascript_log_in_with_replit:1.0.0", "javascript_database:1.0.0"]
