@@ -21,7 +21,7 @@ export const interviewStatusEnum = pgEnum('interview_status', ['pending', 'in_pr
 export const genderEnum = pgEnum('gender', ['male', 'female']);
 export const personalityDimensionEnum = pgEnum('personality_dimension', ['introvert', 'extrovert', 'thinker', 'feeler', 'logical', 'creative', 'planner', 'spontaneous']);
 
-// Session storage table - mandatory for Replit Auth
+// Session storage table (kept for compatibility, but not used with JWT auth)
 export const sessions = pgTable(
   "sessions",
   {
@@ -32,10 +32,11 @@ export const sessions = pgTable(
   (table) => [index("IDX_session_expire").on(table.expire)],
 );
 
-// User storage table - mandatory for Replit Auth
+// User storage table
 export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
-  email: varchar("email").unique(),
+  email: varchar("email").unique().notNull(),
+  passwordHash: varchar("password_hash"),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -72,6 +73,9 @@ export const jobDescriptions = pgTable("job_descriptions", {
   requiredSkills: text("required_skills").array(),
   matchScore: real("match_score"),
   skillGaps: text("skill_gaps").array(),
+  // Store AI analysis (suggestions, strengths, improvements, etc.)
+  // so the frontend can show JD-based recommendations
+  parsedData: jsonb("parsed_data"),
   createdAt: timestamp("created_at").defaultNow(),
 });
 

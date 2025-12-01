@@ -1,0 +1,530 @@
+[
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on data structures and algorithms."
+      },
+      {
+        "role": "assistant",
+        "content": "Given an array of integers, find the maximum sum of a contiguous subarray. Explain your approach and provide the time complexity."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on object-oriented programming concepts."
+      },
+      {
+        "role": "assistant",
+        "content": "Explain the difference between abstraction and encapsulation in object-oriented programming. Provide examples of each."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess communication skills and motivation."
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about yourself and why you're interested in this position. What motivates you in your work?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on problem-solving and teamwork."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe a challenging situation you faced at work and how you resolved it. What was your role in the solution?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a project-based interview question.\n\nFocus on system design and architecture."
+      },
+      {
+        "role": "assistant",
+        "content": "Walk me through the architecture of your most recent project. What were the main challenges and how did you address them?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a company-specific interview question.\n\nCompany: TCS, Focus on adaptability and learning."
+      },
+      {
+        "role": "assistant",
+        "content": "TCS values continuous learning and adaptability. Can you give an example of a time when you had to quickly learn a new technology or skill for a project?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on database design and SQL."
+      },
+      {
+        "role": "assistant",
+        "content": "Explain the difference between SQL and NoSQL databases. When would you choose one over the other? Provide examples."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on system design and scalability."
+      },
+      {
+        "role": "assistant",
+        "content": "How would you design a URL shortening service like bit.ly that can handle millions of requests per day? Discuss the architecture and key components."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess cultural fit and values alignment."
+      },
+      {
+        "role": "assistant",
+        "content": "What are your career goals for the next 5 years? How does this position align with your long-term aspirations?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on leadership and initiative."
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about a time when you took the lead on a project. What challenges did you face and how did you overcome them?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Evaluate this interview answer and provide a score (0-100) and feedback.\n\nQuestion: What is object-oriented programming?\nAnswer: OOP is a programming paradigm that uses objects and classes. It has four main principles: encapsulation, inheritance, polymorphism, and abstraction."
+      },
+      {
+        "role": "assistant",
+        "content": "Score: 85\nFeedback: Good understanding of OOP concepts. The answer correctly identifies the four main principles. Could be improved by providing examples of each principle and explaining how they work together in practice."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Evaluate this interview answer and provide a score (0-100) and feedback.\n\nQuestion: Explain the difference between a stack and a queue.\nAnswer: A stack is LIFO and a queue is FIFO."
+      },
+      {
+        "role": "assistant",
+        "content": "Score: 60\nFeedback: Basic understanding is correct but the answer is too brief. Should explain use cases, provide examples, and discuss time complexity of common operations."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Evaluate this interview answer and provide a score (0-100) and feedback.\n\nQuestion: Tell me about yourself.\nAnswer: I am a software engineer with 3 years of experience in web development. I have worked on several projects using React and Node.js. I am passionate about coding and always eager to learn new technologies."
+      },
+      {
+        "role": "assistant",
+        "content": "Score: 75\nFeedback: Good structure and relevant information. The answer covers experience, skills, and motivation. Could be improved by providing specific examples of projects or achievements."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Evaluate this interview answer and provide a score (0-100) and feedback.\n\nQuestion: How do you handle stress and pressure?\nAnswer: I prioritize tasks, break them into smaller parts, and focus on one thing at a time. I also take short breaks to maintain focus."
+      },
+      {
+        "role": "assistant",
+        "content": "Score: 80\nFeedback: Practical and well-thought-out answer. Shows good stress management techniques. Could be enhanced with a specific example of handling a high-pressure situation."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Analyze this resume and extract key information: skills, experience level, education, and overall quality score (0-100).\n\nResume:\nJohn Doe\nSoftware Engineer\n\nSkills: Python, JavaScript, React, Node.js, SQL, AWS\n\nExperience:\n- Software Developer at Tech Corp (2021-2024)\n  * Developed web applications using React and Node.js\n  * Implemented RESTful APIs\n  * Worked with AWS cloud services\n\nEducation:\n- B.Tech Computer Science, XYZ University (2021)"
+      },
+      {
+        "role": "assistant",
+        "content": "Skills: Python, JavaScript, React, Node.js, SQL, AWS\nExperience Level: 3 years\nEducation: B.Tech Computer Science\nOverall Score: 82\nAnalysis: Strong technical skills with relevant experience. Good project diversity. Could benefit from more specific achievements and metrics."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Analyze this resume and extract key information: skills, experience level, education, and overall quality score (0-100).\n\nResume:\nJane Smith\nData Scientist\n\nSkills: Python, Machine Learning, TensorFlow, SQL, Data Analysis\n\nExperience:\n- Data Science Intern at DataCorp (2023-2024)\n  * Built predictive models\n  * Analyzed large datasets\n\nEducation:\n- M.S. Data Science, ABC University (2024)"
+      },
+      {
+        "role": "assistant",
+        "content": "Skills: Python, Machine Learning, TensorFlow, SQL, Data Analysis\nExperience Level: 1 year (internship)\nEducation: M.S. Data Science\nOverall Score: 75\nAnalysis: Good educational background and relevant skills. Limited work experience. Would benefit from more project details and specific achievements."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Analyze the match between this resume and job description. Provide required skills, match score (0-100), and skill gaps.\n\nResume Skills: Python, JavaScript, React, SQL\nJob Description: We are looking for a Full Stack Developer with experience in Python, JavaScript, React, Node.js, MongoDB, and AWS. The candidate should have strong problem-solving skills and experience with RESTful APIs."
+      },
+      {
+        "role": "assistant",
+        "content": "Required Skills: Python, JavaScript, React, Node.js, MongoDB, AWS, RESTful APIs\nMatch Score: 65\nSkill Gaps: Node.js, MongoDB, AWS\nAnalysis: Good match on core frontend skills (Python, JavaScript, React). Missing backend technologies (Node.js, MongoDB) and cloud experience (AWS)."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on data structures."
+      },
+      {
+        "role": "assistant",
+        "content": "Explain the time complexity of common operations (insert, delete, search) for arrays, linked lists, and hash tables."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on algorithms."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe the difference between greedy algorithms and dynamic programming. When would you use each approach?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on system design."
+      },
+      {
+        "role": "assistant",
+        "content": "How would you design a distributed caching system? Discuss consistency, availability, and partitioning trade-offs."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on database design."
+      },
+      {
+        "role": "assistant",
+        "content": "Explain ACID properties in database transactions. Why are they important?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on networking."
+      },
+      {
+        "role": "assistant",
+        "content": "What is the difference between TCP and UDP? When would you choose one over the other?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on security."
+      },
+      {
+        "role": "assistant",
+        "content": "Explain common security vulnerabilities in web applications (SQL injection, XSS, CSRF) and how to prevent them."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on testing."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe different types of testing (unit, integration, end-to-end). What is test coverage and why does it matter?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on API design."
+      },
+      {
+        "role": "assistant",
+        "content": "What are RESTful API principles? Explain idempotency and statelessness."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on cloud computing."
+      },
+      {
+        "role": "assistant",
+        "content": "Compare different cloud service models (IaaS, PaaS, SaaS). Provide examples of each."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a technical interview question for a software engineering position.\n\nFocus on microservices."
+      },
+      {
+        "role": "assistant",
+        "content": "What are the advantages and challenges of microservices architecture? When would you use it?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess career goals."
+      },
+      {
+        "role": "assistant",
+        "content": "Where do you see yourself in 5 years? How does this position align with your career aspirations?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess work-life balance."
+      },
+      {
+        "role": "assistant",
+        "content": "How do you maintain work-life balance? Can you give an example of how you've managed this?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess teamwork."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe a time when you worked effectively in a team. What was your role and what made it successful?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess communication."
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about a time when you had to explain a complex technical concept to a non-technical person."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess problem-solving."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe a challenging problem you solved. What was your approach and what did you learn?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess adaptability."
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about a time when you had to quickly adapt to a new technology or process. How did you handle it?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess leadership."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe a situation where you took the lead on a project. What challenges did you face?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate an HR interview question.\n\nAssess time management."
+      },
+      {
+        "role": "assistant",
+        "content": "How do you prioritize tasks when you have multiple deadlines? Give an example."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on conflict resolution."
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about a time when you had a disagreement with a team member. How did you resolve it?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on meeting deadlines."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe a situation where you had to meet a tight deadline. How did you ensure you delivered on time?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on handling criticism."
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about a time when you received constructive criticism. How did you respond and what did you learn?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on working under pressure."
+      },
+      {
+        "role": "assistant",
+        "content": "Describe a high-pressure situation you faced at work. How did you handle it?"
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on learning from mistakes."
+      },
+      {
+        "role": "assistant",
+        "content": "Tell me about a mistake you made and what you learned from it."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Generate a behavioral interview question.\n\nFocus on taking initiative."
+      },
+      {
+        "role": "assistant",
+        "content": "Give an example of a time when you identified a problem and took initiative to solve it without being asked."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Evaluate this interview answer and provide a score (0-100) and feedback.\n\nQuestion: What is the difference between a stack and a queue?\nAnswer: A stack follows Last In First Out (LIFO) principle, while a queue follows First In First Out (FIFO). Stacks are used for function calls and undo operations, while queues are used for task scheduling and breadth-first search."
+      },
+      {
+        "role": "assistant",
+        "content": "Score: 90\nFeedback: Excellent answer! Clearly explains both data structures with their principles and provides practical use cases. Well-structured and comprehensive."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Evaluate this interview answer and provide a score (0-100) and feedback.\n\nQuestion: Explain REST API principles.\nAnswer: REST is an architectural style for APIs. It uses HTTP methods like GET, POST, PUT, DELETE. Resources are identified by URLs."
+      },
+      {
+        "role": "assistant",
+        "content": "Score: 70\nFeedback: Good basic understanding of REST. Mentions HTTP methods and resources. Could be improved by explaining statelessness, uniform interface, and providing examples of RESTful endpoints."
+      }
+    ]
+  },
+  {
+    "messages": [
+      {
+        "role": "user",
+        "content": "Analyze this resume and extract key information: skills, experience level, education, and overall quality score (0-100).\n\nResume:\nSarah Johnson\nFull Stack Developer\n\nSkills: Python, JavaScript, TypeScript, React, Node.js, Express, MongoDB, PostgreSQL, Docker, AWS, Git\n\nExperience:\n- Senior Developer at StartupXYZ (2020-2024)\n  * Led development of microservices architecture\n  * Improved system performance by 40%\n  * Mentored junior developers\n- Software Engineer at TechCorp (2018-2020)\n  * Built RESTful APIs\n  * Implemented CI/CD pipelines\n\nEducation:\n- B.S. Computer Science, State University (2018)\n- Certifications: AWS Solutions Architect"
+      },
+      {
+        "role": "assistant",
+        "content": "Skills: Python, JavaScript, TypeScript, React, Node.js, Express, MongoDB, PostgreSQL, Docker, AWS, Git\nExperience Level: 6 years\nEducation: B.S. Computer Science\nOverall Score: 88\nAnalysis: Strong technical skills with full-stack experience. Good leadership experience and measurable achievements. Well-rounded profile with cloud certifications."
+      }
+    ]
+  }
+]

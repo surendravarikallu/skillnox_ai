@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { useAuth } from "@/hooks/useAuth";
 import Layout from "@/components/layout";
 import Landing from "@/pages/landing";
+import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import InterviewStart from "@/pages/interview-start";
 import InterviewRoom from "@/pages/interview-room";
@@ -15,6 +16,7 @@ import ResumePage from "@/pages/resume";
 import PersonalityPage from "@/pages/personality";
 import PlacementPage from "@/pages/placement";
 import AdminPage from "@/pages/admin";
+import AIStatusPage from "@/pages/ai-status";
 import NotFound from "@/pages/not-found";
 
 function AuthenticatedRoutes() {
@@ -34,6 +36,7 @@ function AuthenticatedRoutes() {
         <Route path="/admin" component={AdminPage} />
         <Route path="/admin/students" component={AdminPage} />
         <Route path="/admin/analytics" component={AdminPage} />
+        <Route path="/ai-status" component={AIStatusPage} />
         <Route component={NotFound} />
       </Switch>
     </Layout>
@@ -57,7 +60,10 @@ function Router() {
   return (
     <Switch>
       {!isAuthenticated ? (
-        <Route path="/" component={Landing} />
+        <>
+          <Route path="/" component={Landing} />
+          <Route path="/login" component={Login} />
+        </>
       ) : (
         <Route path="/*?" component={AuthenticatedRoutes} />
       )}

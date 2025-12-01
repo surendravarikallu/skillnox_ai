@@ -1,0 +1,222 @@
+[
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on data structures and algorithms.",
+    "output": "Given an array of integers, find the maximum sum of a contiguous subarray. Explain your approach and provide the time complexity."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on object-oriented programming concepts.",
+    "output": "Explain the difference between abstraction and encapsulation in object-oriented programming. Provide examples of each."
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess communication skills and motivation.",
+    "output": "Tell me about yourself and why you're interested in this position. What motivates you in your work?"
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on problem-solving and teamwork.",
+    "output": "Describe a challenging situation you faced at work and how you resolved it. What was your role in the solution?"
+  },
+  {
+    "instruction": "Generate a project-based interview question.",
+    "input": "Focus on system design and architecture.",
+    "output": "Walk me through the architecture of your most recent project. What were the main challenges and how did you address them?"
+  },
+  {
+    "instruction": "Generate a company-specific interview question.",
+    "input": "Company: TCS, Focus on adaptability and learning.",
+    "output": "TCS values continuous learning and adaptability. Can you give an example of a time when you had to quickly learn a new technology or skill for a project?"
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on database design and SQL.",
+    "output": "Explain the difference between SQL and NoSQL databases. When would you choose one over the other? Provide examples."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on system design and scalability.",
+    "output": "How would you design a URL shortening service like bit.ly that can handle millions of requests per day? Discuss the architecture and key components."
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess cultural fit and values alignment.",
+    "output": "What are your career goals for the next 5 years? How does this position align with your long-term aspirations?"
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on leadership and initiative.",
+    "output": "Tell me about a time when you took the lead on a project. What challenges did you face and how did you overcome them?"
+  },
+  {
+    "instruction": "Evaluate this interview answer and provide a score (0-100) and feedback.",
+    "input": "Question: What is object-oriented programming?\nAnswer: OOP is a programming paradigm that uses objects and classes. It has four main principles: encapsulation, inheritance, polymorphism, and abstraction.",
+    "output": "Score: 85\nFeedback: Good understanding of OOP concepts. The answer correctly identifies the four main principles. Could be improved by providing examples of each principle and explaining how they work together in practice."
+  },
+  {
+    "instruction": "Evaluate this interview answer and provide a score (0-100) and feedback.",
+    "input": "Question: Explain the difference between a stack and a queue.\nAnswer: A stack is LIFO and a queue is FIFO.",
+    "output": "Score: 60\nFeedback: Basic understanding is correct but the answer is too brief. Should explain use cases, provide examples, and discuss time complexity of common operations."
+  },
+  {
+    "instruction": "Evaluate this interview answer and provide a score (0-100) and feedback.",
+    "input": "Question: Tell me about yourself.\nAnswer: I am a software engineer with 3 years of experience in web development. I have worked on several projects using React and Node.js. I am passionate about coding and always eager to learn new technologies.",
+    "output": "Score: 75\nFeedback: Good structure and relevant information. The answer covers experience, skills, and motivation. Could be improved by providing specific examples of projects or achievements."
+  },
+  {
+    "instruction": "Evaluate this interview answer and provide a score (0-100) and feedback.",
+    "input": "Question: How do you handle stress and pressure?\nAnswer: I prioritize tasks, break them into smaller parts, and focus on one thing at a time. I also take short breaks to maintain focus.",
+    "output": "Score: 80\nFeedback: Practical and well-thought-out answer. Shows good stress management techniques. Could be enhanced with a specific example of handling a high-pressure situation."
+  },
+  {
+    "instruction": "Analyze this resume and extract key information: skills, experience level, education, and overall quality score (0-100).",
+    "input": "Resume:\nJohn Doe\nSoftware Engineer\n\nSkills: Python, JavaScript, React, Node.js, SQL, AWS\n\nExperience:\n- Software Developer at Tech Corp (2021-2024)\n  * Developed web applications using React and Node.js\n  * Implemented RESTful APIs\n  * Worked with AWS cloud services\n\nEducation:\n- B.Tech Computer Science, XYZ University (2021)",
+    "output": "Skills: Python, JavaScript, React, Node.js, SQL, AWS\nExperience Level: 3 years\nEducation: B.Tech Computer Science\nOverall Score: 82\nAnalysis: Strong technical skills with relevant experience. Good project diversity. Could benefit from more specific achievements and metrics."
+  },
+  {
+    "instruction": "Analyze this resume and extract key information: skills, experience level, education, and overall quality score (0-100).",
+    "input": "Resume:\nJane Smith\nData Scientist\n\nSkills: Python, Machine Learning, TensorFlow, SQL, Data Analysis\n\nExperience:\n- Data Science Intern at DataCorp (2023-2024)\n  * Built predictive models\n  * Analyzed large datasets\n\nEducation:\n- M.S. Data Science, ABC University (2024)",
+    "output": "Skills: Python, Machine Learning, TensorFlow, SQL, Data Analysis\nExperience Level: 1 year (internship)\nEducation: M.S. Data Science\nOverall Score: 75\nAnalysis: Good educational background and relevant skills. Limited work experience. Would benefit from more project details and specific achievements."
+  },
+  {
+    "instruction": "Analyze the match between this resume and job description. Provide required skills, match score (0-100), and skill gaps.",
+    "input": "Resume Skills: Python, JavaScript, React, SQL\nJob Description: We are looking for a Full Stack Developer with experience in Python, JavaScript, React, Node.js, MongoDB, and AWS. The candidate should have strong problem-solving skills and experience with RESTful APIs.",
+    "output": "Required Skills: Python, JavaScript, React, Node.js, MongoDB, AWS, RESTful APIs\nMatch Score: 65\nSkill Gaps: Node.js, MongoDB, AWS\nAnalysis: Good match on core frontend skills (Python, JavaScript, React). Missing backend technologies (Node.js, MongoDB) and cloud experience (AWS)."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on data structures.",
+    "output": "Explain the time complexity of common operations (insert, delete, search) for arrays, linked lists, and hash tables."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on algorithms.",
+    "output": "Describe the difference between greedy algorithms and dynamic programming. When would you use each approach?"
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on system design.",
+    "output": "How would you design a distributed caching system? Discuss consistency, availability, and partitioning trade-offs."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on database design.",
+    "output": "Explain ACID properties in database transactions. Why are they important?"
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on networking.",
+    "output": "What is the difference between TCP and UDP? When would you choose one over the other?"
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on security.",
+    "output": "Explain common security vulnerabilities in web applications (SQL injection, XSS, CSRF) and how to prevent them."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on testing.",
+    "output": "Describe different types of testing (unit, integration, end-to-end). What is test coverage and why does it matter?"
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on API design.",
+    "output": "What are RESTful API principles? Explain idempotency and statelessness."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on cloud computing.",
+    "output": "Compare different cloud service models (IaaS, PaaS, SaaS). Provide examples of each."
+  },
+  {
+    "instruction": "Generate a technical interview question for a software engineering position.",
+    "input": "Focus on microservices.",
+    "output": "What are the advantages and challenges of microservices architecture? When would you use it?"
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess career goals.",
+    "output": "Where do you see yourself in 5 years? How does this position align with your career aspirations?"
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess work-life balance.",
+    "output": "How do you maintain work-life balance? Can you give an example of how you've managed this?"
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess teamwork.",
+    "output": "Describe a time when you worked effectively in a team. What was your role and what made it successful?"
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess communication.",
+    "output": "Tell me about a time when you had to explain a complex technical concept to a non-technical person."
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess problem-solving.",
+    "output": "Describe a challenging problem you solved. What was your approach and what did you learn?"
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess adaptability.",
+    "output": "Tell me about a time when you had to quickly adapt to a new technology or process. How did you handle it?"
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess leadership.",
+    "output": "Describe a situation where you took the lead on a project. What challenges did you face?"
+  },
+  {
+    "instruction": "Generate an HR interview question.",
+    "input": "Assess time management.",
+    "output": "How do you prioritize tasks when you have multiple deadlines? Give an example."
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on conflict resolution.",
+    "output": "Tell me about a time when you had a disagreement with a team member. How did you resolve it?"
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on meeting deadlines.",
+    "output": "Describe a situation where you had to meet a tight deadline. How did you ensure you delivered on time?"
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on handling criticism.",
+    "output": "Tell me about a time when you received constructive criticism. How did you respond and what did you learn?"
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on working under pressure.",
+    "output": "Describe a high-pressure situation you faced at work. How did you handle it?"
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on learning from mistakes.",
+    "output": "Tell me about a mistake you made and what you learned from it."
+  },
+  {
+    "instruction": "Generate a behavioral interview question.",
+    "input": "Focus on taking initiative.",
+    "output": "Give an example of a time when you identified a problem and took initiative to solve it without being asked."
+  },
+  {
+    "instruction": "Evaluate this interview answer and provide a score (0-100) and feedback.",
+    "input": "Question: What is the difference between a stack and a queue?\nAnswer: A stack follows Last In First Out (LIFO) principle, while a queue follows First In First Out (FIFO). Stacks are used for function calls and undo operations, while queues are used for task scheduling and breadth-first search.",
+    "output": "Score: 90\nFeedback: Excellent answer! Clearly explains both data structures with their principles and provides practical use cases. Well-structured and comprehensive."
+  },
+  {
+    "instruction": "Evaluate this interview answer and provide a score (0-100) and feedback.",
+    "input": "Question: Explain REST API principles.\nAnswer: REST is an architectural style for APIs. It uses HTTP methods like GET, POST, PUT, DELETE. Resources are identified by URLs.",
+    "output": "Score: 70\nFeedback: Good basic understanding of REST. Mentions HTTP methods and resources. Could be improved by explaining statelessness, uniform interface, and providing examples of RESTful endpoints."
+  },
+  {
+    "instruction": "Analyze this resume and extract key information: skills, experience level, education, and overall quality score (0-100).",
+    "input": "Resume:\nSarah Johnson\nFull Stack Developer\n\nSkills: Python, JavaScript, TypeScript, React, Node.js, Express, MongoDB, PostgreSQL, Docker, AWS, Git\n\nExperience:\n- Senior Developer at StartupXYZ (2020-2024)\n  * Led development of microservices architecture\n  * Improved system performance by 40%\n  * Mentored junior developers\n- Software Engineer at TechCorp (2018-2020)\n  * Built RESTful APIs\n  * Implemented CI/CD pipelines\n\nEducation:\n- B.S. Computer Science, State University (2018)\n- Certifications: AWS Solutions Architect",
+    "output": "Skills: Python, JavaScript, TypeScript, React, Node.js, Express, MongoDB, PostgreSQL, Docker, AWS, Git\nExperience Level: 6 years\nEducation: B.S. Computer Science\nOverall Score: 88\nAnalysis: Strong technical skills with full-stack experience. Good leadership experience and measurable achievements. Well-rounded profile with cloud certifications."
+  }
+]

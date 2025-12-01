@@ -1,9 +1,10 @@
 import { useState } from "react";
 import { useLocation } from "wouter";
-import { useMutation } from "@tanstack/react-query";
+import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { 
   Brain, 
   Users, 
@@ -16,7 +17,9 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import { COMPANIES } from "@shared/schema";
+import type { User } from "@shared/schema";
 
 const interviewTypes = [
   {
@@ -74,13 +77,31 @@ const companyData = [
 export default function InterviewStart() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
+  const { user } = useAuth();
   const [step, setStep] = useState(1);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [selectedCompany, setSelectedCompany] = useState<string | null>(null);
+  const [selectedStudentId, setSelectedStudentId] = useState<string | null>(null);
+
+  // Redirect if not admin
+  if (user && user.role !== 'admin') {
+    navigate('/');
+    return null;
+  }
+
+  // Fetch students for admin to select
+  const { data: students, isLoading: loadingStudents } = useQuery<User[]>({
+    queryKey: ['/api/admin/students'],
+    enabled: user?.role === 'admin',
+  });
 
   const startInterviewMutation = useMutation({
     mutationFn: async () => {
+      if (!selectedStudentId) {
+        throw new Error('Please select a student');
+      }
       const response = await apiRequest('POST', '/api/interviews', {
+        studentId: selectedStudentId,
         type: selectedType,
         company: selectedType === 'company' ? selectedCompany : undefined,
       });
@@ -88,7 +109,12 @@ export default function InterviewStart() {
     },
     onSuccess: (data: any) => {
       queryClient.invalidateQueries({ queryKey: ['/api/interviews'] });
-      navigate(`/interview/${data.id}/room`);
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/students'] });
+      toast({
+        title: "Success",
+        description: "Interview created successfully for student",
+      });
+      navigate('/admin/students');
     },
     onError: () => {
       toast({
@@ -115,11 +141,37 @@ export default function InterviewStart() {
   return (
     <div className="max-w-4xl mx-auto space-y-8">
       <div className="text-center">
-        <h1 className="text-3xl font-bold mb-2" data-testid="text-page-title">Start New Interview</h1>
+        <h1 className="text-3xl font-bold mb-2" data-testid="text-page-title">Create Interview for Student</h1>
         <p className="text-muted-foreground">
-          {step === 1 ? 'Choose the type of interview you want to practice' : 'Select a company pattern to simulate'}
+          Select a student and interview type to create an interview
         </p>
       </div>
+
+      {/* Student Selection */}
+      <Card>
+        <CardHeader>
+          <CardTitle>Select Student</CardTitle>
+          <CardDescription>Choose which student this interview is for</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {loadingStudents ? (
+            <div className="text-center py-4">Loading students...</div>
+          ) : (
+            <Select value={selectedStudentId || undefined} onValueChange={setSelectedStudentId}>
+              <SelectTrigger className="w-full">
+                <SelectValue placeholder="Select a student" />
+              </SelectTrigger>
+              <SelectContent>
+                {students?.map((student) => (
+                  <SelectItem key={student.id} value={student.id}>
+                    {student.firstName} {student.lastName} ({student.email})
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          )}
+        </CardContent>
+      </Card>
 
       <div className="flex items-center justify-center gap-4 mb-8">
         <div className={`flex items-center gap-2 ${step >= 1 ? 'text-primary' : 'text-muted-foreground'}`}>
@@ -243,14 +295,14 @@ export default function InterviewStart() {
           <Button 
             size="lg"
             onClick={handleStartInterview}
-            disabled={startInterviewMutation.isPending}
+            disabled={startInterviewMutation.isPending || !selectedStudentId}
             data-testid="button-start-interview"
           >
             {startInterviewMutation.isPending ? (
-              'Starting...'
+              'Creating...'
             ) : (
               <>
-                Start Interview
+                Create Interview for Student
                 <ArrowRight className="w-5 h-5 ml-2" />
               </>
             )}

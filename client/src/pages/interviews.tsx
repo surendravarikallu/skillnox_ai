@@ -154,7 +154,14 @@ export default function InterviewsPage() {
                         ) : '-'}
                       </TableCell>
                       <TableCell className="text-right">
-                        {interview.status === 'in_progress' ? (
+                        {interview.status === 'pending' ? (
+                          <Link href={`/interview/${interview.id}/room`}>
+                            <Button size="sm" data-testid={`button-join-${interview.id}`}>
+                              <Play className="w-4 h-4 mr-1" />
+                              Join
+                            </Button>
+                          </Link>
+                        ) : interview.status === 'in_progress' ? (
                           <Link href={`/interview/${interview.id}/room`}>
                             <Button size="sm" data-testid={`button-continue-${interview.id}`}>
                               <Play className="w-4 h-4 mr-1" />
@@ -169,7 +176,7 @@ export default function InterviewsPage() {
                             </Button>
                           </Link>
                         ) : (
-                          <Link href={`/interview/${interview.id}`}>
+                          <Link href={`/interview/${interview.id}/results`}>
                             <Button variant="ghost" size="sm">
                               View
                             </Button>

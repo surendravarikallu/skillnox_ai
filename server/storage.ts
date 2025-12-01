@@ -29,8 +29,9 @@ import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
 
 export interface IStorage {
-  // User operations (mandatory for Replit Auth)
+  // User operations
   getUser(id: string): Promise<User | undefined>;
+  getUserByEmail(email: string): Promise<User | undefined>;
   upsertUser(user: UpsertUser): Promise<User>;
   getAllUsers(): Promise<User[]>;
   getStudents(): Promise<User[]>;
@@ -43,6 +44,7 @@ export interface IStorage {
 
   // Job Description operations
   getJobDescriptionsByUserId(userId: string): Promise<JobDescription[]>;
+  getJobDescription(id: string): Promise<JobDescription | undefined>;
   createJobDescription(jd: InsertJobDescription): Promise<JobDescription>;
   updateJobDescription(id: string, data: Partial<InsertJobDescription>): Promise<JobDescription>;
 
@@ -86,17 +88,32 @@ export class DatabaseStorage implements IStorage {
   }
 
   async upsertUser(userData: UpsertUser): Promise<User> {
-    const [user] = await db
-      .insert(users)
-      .values(userData)
-      .onConflictDoUpdate({
-        target: users.id,
-        set: {
-          ...userData,
-          updatedAt: new Date(),
-        },
-      })
-      .returning();
+    // If id is provided, try to update, otherwise insert
+    if (userData.id) {
+      const [user] = await db
+        .insert(users)
+        .values(userData)
+        .onConflictDoUpdate({
+          target: users.id,
+          set: {
+            ...userData,
+            updatedAt: new Date(),
+          },
+        })
+        .returning();
+      return user;
+    } else {
+      // Insert new user
+      const [user] = await db
+        .insert(users)
+        .values(userData)
+        .returning();
+      return user;
+    }
+  }
+
+  async getUserByEmail(email: string): Promise<User | undefined> {
+    const [user] = await db.select().from(users).where(eq(users.email, email));
     return user;
   }
 
@@ -137,6 +154,11 @@ export class DatabaseStorage implements IStorage {
   // Job Description operations
   async getJobDescriptionsByUserId(userId: string): Promise<JobDescription[]> {
     return await db.select().from(jobDescriptions).where(eq(jobDescriptions.userId, userId)).orderBy(desc(jobDescriptions.createdAt));
+  }
+
+  async getJobDescription(id: string): Promise<JobDescription | undefined> {
+    const [jd] = await db.select().from(jobDescriptions).where(eq(jobDescriptions.id, id));
+    return jd;
   }
 
   async createJobDescription(jd: InsertJobDescription): Promise<JobDescription> {

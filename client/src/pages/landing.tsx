@@ -68,7 +68,7 @@ export default function Landing() {
               <span className="text-xl font-semibold" data-testid="text-logo">InterviewAI</span>
             </div>
             <Button 
-              onClick={() => window.location.href = '/api/login'}
+              onClick={() => window.location.href = '/login'}
               data-testid="button-login-nav"
             >
               Get Started
@@ -99,7 +99,7 @@ export default function Landing() {
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
             <Button 
               size="lg"
-              onClick={() => window.location.href = '/api/login'}
+              onClick={() => window.location.href = '/login'}
               className="text-base"
               data-testid="button-get-started"
             >
@@ -237,7 +237,7 @@ export default function Landing() {
                   <Button 
                     size="lg"
                     variant="secondary"
-                    onClick={() => window.location.href = '/api/login'}
+                    onClick={() => window.location.href = '/login'}
                     className="text-base"
                     data-testid="button-cta-start"
                   >

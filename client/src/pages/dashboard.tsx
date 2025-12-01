@@ -109,11 +109,19 @@ function InterviewCard({ interview }: { interview: Interview }) {
             {Math.round(interview.overallScore)}%
           </span>
         )}
-        <Link href={`/interview/${interview.id}`}>
-          <Button variant="ghost" size="icon" data-testid={`button-view-interview-${interview.id}`}>
-            <ChevronRight className="w-5 h-5" />
-          </Button>
-        </Link>
+        {interview.status === 'pending' || interview.status === 'in_progress' ? (
+          <Link href={`/interview/${interview.id}/room`}>
+            <Button variant="ghost" size="icon" data-testid={`button-view-interview-${interview.id}`}>
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </Link>
+        ) : (
+          <Link href={`/interview/${interview.id}/results`}>
+            <Button variant="ghost" size="icon" data-testid={`button-view-interview-${interview.id}`}>
+              <ChevronRight className="w-5 h-5" />
+            </Button>
+          </Link>
+        )}
       </div>
     </div>
   );
@@ -180,12 +188,14 @@ export default function Dashboard() {
               {resume ? 'View Resume' : 'Upload Resume'}
             </Button>
           </Link>
-          <Link href="/interview/start">
-            <Button data-testid="button-start-interview">
-              <Play className="w-4 h-4 mr-2" />
-              Start Interview
-            </Button>
-          </Link>
+          {user?.role === 'admin' && (
+            <Link href="/interview/start">
+              <Button data-testid="button-start-interview">
+                <Play className="w-4 h-4 mr-2" />
+                Create Interview for Student
+              </Button>
+            </Link>
+          )}
         </div>
       </div>
 
@@ -253,14 +263,18 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-medium mb-2">No interviews yet</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  Start your first mock interview to begin practicing
+                  {user?.role === 'admin' 
+                    ? 'Create an interview for a student to get started'
+                    : 'Wait for an admin to assign you an interview'}
                 </p>
-                <Link href="/interview/start">
-                  <Button data-testid="button-start-first-interview">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Start First Interview
-                  </Button>
-                </Link>
+                {user?.role === 'admin' && (
+                  <Link href="/interview/start">
+                    <Button data-testid="button-start-first-interview">
+                      <Plus className="w-4 h-4 mr-2" />
+                      Create Interview for Student
+                    </Button>
+                  </Link>
+                )}
               </div>
             )}
           </CardContent>
@@ -372,49 +386,51 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-        <Link href="/interview/start?type=technical" className="block">
-          <Card className="hover-elevate cursor-pointer h-full">
-            <CardContent className="p-6 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                <Brain className="w-6 h-6 text-blue-600 dark:text-blue-300" />
-              </div>
-              <div>
-                <h3 className="font-semibold">Technical Interview</h3>
-                <p className="text-sm text-muted-foreground">Practice coding & problem-solving</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+      {user?.role === 'admin' && (
+        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <Link href="/interview/start?type=technical" className="block">
+            <Card className="hover-elevate cursor-pointer h-full">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
+                  <Brain className="w-6 h-6 text-blue-600 dark:text-blue-300" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Technical Interview</h3>
+                  <p className="text-sm text-muted-foreground">Create for student</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
 
-        <Link href="/interview/start?type=hr" className="block">
-          <Card className="hover-elevate cursor-pointer h-full">
-            <CardContent className="p-6 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                <Users className="w-6 h-6 text-green-600 dark:text-green-300" />
-              </div>
-              <div>
-                <h3 className="font-semibold">HR Interview</h3>
-                <p className="text-sm text-muted-foreground">Culture fit & soft skills</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
+          <Link href="/interview/start?type=hr" className="block">
+            <Card className="hover-elevate cursor-pointer h-full">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
+                  <Users className="w-6 h-6 text-green-600 dark:text-green-300" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">HR Interview</h3>
+                  <p className="text-sm text-muted-foreground">Create for student</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
 
-        <Link href="/interview/start?type=company" className="block">
-          <Card className="hover-elevate cursor-pointer h-full">
-            <CardContent className="p-6 flex items-center gap-4">
-              <div className="w-12 h-12 rounded-lg bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-                <Briefcase className="w-6 h-6 text-orange-600 dark:text-orange-300" />
-              </div>
-              <div>
-                <h3 className="font-semibold">Company Simulator</h3>
-                <p className="text-sm text-muted-foreground">TCS, Infosys, Wipro & more</p>
-              </div>
-            </CardContent>
-          </Card>
-        </Link>
-      </div>
+          <Link href="/interview/start?type=company" className="block">
+            <Card className="hover-elevate cursor-pointer h-full">
+              <CardContent className="p-6 flex items-center gap-4">
+                <div className="w-12 h-12 rounded-lg bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
+                  <Briefcase className="w-6 h-6 text-orange-600 dark:text-orange-300" />
+                </div>
+                <div>
+                  <h3 className="font-semibold">Company Simulator</h3>
+                  <p className="text-sm text-muted-foreground">Create for student</p>
+                </div>
+              </CardContent>
+            </Card>
+          </Link>
+        </div>
+      )}
     </div>
   );
 }

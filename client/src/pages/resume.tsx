@@ -24,11 +24,12 @@ import {
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
+import { useAuth } from "@/hooks/useAuth";
 import type { Resume, JobDescription } from "@shared/schema";
 
 export default function ResumePage() {
   const { toast } = useToast();
-  const [isUploading, setIsUploading] = useState(false);
+  const { user } = useAuth();
   const [showJdForm, setShowJdForm] = useState(false);
   const [jdTitle, setJdTitle] = useState("");
   const [jdCompany, setJdCompany] = useState("");
@@ -133,10 +134,12 @@ export default function ResumePage() {
     });
   };
 
-  const parsedData = resume?.parsedData as any;
-  const skills = resume?.skills || [];
-  const experience = resume?.experience as any[];
-  const education = resume?.education as any[];
+  // Treat resumes with null id (backend "empty" object) as no resume
+  const hasResume = !!resume && !!resume.id;
+  const parsedData = hasResume ? (resume.parsedData as any) : null;
+  const skills = hasResume ? (resume.skills || []) : [];
+  const experience = (hasResume ? (resume.experience as any[]) : []) || [];
+  const education = (hasResume ? (resume.education as any[]) : []) || [];
 
   return (
     <div className="max-w-5xl mx-auto space-y-8">
@@ -162,7 +165,7 @@ export default function ResumePage() {
                   <Skeleton className="h-32" />
                   <Skeleton className="h-4 w-1/2" />
                 </div>
-              ) : resume ? (
+              ) : hasResume ? (
                 <div className="space-y-6">
                   <div className="flex items-center gap-4 p-4 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
                     <CheckCircle className="w-8 h-8 text-green-500" />
@@ -174,7 +177,8 @@ export default function ResumePage() {
                     </div>
                   </div>
 
-                  {resume.overallScore !== null && (
+                  {/* Only show score to admins, not students */}
+                  {resume.overallScore !== null && user?.role === 'admin' && (
                     <div className="p-4 bg-muted/50 rounded-lg">
                       <div className="flex items-center justify-between mb-2">
                         <span className="font-medium">Resume Score</span>
@@ -239,7 +243,7 @@ export default function ResumePage() {
             </CardContent>
           </Card>
 
-          {resume && skills.length > 0 && (
+          {hasResume && skills.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -259,7 +263,7 @@ export default function ResumePage() {
             </Card>
           )}
 
-          {resume && experience && experience.length > 0 && (
+          {hasResume && experience && experience.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -283,7 +287,7 @@ export default function ResumePage() {
             </Card>
           )}
 
-          {resume && education && education.length > 0 && (
+          {hasResume && education && education.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
@@ -442,38 +446,85 @@ export default function ResumePage() {
             </CardContent>
           </Card>
 
-          {resume && jobDescriptions && jobDescriptions.length > 0 && (
+          {/* AI Recommendations from Resume Analysis */}
+          {hasResume && parsedData && parsedData.suggestions && Array.isArray(parsedData.suggestions) && parsedData.suggestions.length > 0 && (
             <Card>
               <CardHeader className="pb-2">
                 <CardTitle className="text-lg flex items-center gap-2">
                   <Sparkles className="w-5 h-5" />
-                  AI Recommendations
+                  AI Resume Recommendations
                 </CardTitle>
+                <CardDescription>
+                  Personalized suggestions to improve your resume for overall job market
+                </CardDescription>
               </CardHeader>
               <CardContent>
                 <ul className="space-y-3">
-                  <li className="flex items-start gap-3">
-                    <TrendingUp className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
-                    <span className="text-sm">
-                      Focus on the skill gaps identified in your job matches to improve placement chances
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <TrendingUp className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
-                    <span className="text-sm">
-                      Highlight projects that demonstrate the required skills for your target roles
-                    </span>
-                  </li>
-                  <li className="flex items-start gap-3">
-                    <TrendingUp className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
-                    <span className="text-sm">
-                      Practice interviews for companies with the highest match scores
-                    </span>
-                  </li>
+                  {parsedData.suggestions.map((suggestion: string, index: number) => (
+                    <li key={index} className="flex items-start gap-3">
+                      <TrendingUp className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
+                      <span className="text-sm">{suggestion}</span>
+                    </li>
+                  ))}
                 </ul>
+                {parsedData.strengths && parsedData.strengths.length > 0 && (
+                  <div className="mt-4 pt-4 border-t">
+                    <p className="text-sm font-medium mb-2">Your Strengths:</p>
+                    <div className="flex flex-wrap gap-2">
+                      {parsedData.strengths.map((strength: string, index: number) => (
+                        <Badge key={index} variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
+                          {strength}
+                        </Badge>
+                      ))}
+                    </div>
+                  </div>
+                )}
               </CardContent>
             </Card>
           )}
+
+          {/* JD-Based Recommendations */}
+          {hasResume && jobDescriptions && jobDescriptions.length > 0 && jobDescriptions.map((jd) => {
+            const jdData = jd.parsedData as any;
+            if (!jdData || !jdData.suggestions || jdData.suggestions.length === 0) return null;
+            
+            return (
+              <Card key={jd.id}>
+                <CardHeader className="pb-2">
+                  <CardTitle className="text-lg flex items-center gap-2">
+                    <Target className="w-5 h-5" />
+                    AI Recommendations for {jd.title}
+                    {jd.company && <span className="text-sm font-normal text-muted-foreground">at {jd.company}</span>}
+                  </CardTitle>
+                  <CardDescription>
+                    Personalized suggestions based on this job description
+                  </CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <ul className="space-y-3">
+                    {jdData.suggestions.map((suggestion: string, index: number) => (
+                      <li key={index} className="flex items-start gap-3">
+                        <TrendingUp className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
+                        <span className="text-sm">{suggestion}</span>
+                      </li>
+                    ))}
+                  </ul>
+                  {jdData.strengths && jdData.strengths.length > 0 && (
+                    <div className="mt-4 pt-4 border-t">
+                      <p className="text-sm font-medium mb-2">Your Strengths for this Role:</p>
+                      <div className="flex flex-wrap gap-2">
+                        {jdData.strengths.map((strength: string, index: number) => (
+                          <Badge key={index} variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
+                            {strength}
+                          </Badge>
+                        ))}
+                      </div>
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            );
+          })}
         </div>
       </div>
     </div>
