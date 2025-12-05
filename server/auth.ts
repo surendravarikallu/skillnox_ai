@@ -3,6 +3,7 @@ import jwt from "jsonwebtoken";
 import bcrypt from "bcryptjs";
 import { z } from "zod";
 import { storage } from "./storage";
+import type { User } from "@shared/schema";
 
 // JWT secret - should be in environment variable
 const JWT_SECRET = process.env.JWT_SECRET || "your-secret-key-change-in-production";
@@ -28,7 +29,7 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  email: z.string().email(),
+  identifier: z.string().min(1),
   password: z.string().min(1),
 });
 
@@ -156,9 +157,19 @@ export async function registerHandler(req: any, res: any) {
 export async function loginHandler(req: any, res: any) {
   try {
     const body = loginSchema.parse(req.body);
+    const identifier = body.identifier.trim();
+    const resolveEmailFromRoll = (value: string) => `${value}@students.local`;
 
-    // Find user by email
-    const user = await storage.getUserByEmail(body.email);
+    let user: User | undefined;
+    if (identifier.includes("@")) {
+      user = await storage.getUserByEmail(identifier);
+    } else {
+      const sanitizedRoll = identifier.replace(/\s+/g, "");
+      if (sanitizedRoll.length === 0) {
+        return res.status(401).json({ message: "Invalid email or password" });
+      }
+      user = await storage.getUserByEmail(resolveEmailFromRoll(sanitizedRoll));
+    }
 
     if (!user) {
       return res.status(401).json({ message: "Invalid email or password" });

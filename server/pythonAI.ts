@@ -8,22 +8,68 @@ const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://local
 function sanitizeGeneratedQuestion(question?: string | null): string | null {
   if (!question) return null;
   
+  // Remove common prefixes and filler text - more aggressive cleaning
   let cleaned = question
-    .replace(/^(sure|certainly|absolutely)[,!.\s-]*/i, '')
-    .replace(/^(here('?s| is)\b.*?:)/i, '')
-    .replace(/^(additionally|also)[,!.\s-]*/i, '')
-    .replace(/good luck!?$/i, '')
-    .replace(/note:.*$/i, '')
+    // Remove opening phrases (case insensitive, with variations)
+    .replace(/^(sure|certainly|absolutely|okay|yes|well|alright)[,!.\s-]*/gi, '')
+    .replace(/^(here('?s| is|'re)\b.*?:)/gi, '')
+    .replace(/^(additionally|also|furthermore|moreover|plus|and)[,!.\s-]*/gi, '')
+    // Remove interviewer context notes (more patterns)
+    .replace(/the interviewer is looking for[^.]*\./gi, '')
+    .replace(/interviewer.*?looking for[^.]*\./gi, '')
+    .replace(/looking for experience with[^.]*\./gi, '')
+    .replace(/looking for[^.]*\./gi, '')
+    // Remove "technical interview question" type prefixes
+    .replace(/^(here's|here is)\s+(a|an|the)\s+(technical|hr|behavioral|interview)\s+question[:\s]*/gi, '')
+    .replace(/^(this is|this's)\s+(a|an|the)\s+(technical|hr|behavioral|interview)\s+question[:\s]*/gi, '')
+    // Remove closing phrases
+    .replace(/good luck!?.*$/gi, '')
+    .replace(/note:.*$/gi, '')
+    .replace(/this.*?question.*?$/gi, '')
+    .replace(/finally[,.]\s*/gi, '')
+    .replace(/also[,.]\s*/gi, '')
+    // Remove multiple spaces and clean up
+    .replace(/\s+/g, ' ')
     .trim();
 
-  // Break into sentences (simple heuristic) and pick the first question-like one
-  const parts = cleaned
-    .split(/(?<=[?.!])\s+/)
-    .map(part => part.trim())
-    .filter(Boolean);
+  // If the cleaned text is empty or too short, return null
+  if (cleaned.length < 10) return null;
 
-  const primary = parts.find(part => part.endsWith('?')) ?? parts[0];
-  return (primary ?? '').trim() || null;
+  // Break into sentences and find the actual question
+  const sentences = cleaned
+    .split(/(?<=[?.!])\s+/)
+    .map(s => s.trim())
+    .filter(s => s.length > 10 && !s.match(/^(also|finally|additionally|plus|and)[,.\s]/i)); // Filter out very short fragments and filler starts
+
+  if (sentences.length === 0) return null;
+
+  // Prioritize sentences ending with '?'
+  const questionSentence = sentences.find(s => s.endsWith('?') && s.length > 15);
+  if (questionSentence) {
+    // If question has multiple parts, try to extract just the main question
+    const questionParts = questionSentence.split(/\.\s+(?=[A-Z])/); // Split on sentence boundaries
+    const mainQuestion = questionParts.find(p => p.includes('?') && p.length > 15) || questionParts[0];
+    return mainQuestion.trim();
+  }
+
+  // If no question mark, take the first substantial sentence that looks like a question
+  const firstSubstantial = sentences.find(s => 
+    s.length > 20 && 
+    (s.toLowerCase().includes('how') || 
+     s.toLowerCase().includes('what') || 
+     s.toLowerCase().includes('why') || 
+     s.toLowerCase().includes('explain') ||
+     s.toLowerCase().includes('describe') ||
+     s.toLowerCase().includes('write') ||
+     s.toLowerCase().includes('implement'))
+  );
+  
+  if (firstSubstantial) {
+    return firstSubstantial.trim();
+  }
+
+  // Fallback: return first sentence if it's substantial
+  return sentences[0]?.trim() || null;
 }
 
 async function callPythonService(endpoint: string, method: 'GET' | 'POST', body?: any, file?: { data: Buffer; filename: string; contentType: string }): Promise<any> {
@@ -172,11 +218,12 @@ export async function analyzeSkillGap(resumeText: string, jdText: string) {
   return result?.data || null;
 }
 
-export async function generateQuestion(questionType: string, company?: string, context?: string) {
+export async function generateQuestion(questionType: string, company?: string, context?: string, difficulty?: 'easy' | 'medium' | 'hard') {
   const result = await callPythonService('/api/llm/generate-question', 'POST', {
     question_type: questionType,
     company: company,
-    context: context
+    context: context,
+    difficulty: difficulty || 'medium'
   });
   return sanitizeGeneratedQuestion(result?.question);
 }

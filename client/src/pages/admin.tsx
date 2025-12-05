@@ -1,4 +1,4 @@
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -23,9 +23,12 @@ import {
   Search,
   BarChart3,
   Eye,
-  FileText
+  FileText,
+  Upload,
+  Rocket
 } from "lucide-react";
 import { useState } from "react";
+import { useToast } from "@/hooks/use-toast";
 import type { User, Interview } from "@shared/schema";
 
 interface AdminStats {
@@ -44,6 +47,14 @@ interface SkillGap {
 
 export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState("");
+  const [importFile, setImportFile] = useState<File | null>(null);
+  const [isImporting, setIsImporting] = useState(false);
+  const [isCreatingContest, setIsCreatingContest] = useState(false);
+  const [contestBranch, setContestBranch] = useState<string>("all");
+  const [contestDifficulty, setContestDifficulty] = useState<"easy" | "medium" | "hard">("medium");
+  const [contestTypes, setContestTypes] = useState<string[]>(["technical"]);
+  const { toast } = useToast();
+  const queryClient = useQueryClient();
 
   const { data: stats, isLoading: loadingStats } = useQuery<AdminStats>({
     queryKey: ["/api/admin/stats"],
@@ -57,15 +68,36 @@ export default function AdminPage() {
     queryKey: ["/api/admin/skill-gaps"],
   });
 
-  const filteredStudents = students?.filter(student => {
-    const query = searchQuery.toLowerCase();
-    const fullName = `${student.firstName || ''} ${student.lastName || ''}`.toLowerCase();
-    return (
-      fullName.includes(query) ||
-      student.email?.toLowerCase().includes(query) ||
-      student.department?.toLowerCase().includes(query)
-    );
-  }) || [];
+  const filteredStudents =
+    students
+      ?.filter((student) => {
+        const query = searchQuery.toLowerCase();
+        const fullName = `${student.firstName || ""} ${student.lastName || ""}`.toLowerCase();
+        return (
+          fullName.includes(query) ||
+          student.email?.toLowerCase().includes(query) ||
+          student.department?.toLowerCase().includes(query)
+        );
+      })
+      .sort((a, b) => {
+        const depA = (a.department || "").toLowerCase();
+        const depB = (b.department || "").toLowerCase();
+        if (depA !== depB) return depA.localeCompare(depB);
+
+        const nameA =
+          `${a.firstName || ""} ${a.lastName || ""}`.trim() ||
+          a.email?.toLowerCase() ||
+          "";
+        const nameB =
+          `${b.firstName || ""} ${b.lastName || ""}`.trim() ||
+          b.email?.toLowerCase() ||
+          "";
+        return nameA.localeCompare(nameB);
+      }) || [];
+
+  const uniqueBranches = Array.from(
+    new Set((students || []).map(s => s.department).filter(Boolean))
+  ) as string[];
 
   const handleExport = () => {
     const data = filteredStudents.map(s => ({
@@ -88,6 +120,97 @@ export default function AdminPage() {
     a.download = 'students-report.csv';
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  const handleImport = async () => {
+    if (!importFile) return;
+    setIsImporting(true);
+    try {
+      const formData = new FormData();
+      formData.append("file", importFile);
+
+      const response = await fetch("/api/admin/students/import", {
+        method: "POST",
+        body: formData,
+        credentials: "include",
+      });
+
+      const data = await response.json();
+      if (!response.ok) {
+        throw new Error(data.message || "Failed to import students");
+      }
+
+      toast({
+        title: "Students imported",
+        description: `Created: ${data.created}, Updated: ${data.updated}, Skipped: ${data.skipped}`,
+      });
+      await queryClient.invalidateQueries({ queryKey: ["/api/admin/students"] });
+    } catch (error: any) {
+      toast({
+        title: "Import failed",
+        description: error.message || "Could not import students",
+        variant: "destructive",
+      });
+    } finally {
+      setIsImporting(false);
+    }
+  };
+
+  const handleToggleContestType = (type: string) => {
+    setContestTypes(prev =>
+      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
+    );
+  };
+
+  const handleCreateContest = async () => {
+    if (!students || students.length === 0) return;
+    if (contestTypes.length === 0) {
+      toast({
+        title: "Select at least one interview type",
+        description: "Choose the types of rounds to include in the contest.",
+        variant: "destructive",
+      });
+      return;
+    }
+
+    setIsCreatingContest(true);
+    try {
+      const targetStudents =
+        contestBranch === "all"
+          ? students
+          : students.filter(s => s.department === contestBranch);
+
+      const payloads = targetStudents.map((student) =>
+        fetch("/api/interviews", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+          },
+          credentials: "include",
+          body: JSON.stringify({
+            studentId: student.id,
+            types: contestTypes,
+            difficulty: contestDifficulty,
+            type: contestTypes[0],
+          }),
+        })
+      );
+
+      await Promise.all(payloads);
+
+      toast({
+        title: "Contest created",
+        description: `Interviews created for ${targetStudents.length} students.`,
+      });
+    } catch (error: any) {
+      toast({
+        title: "Contest creation failed",
+        description: error.message || "Could not create contest for students.",
+        variant: "destructive",
+      });
+    } finally {
+      setIsCreatingContest(false);
+    }
   };
 
   return (
@@ -329,6 +452,9 @@ export default function AdminPage() {
           </CardContent>
         </Card>
       </div>
+
+      {/* Bulk import and contest creation have been moved to dedicated flows
+          (Students & Create Interview). Keep analytics page focused on insights only. */}
     </div>
   );
 }

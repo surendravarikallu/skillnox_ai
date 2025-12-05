@@ -65,14 +65,7 @@ export function AIAvatar({ gender = 'male', isSpeaking = false, isListening = fa
         </div>
       )}
       
-      {/* Status text */}
-      <div className="absolute -bottom-8 left-1/2 transform -translate-x-1/2 whitespace-nowrap">
-        <p className="text-xs text-muted-foreground">
-          {isSpeaking && "Speaking..."}
-          {isListening && "Listening..."}
-          {!isSpeaking && !isListening && "Ready"}
-        </p>
-      </div>
+      {/* Status text removed here; parent component now shows status below the avatar to avoid layout overlap */}
     </div>
   );
 }

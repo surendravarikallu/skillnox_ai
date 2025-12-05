@@ -16,6 +16,7 @@ import ResumePage from "@/pages/resume";
 import PersonalityPage from "@/pages/personality";
 import PlacementPage from "@/pages/placement";
 import AdminPage from "@/pages/admin";
+import AdminStudentsPage from "@/pages/admin-students";
 import AIStatusPage from "@/pages/ai-status";
 import NotFound from "@/pages/not-found";
 
@@ -34,7 +35,7 @@ function AuthenticatedRoutes() {
         <Route path="/personality" component={PersonalityPage} />
         <Route path="/placement" component={PlacementPage} />
         <Route path="/admin" component={AdminPage} />
-        <Route path="/admin/students" component={AdminPage} />
+        <Route path="/admin/students" component={AdminStudentsPage} />
         <Route path="/admin/analytics" component={AdminPage} />
         <Route path="/ai-status" component={AIStatusPage} />
         <Route component={NotFound} />

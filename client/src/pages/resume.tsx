@@ -1,4 +1,4 @@
-import { useState, useCallback } from "react";
+import { useState, useCallback, useEffect } from "react";
 import { useQuery, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -138,6 +138,38 @@ export default function ResumePage() {
   const hasResume = !!resume && !!resume.id;
   const parsedData = hasResume ? (resume.parsedData as any) : null;
   const skills = hasResume ? (resume.skills || []) : [];
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+  const isAnalyzingResume = uploadResumeMutation.isPending;
+
+  useEffect(() => {
+    if (isAnalyzingResume) {
+      setAnalysisProgress(12);
+      const interval = setInterval(() => {
+        setAnalysisProgress((prev) => {
+          if (prev >= 92) return prev;
+          return Math.min(92, prev + Math.random() * 8 + 2);
+        });
+      }, 700);
+      return () => clearInterval(interval);
+    } else {
+      setAnalysisProgress(0);
+    }
+  }, [isAnalyzingResume]);
+
+  const renderAnalyzingState = (
+    <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-3 animate-in fade-in duration-300">
+      <div className="flex items-center gap-3">
+        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
+        <div>
+          <p className="font-medium">Analyzing your resume with AI...</p>
+          <p className="text-xs text-muted-foreground">
+            This usually takes 5-15 seconds while we extract skills & insights.
+          </p>
+        </div>
+      </div>
+      <Progress value={analysisProgress || 10} className="h-2" />
+    </div>
+  );
   const experience = (hasResume ? (resume.experience as any[]) : []) || [];
   const education = (hasResume ? (resume.education as any[]) : []) || [];
 
@@ -207,11 +239,15 @@ export default function ResumePage() {
                       />
                       <label htmlFor="resume-upload-update" className="cursor-pointer">
                         <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground">
-                          {uploadResumeMutation.isPending ? 'Uploading...' : 'Drop new resume or click to upload'}
+                        <p className="text-sm text-muted-foreground flex items-center justify-center gap-2">
+                          {uploadResumeMutation.isPending && (
+                            <span className="w-4 h-4 border-2 border-muted border-t-transparent rounded-full animate-spin" />
+                          )}
+                          {uploadResumeMutation.isPending ? 'Analyzing updated resume...' : 'Drop new resume or click to upload'}
                         </p>
                       </label>
                     </div>
+                    {isAnalyzingResume && renderAnalyzingState}
                   </div>
                 </div>
               ) : (
@@ -231,13 +267,17 @@ export default function ResumePage() {
                   />
                   <label htmlFor="resume-upload" className="cursor-pointer">
                     <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="font-medium mb-1">
-                      {uploadResumeMutation.isPending ? 'Analyzing...' : 'Upload Your Resume'}
+                    <p className="font-medium mb-1 flex items-center justify-center gap-2">
+                      {uploadResumeMutation.isPending && (
+                        <span className="w-5 h-5 border-2 border-muted border-t-transparent rounded-full animate-spin" />
+                      )}
+                      {uploadResumeMutation.isPending ? 'Analyzing Resume...' : 'Upload Your Resume'}
                     </p>
                     <p className="text-sm text-muted-foreground">
                       Drag & drop or click to select (PDF, DOC, DOCX)
                     </p>
                   </label>
+                  {isAnalyzingResume && renderAnalyzingState}
                 </div>
               )}
             </CardContent>
@@ -420,12 +460,16 @@ export default function ResumePage() {
                           <p className="text-xs text-muted-foreground mb-1">Skill Gaps:</p>
                           <div className="flex flex-wrap gap-1">
                             {jd.skillGaps.slice(0, 5).map((gap, index) => (
-                              <Badge key={index} variant="outline" size="sm" className="text-orange-600 border-orange-300">
+                              <Badge
+                                key={index}
+                                variant="outline"
+                                className="text-orange-600 border-orange-300 text-xs px-2 py-0.5"
+                              >
                                 {gap}
                               </Badge>
                             ))}
                             {jd.skillGaps.length > 5 && (
-                              <Badge variant="outline" size="sm">
+                              <Badge variant="outline" className="text-xs px-2 py-0.5">
                                 +{jd.skillGaps.length - 5} more
                               </Badge>
                             )}

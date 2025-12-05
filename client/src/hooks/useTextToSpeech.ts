@@ -28,14 +28,21 @@ export function useTextToSpeech(): UseTextToSpeechReturn {
       utterance.pitch = 1.0;
       utterance.volume = 1.0;
 
-      // Try to use a more natural voice if available
+      // Try to use a more natural voice if available.
+      // Prefer English voices that are marked as female or assistant-style where possible,
+      // but fall back gracefully to the first good English voice.
       const voices = window.speechSynthesis.getVoices();
-      const preferredVoice = voices.find(voice => 
-        voice.name.includes('Google') || 
-        voice.name.includes('Microsoft') ||
-        voice.name.includes('Natural') ||
-        (voice.lang.startsWith('en') && voice.localService === false)
-      );
+      const preferredVoice =
+        voices.find(voice =>
+          voice.lang.toLowerCase().startsWith("en") &&
+          /female|woman|zira|sonia|susan|emma|amy|lara/i.test(voice.name)
+        ) ||
+        voices.find(voice =>
+          voice.name.includes("Google") ||
+          voice.name.includes("Microsoft") ||
+          voice.name.includes("Natural") ||
+          (voice.lang.toLowerCase().startsWith("en") && voice.localService === false)
+        );
       
       if (preferredVoice) {
         utterance.voice = preferredVoice;

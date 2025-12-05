@@ -93,6 +93,7 @@ class QuestionGenerateRequest(BaseModel):
     question_type: str
     context: Optional[str] = None
     company: Optional[str] = None
+    difficulty: Optional[str] = 'medium'  # easy, medium, hard
 
 
 class FollowUpQuestionRequest(BaseModel):
@@ -273,13 +274,23 @@ def analyze_skill_gap(request: SkillGapRequest):
 def generate_question(request: QuestionGenerateRequest):
     """Generate interview question using LLM"""
     try:
+        difficulty = request.difficulty or 'medium'
+        print(f"Generating question: type={request.question_type}, difficulty={difficulty}, company={request.company}")
+        
         if request.company:
-            question = llm.generate_company_question(request.company)
+            question = llm.generate_company_question(request.company, difficulty)
         else:
-            question = llm.generate_question(request.question_type, request.context)
+            question = llm.generate_question(request.question_type, request.context, difficulty)
+        
+        if not question or question.strip() == "":
+            print("Warning: Generated empty question, using fallback")
+            question = f"Tell me about your experience with {request.question_type}."
         
         return {"success": True, "question": question}
     except Exception as e:
+        import traceback
+        error_detail = f"{str(e)}\n{traceback.format_exc()}"
+        print(f"Error generating question: {error_detail}")
         raise HTTPException(status_code=500, detail=str(e))
 
 

@@ -18,6 +18,7 @@ import { z } from "zod";
 export const userRoleEnum = pgEnum('user_role', ['student', 'admin']);
 export const interviewTypeEnum = pgEnum('interview_type', ['technical', 'hr', 'behavioral', 'company', 'gd', 'project']);
 export const interviewStatusEnum = pgEnum('interview_status', ['pending', 'in_progress', 'completed', 'cancelled']);
+export const difficultyEnum = pgEnum('difficulty', ['easy', 'medium', 'hard']);
 export const genderEnum = pgEnum('gender', ['male', 'female']);
 export const personalityDimensionEnum = pgEnum('personality_dimension', ['introvert', 'extrovert', 'thinker', 'feeler', 'logical', 'creative', 'planner', 'spontaneous']);
 
@@ -37,6 +38,8 @@ export const users = pgTable("users", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   email: varchar("email").unique().notNull(),
   passwordHash: varchar("password_hash"),
+  // Student metadata (for admin-managed logins)
+  rollNumber: varchar("roll_number"),
   firstName: varchar("first_name"),
   lastName: varchar("last_name"),
   profileImageUrl: varchar("profile_image_url"),
@@ -83,7 +86,9 @@ export const jobDescriptions = pgTable("job_descriptions", {
 export const interviews = pgTable("interviews", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   userId: varchar("user_id").notNull().references(() => users.id, { onDelete: 'cascade' }),
-  type: interviewTypeEnum("type").notNull(),
+  type: interviewTypeEnum("type").notNull(), // Keep for backward compatibility
+  types: jsonb("types"), // Array of interview types: ['technical', 'hr', 'behavioral', etc.]
+  difficulty: difficultyEnum("difficulty"), // Difficulty level: 'easy', 'medium', 'hard'
   status: interviewStatusEnum("status").default('pending').notNull(),
   company: varchar("company"),
   avatarGender: genderEnum("avatar_gender"),

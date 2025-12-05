@@ -65,7 +65,7 @@ export default function Landing() {
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Brain className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="text-xl font-semibold" data-testid="text-logo">InterviewAI</span>
+              <span className="text-xl font-semibold" data-testid="text-logo">Skillnox AI</span>
             </div>
             <Button 
               onClick={() => window.location.href = '/login'}
@@ -82,18 +82,18 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto text-center">
           <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
             <Sparkles className="w-4 h-4" />
-            AI-Powered Interview Preparation
+            Skillnox AI · Campus hiring preparation suite
           </div>
           
           <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6" data-testid="text-hero-title">
-            Ace Your Next Interview
+            Turn Students Into
             <br />
-            <span className="text-primary">With AI Coaching</span>
+            <span className="text-primary">Industry‑Ready Hires</span>
           </h1>
           
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-10">
-            Practice mock interviews, get real-time feedback on your resume, emotions, and voice. 
-            Prepare for top companies with AI-powered interview simulations.
+            Skillnox AI is your institute’s virtual placement lab: AI‑driven technical & HR interviews,
+            resume intelligence, and actionable analytics so every student can walk into real interviews with confidence.
           </p>
 
           <div className="flex flex-col sm:flex-row gap-4 justify-center">
@@ -103,11 +103,22 @@ export default function Landing() {
               className="text-base"
               data-testid="button-get-started"
             >
-              Start Practicing Free
+              Launch Skillnox AI
               <ArrowRight className="w-5 h-5 ml-2" />
             </Button>
-            <Button size="lg" variant="outline" className="text-base" data-testid="button-learn-more">
-              See How It Works
+            <Button
+              size="lg"
+              variant="outline"
+              className="text-base"
+              data-testid="button-learn-more"
+              onClick={() => {
+                const el = document.getElementById("capabilities-section");
+                if (el) {
+                  el.scrollIntoView({ behavior: "smooth", block: "start" });
+                }
+              }}
+            >
+              View capabilities
             </Button>
           </div>
 
@@ -122,10 +133,10 @@ export default function Landing() {
         </div>
       </section>
 
-      <section className="py-20 px-4 bg-muted/30">
+      <section id="capabilities-section" className="py-20 px-4 bg-muted/30">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-16">
-            <h2 className="text-3xl font-bold mb-4" data-testid="text-features-title">Everything You Need to Succeed</h2>
+            <h2 className="text-3xl font-bold mb-4" data-testid="text-features-title">One Platform For End‑To‑End Interview Readiness</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Comprehensive AI tools to help you prepare for every aspect of the interview process
             </p>
@@ -150,7 +161,7 @@ export default function Landing() {
       <section className="py-20 px-4">
         <div className="max-w-7xl mx-auto">
           <div className="text-center mb-12">
-            <h2 className="text-3xl font-bold mb-4" data-testid="text-companies-title">Practice for Top Companies</h2>
+            <h2 className="text-3xl font-bold mb-4" data-testid="text-companies-title">Aligned With Real Company Patterns</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Company-specific interview patterns from leading tech and consulting firms
             </p>
@@ -174,13 +185,13 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
-              <h2 className="text-3xl font-bold mb-6" data-testid="text-how-it-works-title">How It Works</h2>
+            <h2 className="text-3xl font-bold mb-6" data-testid="text-how-it-works-title">How Skillnox AI Fits Into Your Training</h2>
               <div className="space-y-6">
                 {[
-                  { step: "1", title: "Upload Your Resume", desc: "AI analyzes your skills, experience, and education" },
-                  { step: "2", title: "Choose Interview Type", desc: "Technical, HR, Behavioral, or company-specific rounds" },
-                  { step: "3", title: "Practice with AI", desc: "Get real-time feedback on answers, emotions, and voice" },
-                  { step: "4", title: "Review & Improve", desc: "Track progress and get personalized improvement tips" }
+                  { step: "1", title: "Onboard Your Students", desc: "Bulk import student rosters with roll numbers and branches in a few clicks." },
+                  { step: "2", title: "Configure Rounds & Contests", desc: "Create technical, HR, behavioral and company‑style contests by branch or batch." },
+                  { step: "3", title: "Students Practice With AI", desc: "Real‑time feedback on answers, emotions, and voice — as many mock rounds as they need." },
+                  { step: "4", title: "Review Analytics & Gaps", desc: "View aggregate skill gaps, scores and placement readiness to fine‑tune training." }
                 ].map((item) => (
                   <div key={item.step} className="flex gap-4">
                     <div className="w-10 h-10 rounded-full bg-primary text-primary-foreground flex items-center justify-center font-semibold shrink-0">
@@ -251,18 +262,20 @@ export default function Landing() {
         </div>
       </section>
 
-      <footer className="py-12 px-4 border-t border-border">
-        <div className="max-w-7xl mx-auto">
+      <footer className="mt-8 border-t border-border bg-background">
+        <div className="max-w-7xl mx-auto px-4 py-8">
           <div className="flex flex-col md:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-2">
               <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                 <Brain className="w-5 h-5 text-primary-foreground" />
               </div>
-              <span className="font-semibold">InterviewAI</span>
+              <span className="font-semibold">Skillnox AI</span>
             </div>
-            <p className="text-sm text-muted-foreground">
-              Empowering students to achieve their career goals
-            </p>
+            <div className="flex flex-col md:flex-row items-center gap-3 text-xs md:text-sm text-muted-foreground">
+              <span>© {new Date().getFullYear()} Skillnox AI. All rights reserved.</span>
+              <span className="hidden md:inline-block">•</span>
+              <span>Interview & placement readiness platform for campuses.</span>
+            </div>
           </div>
         </div>
       </footer>

@@ -183,21 +183,74 @@ class LocalLLM:
         else:
             return "I understand. Please continue."
     
-    def generate_question(self, question_type: str, context: Optional[str] = None) -> str:
-        """Generate interview question based on type"""
-        prompts = {
-            "technical": "Generate a technical interview question for a software engineering position. The question should test programming concepts, data structures, or algorithms.",
-            "hr": "Generate an HR interview question that assesses a candidate's communication skills, motivation, and cultural fit.",
-            "behavioral": "Generate a behavioral interview question that asks about past experiences and how the candidate handled specific situations.",
-            "project": "Generate a question about a candidate's project that tests their understanding of architecture, challenges, and technical decisions.",
-            "company": "Generate a company-specific interview question that tests knowledge about the company and role fit."
+    def generate_question(self, question_type: str, context: Optional[str] = None, difficulty: str = 'medium') -> str:
+        """Generate interview question based on type and difficulty"""
+        try:
+            difficulty_guidance = {
+                "easy": "The question should be suitable for beginners, testing fundamental concepts and basic understanding.",
+                "medium": "The question should be of moderate complexity, testing solid understanding and practical application.",
+                "hard": "The question should be challenging and advanced, testing deep knowledge, problem-solving skills, and expertise."
+            }
+            
+            # Normalize difficulty
+            if difficulty not in difficulty_guidance:
+                difficulty = 'medium'
+            
+            prompts = {
+                "technical": f"Generate a {difficulty} technical interview question for a software engineering position. The question should test programming concepts, data structures, or algorithms. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
+                "hr": f"Generate a {difficulty} HR interview question that assesses a candidate's communication skills, motivation, and cultural fit. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
+                "behavioral": f"Generate a {difficulty} behavioral interview question that asks about past experiences and how the candidate handled specific situations. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
+                "project": f"Generate a {difficulty} question about a candidate's project that tests their understanding of architecture, challenges, and technical decisions. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
+                "company": f"Generate a {difficulty} company-specific interview question that tests knowledge about the company and role fit. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}"
+            }
+            
+            prompt = prompts.get(question_type, prompts["technical"])
+            if context:
+                prompt += f"\nContext: {context}"
+            
+            result = self.generate(prompt, max_length=150)
+            
+            # Ensure we return a valid question
+            if not result or result.strip() == "":
+                return self._fallback_generate_question(question_type, difficulty)
+            
+            return result
+        except Exception as e:
+            print(f"Error in generate_question: {e}")
+            return self._fallback_generate_question(question_type, difficulty)
+    
+    def _fallback_generate_question(self, question_type: str, difficulty: str = 'medium') -> str:
+        """Fallback question generation if LLM fails"""
+        fallback_questions = {
+            "technical": {
+                "easy": "What is the difference between a list and a tuple in Python?",
+                "medium": "Explain the concept of time complexity and give an example of O(n log n) algorithm.",
+                "hard": "Design a distributed system to handle 1 million requests per second. What are the key components?"
+            },
+            "hr": {
+                "easy": "Tell me about yourself and your career goals.",
+                "medium": "Why do you want to work for our company?",
+                "hard": "Describe a situation where you had to make a difficult decision under pressure."
+            },
+            "behavioral": {
+                "easy": "Tell me about a time you worked in a team.",
+                "medium": "Describe a challenging situation and how you handled it.",
+                "hard": "Give an example of when you had to lead a team through a crisis."
+            },
+            "project": {
+                "easy": "Can you describe one of your projects?",
+                "medium": "What were the main challenges you faced in your project?",
+                "hard": "How would you scale your project to handle 10x the current load?"
+            },
+            "company": {
+                "easy": "What do you know about our company?",
+                "medium": "Why do you want to join our company?",
+                "hard": "How do you see yourself contributing to our company's mission?"
+            }
         }
         
-        prompt = prompts.get(question_type, prompts["technical"])
-        if context:
-            prompt += f"\nContext: {context}"
-        
-        return self.generate(prompt, max_length=100)
+        type_questions = fallback_questions.get(question_type, fallback_questions["technical"])
+        return type_questions.get(difficulty, type_questions["medium"])
     
     def evaluate_answer(self, question: str, answer: str) -> Dict:
         """Evaluate answer using LLM"""
@@ -236,10 +289,15 @@ Evaluation:"""
         prompt = "Generate an interesting and debatable topic for a group discussion that is relevant for engineering students preparing for placements."
         return self.generate(prompt, max_length=50)
     
-    def generate_company_question(self, company: str) -> str:
+    def generate_company_question(self, company: str, difficulty: str = 'medium') -> str:
         """Generate company-specific interview question"""
-        prompt = f"Generate a specific interview question that {company} might ask during their recruitment process. The question should test both technical knowledge and company fit."
-        return self.generate(prompt, max_length=100)
+        difficulty_guidance = {
+            "easy": "The question should be suitable for beginners, testing fundamental concepts and basic understanding.",
+            "medium": "The question should be of moderate complexity, testing solid understanding and practical application.",
+            "hard": "The question should be challenging and advanced, testing deep knowledge, problem-solving skills, and expertise."
+        }
+        prompt = f"Generate a {difficulty} specific interview question that {company} might ask during their recruitment process. The question should test both technical knowledge and company fit. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}"
+        return self.generate(prompt, max_length=150)
     
     def analyze_resume(self, resume_text: str, jd_text: Optional[str] = None) -> Dict:
         """Analyze resume using LLM with detailed evaluation and suggestions"""

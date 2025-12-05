@@ -36,6 +36,8 @@ export interface IStorage {
   getAllUsers(): Promise<User[]>;
   getStudents(): Promise<User[]>;
   updateUserInterviewCount(userId: string): Promise<void>;
+  updateUser(id: string, data: Partial<UpsertUser>): Promise<User>;
+  deleteUser(id: string): Promise<void>;
 
   // Resume operations
   getResumeByUserId(userId: string): Promise<Resume | undefined>;
@@ -58,6 +60,7 @@ export interface IStorage {
   // Interview Questions operations
   getQuestionsByInterviewId(interviewId: string): Promise<InterviewQuestion[]>;
   createInterviewQuestion(question: InsertInterviewQuestion): Promise<InterviewQuestion>;
+  getInterviewQuestionById(id: string): Promise<InterviewQuestion | undefined>;
   updateInterviewQuestion(id: string, data: Partial<InsertInterviewQuestion>): Promise<InterviewQuestion>;
 
   // Personality Assessment operations
@@ -123,6 +126,18 @@ export class DatabaseStorage implements IStorage {
 
   async getStudents(): Promise<User[]> {
     return await db.select().from(users).where(eq(users.role, 'student')).orderBy(desc(users.createdAt));
+  }
+ 
+  async updateUser(id: string, data: Partial<UpsertUser>): Promise<User> {
+    const [updated] = await db.update(users).set({
+      ...data,
+      updatedAt: new Date(),
+    }).where(eq(users.id, id)).returning();
+    return updated;
+  }
+
+  async deleteUser(id: string): Promise<void> {
+    await db.delete(users).where(eq(users.id, id));
   }
 
   async updateUserInterviewCount(userId: string): Promise<void> {
@@ -203,6 +218,11 @@ export class DatabaseStorage implements IStorage {
   async createInterviewQuestion(question: InsertInterviewQuestion): Promise<InterviewQuestion> {
     const [newQuestion] = await db.insert(interviewQuestions).values(question).returning();
     return newQuestion;
+  }
+
+  async getInterviewQuestionById(id: string): Promise<InterviewQuestion | undefined> {
+    const [question] = await db.select().from(interviewQuestions).where(eq(interviewQuestions.id, id));
+    return question;
   }
 
   async updateInterviewQuestion(id: string, data: Partial<InsertInterviewQuestion>): Promise<InterviewQuestion> {

@@ -34,6 +34,14 @@ import { useTextToSpeech } from "@/hooks/useTextToSpeech";
 import type { Interview, InterviewQuestion } from "@shared/schema";
 import { useAuth } from "@/hooks/useAuth";
 
+const ENHANCED_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
+  echoCancellation: true,
+  noiseSuppression: false,
+  autoGainControl: true,
+  sampleRate: 44100,
+  channelCount: 1,
+};
+
 export default function InterviewRoom() {
   const { id } = useParams<{ id: string }>();
   const [, navigate] = useLocation();
@@ -49,6 +57,8 @@ export default function InterviewRoom() {
   const [emotionData, setEmotionData] = useState<{ emotion: string; confidence: number } | null>(null);
   const [conversationHistory, setConversationHistory] = useState<Array<{ role: string; content: string }>>([]);
   const [hasSpokenCurrentQuestion, setHasSpokenCurrentQuestion] = useState(false);
+  const [noiseWarning, setNoiseWarning] = useState<string | null>(null);
+  const [streamVersion, setStreamVersion] = useState(0);
   
   const { transcript, isListening, startListening, stopListening, clearTranscript } = useVoiceToText();
   const { isSpeaking: isAISpeaking, speak: speakText, stop: stopSpeaking } = useTextToSpeech();
@@ -56,6 +66,7 @@ export default function InterviewRoom() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
+  const audioMonitorRef = useRef<{ context: AudioContext; rafId: number } | null>(null);
 
   const { data: interview, isLoading: loadingInterview } = useQuery<Interview>({
     queryKey: ['/api/interviews', id],
@@ -110,20 +121,26 @@ export default function InterviewRoom() {
 
   const submitAnswerMutation = useMutation({
     mutationFn: async (data: { questionId: string; answer: string }) => {
-      return await apiRequest('POST', `/api/interviews/${id}/answer`, data);
+      const response = await apiRequest('POST', `/api/interviews/${id}/answer`, data);
+      const result = await response.json();
+      return result;
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/interviews', id, 'questions'] });
-      setAnswer("");
       clearTranscript();
       if (questions && currentQuestionIndex < questions.length - 1) {
         setCurrentQuestionIndex(prev => prev + 1);
+        toast({
+          title: "Answer Submitted",
+          description: "Moving to the next question.",
+        });
       }
     },
-    onError: () => {
+    onError: (error: any) => {
+      console.error('Answer submission error:', error);
       toast({
         title: "Error",
-        description: "Failed to submit answer. Please try again.",
+        description: error?.message || "Failed to submit answer. Please try again.",
         variant: "destructive",
       });
     },
@@ -166,9 +183,10 @@ export default function InterviewRoom() {
             height: { ideal: 720 },
             facingMode: 'user'
           }, 
-          audio: true 
+          audio: ENHANCED_AUDIO_CONSTRAINTS 
         });
         streamRef.current = stream;
+        setStreamVersion(prev => prev + 1);
         
         // Set video source immediately
         if (videoRef.current) {
@@ -274,6 +292,77 @@ export default function InterviewRoom() {
     return () => clearInterval(interval);
   }, [cameraEnabled, user, videoRef]);
 
+useEffect(() => {
+  const stream = streamRef.current;
+  if (!micEnabled || !stream) {
+    if (audioMonitorRef.current) {
+      cancelAnimationFrame(audioMonitorRef.current.rafId);
+      audioMonitorRef.current.context.close();
+      audioMonitorRef.current = null;
+    }
+    setNoiseWarning(null);
+    return;
+  }
+
+  if (typeof window === "undefined") {
+    return;
+  }
+  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+  if (!AudioContextClass) {
+    return;
+  }
+
+  const audioContext = new AudioContextClass();
+  const source = audioContext.createMediaStreamSource(stream);
+  const analyser = audioContext.createAnalyser();
+  analyser.fftSize = 2048;
+  const dataArray = new Float32Array(analyser.fftSize);
+  source.connect(analyser);
+
+  let noiseHold = 0;
+  const analyze = () => {
+    analyser.getFloatTimeDomainData(dataArray);
+    let sumSquares = 0;
+    for (let i = 0; i < dataArray.length; i++) {
+      sumSquares += dataArray[i] * dataArray[i];
+    }
+    const rms = Math.sqrt(sumSquares / dataArray.length);
+    if (rms > 0.012 && rms < 0.08) {
+      noiseHold = Math.min(4000, noiseHold + 120);
+    } else {
+      noiseHold = Math.max(0, noiseHold - 200);
+    }
+
+    if (noiseHold > 1500) {
+      setNoiseWarning(prev => prev ?? "Background fan noise detected. Move closer to the mic or mute when silent.");
+    } else if (noiseHold < 600) {
+      setNoiseWarning(prev => (prev ? null : prev));
+    }
+
+    audioMonitorRef.current = {
+      context: audioContext,
+      rafId: requestAnimationFrame(analyze),
+    };
+  };
+
+  audioMonitorRef.current = {
+    context: audioContext,
+    rafId: requestAnimationFrame(analyze),
+  };
+
+  return () => {
+    if (audioMonitorRef.current) {
+      cancelAnimationFrame(audioMonitorRef.current.rafId);
+      audioMonitorRef.current.context.close();
+      audioMonitorRef.current = null;
+    }
+    setNoiseWarning(null);
+  };
+}, [micEnabled, streamVersion]);
+
+// We only show background-noise feedback inline in the UI now (no toast popups),
+// so students are not distracted during the interview.
+
   const toggleCamera = useCallback(async () => {
     const newState = !cameraEnabled;
     setCameraEnabled(newState);
@@ -305,9 +394,10 @@ export default function InterviewRoom() {
             height: { ideal: 720 },
             facingMode: 'user'
           }, 
-          audio: true 
+          audio: ENHANCED_AUDIO_CONSTRAINTS 
         });
         streamRef.current = stream;
+        setStreamVersion(prev => prev + 1);
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
           videoRef.current.play().catch(err => {
@@ -333,6 +423,9 @@ export default function InterviewRoom() {
       });
     }
     setMicEnabled(prev => !prev);
+    if (micEnabled) {
+      setNoiseWarning(null);
+    }
   }, [micEnabled]);
 
   const formatTime = (seconds: number) => {
@@ -616,9 +709,18 @@ export default function InterviewRoom() {
                   isSpeaking={isAISpeaking}
                   isListening={isListening && micEnabled}
                 />
-                <div className="text-center">
+                <div className="text-center space-y-1">
                   <p className="font-medium text-lg">AI Interviewer</p>
-                  <p className="text-sm text-muted-foreground capitalize">{avatarGender} Interviewer</p>
+                  <p className="text-xs text-muted-foreground capitalize">
+                    Avatar: {avatarGender} interviewer (voice depends on your browser settings)
+                  </p>
+                  <p className="text-sm text-muted-foreground">
+                    {isAISpeaking
+                      ? "Speaking your question..."
+                      : (isListening && micEnabled)
+                        ? "Listening to your answer..."
+                        : "Ready for your next response"}
+                  </p>
                 </div>
               </div>
             </CardContent>
@@ -692,6 +794,12 @@ export default function InterviewRoom() {
                 <div className="mt-2 flex items-center gap-2 text-sm text-primary">
                   <div className="w-2 h-2 bg-primary rounded-full animate-pulse" />
                   <span>Listening... Speak now</span>
+                </div>
+              )}
+              {noiseWarning && (
+                <div className="mt-2 flex items-center gap-2 text-sm text-amber-600">
+                  <AlertCircle className="w-4 h-4" />
+                  <span>{noiseWarning}</span>
                 </div>
               )}
               {transcript && !isListening && (

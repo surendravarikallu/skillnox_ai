@@ -79,7 +79,7 @@ export default function Layout({ children }: LayoutProps) {
                 <div className="w-8 h-8 rounded-md bg-primary flex items-center justify-center">
                   <Brain className="w-5 h-5 text-primary-foreground" />
                 </div>
-                <span className="text-lg font-semibold" data-testid="text-sidebar-logo">InterviewAI</span>
+                <span className="text-lg font-semibold" data-testid="text-sidebar-logo">Skillnox AI</span>
               </div>
             </Link>
           </SidebarHeader>

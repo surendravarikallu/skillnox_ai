@@ -14,6 +14,9 @@ export function useVoiceToText(): UseVoiceToTextReturn {
   const [isListening, setIsListening] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
+  const lastProcessedIndexRef = useRef<number>(0);
+  const finalTranscriptRef = useRef<string>("");
+  const autoRestartRef = useRef(false);
 
   const startListening = useCallback(() => {
     if (!("webkitSpeechRecognition" in window) && !("SpeechRecognition" in window)) {
@@ -26,27 +29,52 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    // Use an English variant that better matches common Indian accents for higher accuracy
+    // (e.g. "am I audible" instead of mishearing as "am I abdul").
+    recognition.lang = "en-IN";
+    if ("maxAlternatives" in recognition) {
+      (recognition as SpeechRecognition & { maxAlternatives?: number }).maxAlternatives = 1;
+    }
+
+    autoRestartRef.current = true;
 
     recognition.onstart = () => {
       setIsListening(true);
       setError(null);
+      // Reset index for the new SpeechRecognition session but keep
+      // the existing finalTranscriptRef so previous speech isn't lost
+      // when the mic is stopped and started again for the same answer.
+      lastProcessedIndexRef.current = 0;
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interimTranscript = "";
-      let finalTranscript = "";
+      let newFinalTranscript = "";
 
-      for (let i = event.resultIndex; i < event.results.length; i++) {
-        const transcript = event.results[i][0].transcript;
-        if (event.results[i].isFinal) {
-          finalTranscript += transcript + " ";
+      // Process only new results (starting from last processed index)
+      for (let i = Math.max(event.resultIndex, lastProcessedIndexRef.current); i < event.results.length; i++) {
+        const result = event.results[i];
+        const transcriptText = result[0].transcript;
+        
+        if (result.isFinal) {
+          // Only add final results that we haven't processed yet
+          if (i >= lastProcessedIndexRef.current) {
+            newFinalTranscript += transcriptText + " ";
+            lastProcessedIndexRef.current = i + 1;
+          }
         } else {
-          interimTranscript += transcript;
+          // Interim results - replace, don't append
+          interimTranscript = transcriptText;
         }
       }
 
-      setTranscript((prev) => prev + finalTranscript + interimTranscript);
+      // Update final transcript only with new final results
+      if (newFinalTranscript) {
+        finalTranscriptRef.current += newFinalTranscript;
+      }
+
+      // Combine final transcript with current interim result
+      setTranscript(finalTranscriptRef.current + interimTranscript);
     };
 
     recognition.onerror = (event: any) => {
@@ -56,6 +84,13 @@ export function useVoiceToText(): UseVoiceToTextReturn {
 
     recognition.onend = () => {
       setIsListening(false);
+      if (autoRestartRef.current) {
+        try {
+          recognition.start();
+        } catch (restartError) {
+          console.warn("Speech recognition restart failed:", restartError);
+        }
+      }
     };
 
     recognition.start();
@@ -64,6 +99,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
 
   const stopListening = useCallback(() => {
     if (recognitionRef.current) {
+      autoRestartRef.current = false;
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
@@ -72,6 +108,8 @@ export function useVoiceToText(): UseVoiceToTextReturn {
 
   const clearTranscript = useCallback(() => {
     setTranscript("");
+    finalTranscriptRef.current = "";
+    lastProcessedIndexRef.current = 0;
   }, []);
 
   return {
@@ -126,4 +164,5 @@ declare global {
     SpeechRecognition: any;
   }
 }
+
 
