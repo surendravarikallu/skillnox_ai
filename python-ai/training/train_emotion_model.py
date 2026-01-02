@@ -17,6 +17,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 from models.vision_models import EmotionCNN
 
 
+from utils.data_generator import generate_synthetic_emotion_images
+
+
 class SyntheticEmotionDataset(Dataset):
     """Synthetic dataset for emotion detection (simulates FER2013)"""
     
@@ -25,21 +28,16 @@ class SyntheticEmotionDataset(Dataset):
         self.img_size = img_size
         self.num_classes = 7
         self.emotions = ['Angry', 'Disgust', 'Fear', 'Happy', 'Sad', 'Surprise', 'Neutral']
+        
+        data = generate_synthetic_emotion_images(num_samples, img_size)
+        self.images = data['images']
+        self.labels = data['labels']
     
     def __len__(self):
         return self.num_samples
     
     def __getitem__(self, idx):
-        # Generate synthetic grayscale image (48x48)
-        # In real scenario, would load from FER2013 dataset
-        image = np.random.rand(1, self.img_size, self.img_size).astype(np.float32)
-        # Normalize
-        image = (image - 0.5) / 0.5
-        
-        # Random emotion label
-        label = np.random.randint(0, self.num_classes)
-        
-        return torch.FloatTensor(image), torch.LongTensor([label])
+        return torch.FloatTensor(self.images[idx]), torch.LongTensor([self.labels[idx]])
 
 
 def train_emotion_model(model, train_loader, val_loader, epochs=20, device='cpu'):

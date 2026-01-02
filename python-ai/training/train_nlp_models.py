@@ -144,13 +144,13 @@ def main():
     
     # Resume parser data
     resume_texts = nlp_data['resumes']
-    resume_labels = np.random.rand(len(resume_texts), 102)  # Simplified labels
+    resume_labels = nlp_data['resume_labels']  # Use correlated labels
     resume_dataset = NLP_Dataset(resume_texts, resume_labels, vocab)
     resume_loader = DataLoader(resume_dataset, batch_size=32, shuffle=True)
     
     # Answer evaluator data
     answer_texts = nlp_data['answers']
-    answer_labels = np.random.rand(len(answer_texts), 1) * 100  # Scores 0-100
+    answer_labels = nlp_data['answer_scores']  # Use correlated scores
     answer_dataset = NLP_Dataset(answer_texts, answer_labels, vocab)
     answer_loader = DataLoader(answer_dataset, batch_size=32, shuffle=True)
     

@@ -21,27 +21,42 @@ import sys
 sys.path.append(str(Path(__file__).parent.parent))
 
 def load_training_data(data_path: Path) -> Dataset:
-    """Load training data from JSON file"""
-    with open(data_path, 'r', encoding='utf-8') as f:
-        data = json.load(f)
-    
-    # Convert to format expected by trainer
+    """Load training data from JSONL file"""
     texts = []
-    for item in data:
-        if "messages" in item:
-            # Chat format
-            user_msg = item["messages"][0]["content"]
-            assistant_msg = item["messages"][1]["content"]
-            # Format as instruction-following prompt
-            text = f"<|im_start|>user\n{user_msg}<|im_end|>\n<|im_start|>assistant\n{assistant_msg}<|im_end|>"
-        else:
-            # Standard format
-            instruction = item.get("instruction", "")
-            input_text = item.get("input", "")
-            output = item.get("output", "")
-            text = f"<|im_start|>user\n{instruction}\n\n{input_text}<|im_end|>\n<|im_start|>assistant\n{output}<|im_end|>"
-        
-        texts.append({"text": text})
+    
+    with open(data_path, 'r', encoding='utf-8') as f:
+        for line in f:
+            if not line.strip():
+                continue
+            item = json.loads(line)
+            
+            if "messages" in item:
+                # Chat format
+                user_msg = item["messages"][0]["content"]
+                assistant_msg = item["messages"][1]["content"]
+                # Format as instruction-following prompt
+                text = f"<|im_start|>user\n{user_msg}<|im_end|>\n<|im_start|>assistant\n{assistant_msg}<|im_end|>"
+            else:
+                # Standard format
+                instruction = item.get("instruction", "")
+                input_data = item.get("input", "")
+                output = item.get("output", "")
+                
+                # Handle input being a dict (as in our generated samples)
+                if isinstance(input_data, dict):
+                    input_text = "\n".join([f"{k.replace('_', ' ').title()}: {v}" for k, v in input_data.items()])
+                else:
+                    input_text = str(input_data)
+                
+                # Handle output being a dict
+                if isinstance(output, dict):
+                    output_text = json.dumps(output, indent=2)
+                else:
+                    output_text = str(output)
+                
+                text = f"<|im_start|>user\n{instruction}\n\n{input_text}<|im_end|>\n<|im_start|>assistant\n{output_text}<|im_end|>"
+            
+            texts.append({"text": text})
     
     return Dataset.from_list(texts)
 
@@ -54,7 +69,7 @@ def tokenize_function(examples, tokenizer, max_length=512):
         padding="max_length",
     )
 
-def setup_model_and_tokenizer(model_name: str = "Qwen/Qwen2.5-0.5B-Instruct"):
+def setup_model_and_tokenizer(model_name: str = "Qwen/Qwen2.5-1.5B-Instruct"):
     """Setup model and tokenizer with LoRA configuration"""
     print(f"Loading model: {model_name}")
     
@@ -176,18 +191,16 @@ def train_model(
 def main():
     """Main training function"""
     print("=" * 60)
-    print("Fine-tuning Qwen2.5-0.5B-Instruct for Interview Tasks")
+    print("Fine-tuning Qwen2.5-1.5B-Instruct for Interview Tasks")
     print("=" * 60)
     
     # Check if training data exists
     datasets_dir = Path(__file__).parent.parent / "datasets"
-    training_data_path = datasets_dir / "llm_training_chat.json"
+    training_data_path = datasets_dir / "fine_tune_samples.jsonl"
     
     if not training_data_path.exists():
         print(f"\n⚠ Training data not found at {training_data_path}")
-        print("Generating training data...")
-        from prepare_llm_data import main as prepare_data
-        prepare_data()
+        return
     
     # Load training data
     print(f"\n[1] Loading training data from {training_data_path}...")

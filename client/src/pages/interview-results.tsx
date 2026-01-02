@@ -282,7 +282,9 @@ export default function InterviewResults() {
                 >
                   <div className="flex items-start justify-between gap-4 mb-3">
                     <div>
-                      <Badge variant="outline" size="sm" className="mb-2">Question {index + 1}</Badge>
+                      <Badge variant="outline" className="mb-2 px-2 py-0.5 text-xs">
+                        Question {index + 1}
+                      </Badge>
                       <p className="font-medium">{question.question}</p>
                     </div>
                     {question.score !== null && (

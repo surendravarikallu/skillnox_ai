@@ -16,6 +16,9 @@ sys.path.append(str(Path(__file__).parent.parent))
 from models.audio_models import VoiceAnalyzer
 
 
+from utils.data_generator import generate_synthetic_voice_data
+
+
 class VoiceDataset(Dataset):
     """Dataset for voice analysis"""
     
@@ -23,18 +26,11 @@ class VoiceDataset(Dataset):
         self.num_samples = num_samples
         self.feature_dim = feature_dim
         
-        # Generate synthetic audio features
-        self.features = np.random.rand(num_samples, feature_dim).astype(np.float32)
+        # Generate correlated synthetic data
+        data = generate_synthetic_voice_data(num_samples, feature_dim)
         
-        # Generate synthetic labels (scores 0-100)
-        self.labels = {
-            'fluency': np.random.rand(num_samples) * 100,
-            'grammar': np.random.rand(num_samples) * 100,
-            'tone': np.random.rand(num_samples) * 100,
-            'pace': np.random.rand(num_samples) * 100,
-            'filler_words': np.random.rand(num_samples) * 100,
-            'clarity': np.random.rand(num_samples) * 100
-        }
+        self.features = data['features']
+        self.labels = data['labels']
     
     def __len__(self):
         return self.num_samples

@@ -8,7 +8,7 @@ from typing import List, Dict
 
 
 def generate_synthetic_nlp_data(num_samples=1000) -> Dict:
-    """Generate synthetic NLP training data"""
+    """Generate synthetic NLP training data with correlated labels"""
     
     # Common technical terms
     tech_terms = [
@@ -18,102 +18,169 @@ def generate_synthetic_nlp_data(num_samples=1000) -> Dict:
         'microservices', 'cloud computing', 'devops', 'ci/cd', 'testing'
     ]
     
-    # Common resume sections
-    resume_templates = [
-        "Software Engineer with experience in {tech}. Worked on projects involving {tech2} and {tech3}. Strong background in {tech4}.",
-        "Computer Science graduate specializing in {tech}. Developed applications using {tech2}, {tech3}. Proficient in {tech4}, {tech5}.",
-        "Full-stack developer with expertise in {tech}, {tech2}. Built scalable systems using {tech3}. Knowledge of {tech4}."
+    # Templates with associated quality scores
+    
+    # Resumes
+    resume_good = [
+        "Senior Software Engineer with 8 years of experience in {tech}, {tech2}. Architected scalable microservices using {tech3}. Lead a team of developers.",
+        "Principal Developer specialized in {tech}. Expert in {tech2}, {tech3}, and {tech4}. Published papers on {tech5}. 10+ years experience."
+    ]
+    resume_avg = [
+        "Software Developer with 2 years experience in {tech}. Worked on {tech2} projects. Familiar with {tech3}.",
+        "Junior Developer looking for opportunities in {tech}. Completed internship using {tech2}."
     ]
     
-    # Job description templates
-    jd_templates = [
-        "We are looking for a {tech} developer with experience in {tech2}. Must have knowledge of {tech3}, {tech4}.",
-        "Position requires expertise in {tech}, {tech2}. Familiarity with {tech3} is preferred. Experience with {tech4} is a plus.",
-        "Seeking candidate with strong background in {tech}. Should be proficient in {tech2}, {tech3}. Knowledge of {tech4} required."
+    # Answers
+    answer_good = [
+        "I have extensive experience with {tech}. In my last project, I implemented a {tech2} based solution that improved latency by 40%. I also ensured code quality using {tech3}.",
+        "My approach to {tech} involves understanding the underlying architecture. For instance, when using {tech2}, I optimized the database queries using {tech3} which resulted in significant performance gains."
     ]
-    
-    # Answer templates
-    answer_templates = [
-        "I have experience with {tech} through my projects. For example, I used {tech} to build a system that {description}.",
-        "In my previous role, I worked extensively with {tech}. This involved {description}. I learned {concept} which helped me understand {tech2} better.",
-        "I'm familiar with {tech} and have applied it in several projects. One instance was when I {description}. This taught me {concept}."
+    answer_bad = [
+        "I know {tech}.",
+        "I used {tech} once.",
+        "It is good.",
+        "maybe {tech} is okay."
     ]
     
     resumes = []
-    jds = []
+    resume_labels = [] # [skills_score (0-1), exp_score (0-1), edu_score (0-1)] + 99 skill binary flags
+    
     answers = []
+    answer_scores = [] # 0-100
     
+    jds = []
+
     for i in range(num_samples):
-        # Generate resume
+        # --- Generate Resume Data ---
         techs = random.sample(tech_terms, 5)
-        resume = random.choice(resume_templates).format(
-            tech=techs[0], tech2=techs[1], tech3=techs[2], 
-            tech4=techs[3], tech5=techs[4] if len(techs) > 4 else techs[0]
-        )
-        resumes.append(resume)
         
-        # Generate JD
-        jd_techs = random.sample(tech_terms, 4)
-        jd = random.choice(jd_templates).format(
-            tech=jd_techs[0], tech2=jd_techs[1], tech3=jd_techs[2], tech4=jd_techs[3]
-        )
-        jds.append(jd)
+        if random.random() > 0.5:
+            # Good/Senior Resume
+            text = random.choice(resume_good).format(
+                tech=techs[0], tech2=techs[1], tech3=techs[2], tech4=techs[3], tech5=techs[4]
+            )
+            # High scores
+            exp_score = random.uniform(0.8, 1.0)
+            edu_score = random.uniform(0.7, 1.0)
+            skills = np.zeros(100)
+            skills[:10] = 1 # Fake "detected skills"
+            
+            label = np.concatenate([skills, [exp_score], [edu_score]])
+        else:
+            # Avg/Junior Resume
+            text = random.choice(resume_avg).format(
+                tech=techs[0], tech2=techs[1], tech3=techs[2]
+            )
+            # Lower scores
+            exp_score = random.uniform(0.2, 0.5)
+            edu_score = random.uniform(0.3, 0.6)
+            skills = np.zeros(100)
+            skills[:3] = 1
+            
+            label = np.concatenate([skills, [exp_score], [edu_score]])
+            
+        resumes.append(text)
+        resume_labels.append(label)
+
+        # --- Generate Answer Data ---
+        if random.random() > 0.5:
+            # Good Answer
+            ans_techs = random.sample(tech_terms, 3)
+            ans_text = random.choice(answer_good).format(
+                tech=ans_techs[0], tech2=ans_techs[1], tech3=ans_techs[2]
+            )
+            ans_score = random.uniform(80, 100)
+        else:
+            # Bad Answer
+            ans_tech = random.choice(tech_terms)
+            ans_text = random.choice(answer_bad).format(tech=ans_tech)
+            ans_score = random.uniform(10, 40)
+            
+        answers.append(ans_text)
+        answer_scores.append([ans_score])
         
-        # Generate answer
-        answer_techs = random.sample(tech_terms, 2)
-        answer = random.choice(answer_templates).format(
-            tech=answer_techs[0],
-            tech2=answer_techs[1] if len(answer_techs) > 1 else answer_techs[0],
-            description=f"implemented a feature that improved performance by {random.randint(10, 50)}%",
-            concept=random.choice(['scalability', 'optimization', 'best practices', 'design patterns'])
-        )
-        answers.append(answer)
-    
+        # --- Generate JD (Placeholder) ---
+        jds.append(f"Looking for {techs[0]} developer.")
+
     return {
         'resumes': resumes,
+        'resume_labels': np.array(resume_labels),
         'jds': jds,
-        'answers': answers
+        'answers': answers,
+        'answer_scores': np.array(answer_scores)
     }
 
 
-def generate_synthetic_audio_features(num_samples=1000, feature_dim=193) -> np.ndarray:
-    """Generate synthetic audio features"""
-    # Simulate MFCC, chroma, mel features
+
+def generate_synthetic_voice_data(num_samples=1000, feature_dim=193) -> Dict:
+    """Generate correlated synthetic voice data"""
+    # Create features where specific indices correlate with specific labels
     features = np.random.rand(num_samples, feature_dim).astype(np.float32)
     
-    # Normalize to realistic ranges
-    # MFCC features typically range from -50 to 50
-    features[:, :13] = (features[:, :13] - 0.5) * 100
+    # Define correlations
+    # Feature 0-9: Fluency (Higher is better)
+    # Feature 10-19: Grammar
+    # Feature 20-29: Tone
     
-    # Chroma features range from 0 to 1
-    features[:, 13:25] = features[:, 13:25]
+    # We'll make the "signal" features stronger than the noise
+    fluency_signal = np.mean(features[:, 0:10], axis=1) # 0-1
+    grammar_signal = np.mean(features[:, 10:20], axis=1)
+    tone_signal = np.mean(features[:, 20:30], axis=1)
     
-    # Mel features are positive
-    features[:, 25:45] = features[:, 25:45] * 10
-    
-    return features
-
-
-def generate_synthetic_emotion_images(num_samples=1000, img_size=48) -> np.ndarray:
-    """Generate synthetic emotion images (simulates FER2013)"""
-    images = np.random.rand(num_samples, 1, img_size, img_size).astype(np.float32)
-    # Normalize
-    images = (images - 0.5) / 0.5
-    return images
-
-
-def generate_synthetic_personality_data(num_samples=200) -> Dict:
-    """Generate synthetic personality assessment data"""
-    personalities = []
-    
-    for i in range(num_samples):
-        # 4 dimensions, each -1 to 1
-        traits = np.random.rand(4) * 2 - 1
-        personalities.append(traits)
+    labels = {
+        'fluency': fluency_signal * 100, # 0-100
+        'grammar': grammar_signal * 100,
+        'tone': tone_signal * 100,
+        'pace': np.random.normal(70, 10, num_samples), # Normal distribution around 70
+        'filler_words': (1.0 - fluency_signal) * 100, # Inverse of fluency
+        'clarity': (fluency_signal + grammar_signal) / 2 * 100
+    }
     
     return {
-        'traits': np.array(personalities),
-        'labels': ['introvert_extrovert', 'thinker_feeler', 'logical_creative', 'planner_spontaneous']
+        'features': features,
+        'labels': labels
+    }
+
+
+def generate_synthetic_emotion_images(num_samples=1000, img_size=48) -> Dict:
+    """Generate synthetic emotion images with simple shapes"""
+    images = np.zeros((num_samples, 1, img_size, img_size), dtype=np.float32)
+    labels = np.zeros(num_samples, dtype=np.longlong)
+    
+    # 0: Angry (Fill top half)
+    # 1: Disgust (Fill bottom half)
+    # 2: Fear (Fill left half)
+    # 3: Happy (Center square)
+    # 4: Sad (Corner squares)
+    # 5: Surprise (Circle/Ring approx)
+    # 6: Neutral (Empty/Noise)
+    
+    for i in range(num_samples):
+        label = np.random.randint(0, 7)
+        noise = np.random.randn(img_size, img_size) * 0.1
+        
+        if label == 0: # Angry
+            images[i, 0, :img_size//2, :] = 1.0
+        elif label == 1: # Disgust
+            images[i, 0, img_size//2:, :] = 1.0
+        elif label == 2: # Fear
+            images[i, 0, :, :img_size//2] = 1.0
+        elif label == 3: # Happy (Center)
+            images[i, 0, img_size//4:3*img_size//4, img_size//4:3*img_size//4] = 1.0
+        elif label == 4: # Sad (Corners)
+            images[i, 0, :10, :10] = 1.0
+            images[i, 0, -10:, -10:] = 1.0
+        elif label == 5: # Surprise (Edges)
+            images[i, 0, :, 0] = 1.0
+            images[i, 0, :, -1] = 1.0
+            
+        # Add noise
+        images[i, 0] += noise
+        labels[i] = label
+        
+    return {
+        'images': images,
+        'labels': labels
     }
 
 
@@ -143,9 +210,10 @@ def generate_synthetic_placement_data(num_samples=1000) -> Dict:
         weights = np.array([0.15, 0.15, 0.35, 0.25, 0.05, 0.02, 0.02, 0.01, 0.01, 0.01, 0.01])
         base_score = np.dot(feature_vector, weights)
         
-        prob_30 = max(0, min(100, base_score - 20 + np.random.randn() * 5))
-        prob_60 = max(0, min(100, base_score - 5 + np.random.randn() * 5))
-        prob_90 = max(0, min(100, base_score + 10 + np.random.randn() * 5))
+        # Less noise for better training signal
+        prob_30 = max(0, min(100, base_score - 20 + np.random.randn() * 2)) 
+        prob_60 = max(0, min(100, base_score - 5 + np.random.randn() * 2))
+        prob_90 = max(0, min(100, base_score + 10 + np.random.randn() * 2))
         
         features.append(feature_vector)
         labels.append([prob_30, prob_60, prob_90])

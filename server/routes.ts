@@ -6,8 +6,8 @@ import { storage } from "./storage";
 import { isAuthenticated, isAdmin, isStudent, hasRole, registerHandler, loginHandler, logoutHandler } from "./auth";
 import multer from "multer";
 import { z } from "zod";
-import { 
-  insertInterviewSchema, 
+import {
+  insertInterviewSchema,
   insertJobDescriptionSchema,
   COMPANIES,
   type User
@@ -25,14 +25,14 @@ let pdfJsPromise: Promise<any> | null = null;
 async function getPdfJs() {
   if (!pdfJsPromise) {
     // Use legacy build for broader Node compatibility
-    pdfJsPromise = import("pdfjs-dist/legacy/build/pdf.js");
+    pdfJsPromise = import("pdfjs-dist/legacy/build/pdf.mjs");
   }
   return pdfJsPromise;
 }
 
-const upload = multer({ 
+const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024 } 
+  limits: { fileSize: 5 * 1024 * 1024 }
 });
 
 const AI_ANALYSIS_TIMEOUT_MS = 15000;
@@ -62,7 +62,8 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
     if (isPdf) {
       try {
         const pdfjs = await getPdfJs();
-        const loadingTask = pdfjs.getDocument({ data: file.buffer });
+        // pdfjs expects a Uint8Array, not a Node Buffer
+        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(file.buffer) });
         const pdf = await loadingTask.promise;
         let fullText = "";
         const totalPages = pdf.numPages || 0;
@@ -253,13 +254,13 @@ const companyQuestions: Record<string, string[]> = {
 };
 
 const SKILL_LIBRARY = [
-  "JavaScript","TypeScript","Python","Java","C++","C#","Go","Rust","Ruby","PHP","Swift","Kotlin",
-  "HTML","CSS","React","Next.js","Angular","Vue","Svelte","Node.js","Express","NestJS",
-  "SQL","PostgreSQL","MySQL","MongoDB","Redis","DynamoDB","Firebase",
-  "AWS","Azure","GCP","Docker","Kubernetes","Terraform","CI/CD","Git","Linux","Jenkins",
-  "Data Structures","Algorithms","REST APIs","GraphQL","Microservices","Unit Testing",
-  "Machine Learning","Deep Learning","NLP","Computer Vision","TensorFlow","PyTorch","Pandas","NumPy",
-  "Tableau","Power BI","Excel","Figma","UI/UX","Agile","Scrum","Jira","Leadership","Communication"
+  "JavaScript", "TypeScript", "Python", "Java", "C++", "C#", "Go", "Rust", "Ruby", "PHP", "Swift", "Kotlin",
+  "HTML", "CSS", "React", "Next.js", "Angular", "Vue", "Svelte", "Node.js", "Express", "NestJS",
+  "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis", "DynamoDB", "Firebase",
+  "AWS", "Azure", "GCP", "Docker", "Kubernetes", "Terraform", "CI/CD", "Git", "Linux", "Jenkins",
+  "Data Structures", "Algorithms", "REST APIs", "GraphQL", "Microservices", "Unit Testing",
+  "Machine Learning", "Deep Learning", "NLP", "Computer Vision", "TensorFlow", "PyTorch", "Pandas", "NumPy",
+  "Tableau", "Power BI", "Excel", "Figma", "UI/UX", "Agile", "Scrum", "Jira", "Leadership", "Communication"
 ];
 
 function getRandomQuestions(questions: string[], count: number): string[] {
@@ -275,25 +276,29 @@ function getAvatarGender(interviewCount: number): 'male' | 'female' {
 }
 
 async function parseResume(content: string): Promise<{ skills: string[]; experience: any[]; education: any[] }> {
+  // Always prepare fallbacks
+  const fallbackSkills = extractSkillsFallback(content);
+  const fallbackExperience = extractExperienceFallback(content);
+  const fallbackEducation = extractEducationFallback(content);
+
   // Try Python AI service first
   const aiResult = await pythonAI.parseResume(content);
-  
-  if (aiResult) {
-    return {
-      skills: aiResult.skills || [],
-      experience: aiResult.has_experience ? [
-        { title: 'Experience detected', company: 'Various', duration: 'N/A' }
-      ] : [],
-      education: aiResult.has_education ? [
-        { degree: 'Education detected', institution: 'Various', year: 'N/A' }
-      ] : []
-    };
-  }
-  
-  // Fallback to simple parsing
-  const skills = extractSkillsFallback(content);
-  const experience = extractExperienceFallback(content);
-  const education = extractEducationFallback(content);
+
+  // Merge AI + fallbacks, preferring AI when it returns real data
+  const skills = dedupeSuggestions([
+    ...(aiResult?.skills || []),
+    ...fallbackSkills,
+  ]);
+
+  const experience =
+    Array.isArray(aiResult?.experience) && aiResult.experience.length > 0
+      ? aiResult.experience
+      : fallbackExperience;
+
+  const education =
+    Array.isArray(aiResult?.education) && aiResult.education.length > 0
+      ? aiResult.education
+      : fallbackEducation;
 
   return { skills, experience, education };
 }
@@ -302,7 +307,7 @@ async function analyzeJobDescription(description: string, resumeSkills: string[]
   // Try Python AI service first
   const resumeText = `Skills: ${resumeSkills.join(', ')}`;
   const aiResult = await pythonAI.analyzeSkillGap(resumeText, description);
-  
+
   if (aiResult) {
     return {
       requiredSkills: aiResult.required_skills || [],
@@ -310,26 +315,26 @@ async function analyzeJobDescription(description: string, resumeSkills: string[]
       skillGaps: aiResult.skill_gaps || []
     };
   }
-  
+
   // Fallback to simple analysis
   const commonSkills = [
     'JavaScript', 'Python', 'Java', 'React', 'Node.js', 'SQL', 'AWS', 'Docker',
     'Machine Learning', 'Data Analysis', 'Agile', 'Communication', 'Problem Solving'
   ];
-  
-  const requiredSkills = commonSkills.filter(skill => 
+
+  const requiredSkills = commonSkills.filter(skill =>
     description.toLowerCase().includes(skill.toLowerCase()) || Math.random() > 0.6
   ).slice(0, 8);
 
-  const matchedSkills = requiredSkills.filter(skill => 
+  const matchedSkills = requiredSkills.filter(skill =>
     resumeSkills.some(rs => rs.toLowerCase() === skill.toLowerCase())
   );
 
-  const matchScore = requiredSkills.length > 0 
-    ? (matchedSkills.length / requiredSkills.length) * 100 
+  const matchScore = requiredSkills.length > 0
+    ? (matchedSkills.length / requiredSkills.length) * 100
     : 50;
 
-  const skillGaps = requiredSkills.filter(skill => 
+  const skillGaps = requiredSkills.filter(skill =>
     !resumeSkills.some(rs => rs.toLowerCase() === skill.toLowerCase())
   );
 
@@ -348,7 +353,7 @@ async function evaluateAnswer(answer: string, question?: string): Promise<{ scor
   // Simple relevance: count overlapping keywords between question and answer
   let relevanceScore = 0;
   if (question) {
-    const stopwords = new Set(["the","a","an","and","or","but","if","in","on","at","to","for","of","is","are","am","you","your","why","what","how","who","when","where","i","me","my"]);
+    const stopwords = new Set(["the", "a", "an", "and", "or", "but", "if", "in", "on", "at", "to", "for", "of", "is", "are", "am", "you", "your", "why", "what", "how", "who", "when", "where", "i", "me", "my"]);
     const qTokens = question
       .toLowerCase()
       .replace(/[^a-z0-9\s]/g, " ")
@@ -447,7 +452,7 @@ async function calculatePlacementProbability(
     personalityThinkerFeeler: personality?.thinkerFeeler || 0,
     personalityLogicalCreative: personality?.logicalCreative || 0
   });
-  
+
   if (aiResult) {
     const factors = {
       technical: technicalScore,
@@ -456,7 +461,7 @@ async function calculatePlacementProbability(
       confidence: emotionScore,
       market: 70 + Math.random() * 20,
     };
-    
+
     return {
       prob30: aiResult.probability_30_days || 50,
       prob60: aiResult.probability_60_days || 50,
@@ -464,7 +469,7 @@ async function calculatePlacementProbability(
       factors,
     };
   }
-  
+
   // Fallback to simple calculation
   const baseScore = (
     technicalScore * 0.35 +
@@ -490,34 +495,92 @@ async function calculatePlacementProbability(
   };
 }
 
+// Regex to identify section headers even if they are inline (double space or newline)
+const SECTION_HEADER_PATTERN = /(?:^|\n|\s{2,})(?:technical skills|skills|tech stack|technologies|tools|languages|projects?|experience|work experience|education|summary|certifications|achievements)\b/i;
+
 function extractSkillsFallback(content: string): string[] {
-  const skillsMatch = content.match(/skills?\s*[:\-]?\s*([\s\S]{0,600})/i);
-  const section = skillsMatch ? skillsMatch[1] : content.slice(0, 1000);
-  return section
-    .split(/[\n,•;,\t]+/)
-    .map(skill => skill.replace(/[-–•]/g, '').trim())
+  // Broader pattern to find the start of the skills section
+  const skillsMatch = content.match(/(?:technical skills|skills|tech stack|technologies|tools|languages|core competencies)\s*[:\-]?\s*([\s\S]{0,1000})/i);
+  let section = skillsMatch ? skillsMatch[1] : content.slice(0, 1500);
+
+  // Stop at the next major section header
+  // format: newline OR double space followed by common headers
+  const stopMatch = section.match(SECTION_HEADER_PATTERN);
+  if (stopMatch && stopMatch.index !== undefined && stopMatch.index > 5) { // Ensure we don't validly stop at the header we just matched
+    section = section.slice(0, stopMatch.index);
+  }
+
+  const rawItems = section
+    .split(/[\n,;•\t]+/)
+    .map((skill) => skill.replace(/[-–•]/g, '').trim())
     .filter(Boolean)
-    .filter(skill => skill.length <= 50);
+    .filter((skill) => skill.length <= 50);
+
+  const librarySet = new Set(SKILL_LIBRARY.map((s) => s.toLowerCase()));
+  const isLikelySkill = (value: string) => {
+    const lower = value.toLowerCase();
+    if (lower.length < 2 || lower.length > 50) return false;
+    if (/^(india|guntur|andhra pradesh|programs|resources|experience|summary|education)$/i.test(value)) return false;
+    if (librarySet.has(lower)) return true;
+    return /(js|javascript|typescript|react|node|express|python|java|sql|postgres|mysql|docker|kubernetes|aws|azure|gcp|firebase|linux|git|ci\/cd|system design|api|rest|graphql|llm|nlp|rag)/i.test(lower);
+  };
+
+  const seen = new Set<string>();
+  const normalized: string[] = [];
+  for (const item of rawItems) {
+    // Handling "FrontEnd: React, Vue" format where splitting didn't catch the colon
+    const subParts = item.split(':').map(s => s.trim()).filter(Boolean);
+    for (const part of subParts) {
+      if (!isLikelySkill(part)) continue;
+      const key = part.toLowerCase();
+      if (seen.has(key)) continue;
+      seen.add(key);
+      normalized.push(part);
+    }
+  }
+
+  // If the skills section was missing or yielded too few, scan the whole doc for known skills
+  if (normalized.length < 4) {
+    const lowerContent = content.toLowerCase();
+    for (const skill of SKILL_LIBRARY) {
+      const lowerSkill = skill.toLowerCase();
+      if (seen.has(lowerSkill)) continue;
+      if (lowerContent.includes(lowerSkill)) {
+        seen.add(lowerSkill);
+        normalized.push(skill);
+      }
+    }
+  }
+
+  return normalized;
 }
 
 function extractExperienceFallback(content: string): Array<{ title?: string; company?: string; duration?: string }> {
-  const experienceMatch = content.match(/(experience|work experience|professional experience)([\s\S]{0,1200})/i);
+  const experienceMatch = content.match(/(experience|work experience|professional experience)([\s\S]{0,1500})/i);
   if (!experienceMatch) return [];
-  const block = experienceMatch[2];
+  let block = experienceMatch[2];
+
+  // Try to carve out until the next section
+  const stopMatch = block.match(SECTION_HEADER_PATTERN);
+  if (stopMatch && stopMatch.index !== undefined) {
+    block = block.slice(0, stopMatch.index);
+  }
+
   const entries = block
-    .split(/\n\s*\n/)
-    .map(entry => entry.trim())
+    .split(/[\n•]+/)
+    .map((entry) => entry.trim())
     .filter(Boolean)
     .slice(0, 4);
 
-  return entries.map(entry => {
-    const lines = entry.split('\n').map(l => l.trim()).filter(Boolean);
-    const title = lines[0];
-    const companyLine = lines.find(line => /(at|@)/i.test(line));
+  return entries.map((entry) => {
     const durationMatch = entry.match(/\b(\d{4}\s?(?:-|to)\s?(Present|\d{4})|Present|\d+\s?(months?|years?))/i);
+    // Heuristic: first sentence/line as title, next capitalized token as company
+    const lines = entry.split(/[.;]\s+|\n/).map(l => l.trim()).filter(Boolean);
+    const title = lines[0]?.slice(0, 120);
+    const companyCandidate = lines.length > 1 ? lines[1] : undefined;
     return {
       title,
-      company: companyLine ? companyLine.replace(/.*?(?:at|@)\s*/i, '') : undefined,
+      company: companyCandidate,
       duration: durationMatch ? durationMatch[0] : undefined,
     };
   });
@@ -526,7 +589,23 @@ function extractExperienceFallback(content: string): Array<{ title?: string; com
 function extractEducationFallback(content: string): Array<{ degree?: string; institution?: string; year?: string }> {
   const eduMatch = content.match(/(education|academic background|qualifications)([\s\S]{0,800})/i);
   if (!eduMatch) return [];
-  const block = eduMatch[2];
+  let block = eduMatch[2];
+
+  // More aggressive stop for Education to prevent running into Skills
+  // Allows single space if followed by strong header keywords, especially all-caps or typical next sections
+  const strictStopPattern = /[\s\r\n]+(?:SKILLS?|TECHNICAL SKILLS?|TECH STACK|TECHNOLOGIES|TOOLS|LANGUAGES|PROJECTS?|EXPERIENCE|WORK EXPERIENCE|SUMMARY|CERTIFICATIONS|ACHIEVEMENTS)\b/i;
+
+  const stopMatch = block.match(strictStopPattern);
+  if (stopMatch && stopMatch.index !== undefined) {
+    block = block.slice(0, stopMatch.index);
+  } else {
+    // Fallback: Check for "SKILLS" specifically if it's attached to the line end (common PDF artifact)
+    const artifactStop = block.search(/\s+SKILLS\b/);
+    if (artifactStop > -1) {
+      block = block.slice(0, artifactStop);
+    }
+  }
+
   const entries = block
     .split(/\n\s*\n/)
     .map(entry => entry.trim())
@@ -534,9 +613,16 @@ function extractEducationFallback(content: string): Array<{ degree?: string; ins
     .slice(0, 3);
 
   return entries.map(entry => {
-    const lines = entry.split('\n').map(l => l.trim()).filter(Boolean);
-    const degree = lines[0];
-    const institution = lines[1];
+    const lines = entry
+      .split(/\n|(?:\s{2,})/)
+      .map(l => l.trim())
+      .filter(Boolean);
+
+    // Filter out lines that are clearly skills/strengths/etc.
+    const filtered = lines.filter(l => !/^(technical skills|skills|tech stack|technologies|technology|strengths|hobbies|languages|personal profile|declaration)/i.test(l));
+
+    const degree = filtered[0];
+    const institution = filtered[1];
     const yearMatch = entry.match(/\b(20\d{2}|19\d{2})\b/);
     return {
       degree,
@@ -774,7 +860,8 @@ function paraphraseSuggestion(text: string, seedSource: string): string {
 
 function shouldKeepSuggestion(text: string, features: ResumeFeatures): boolean {
   const lower = text.toLowerCase();
-  if (features.hasPortfolioLink && /portfolio|github|online profile|website/.test(lower)) {
+  const alreadyHasLinks = features.hasPortfolioLink || features.hasGithub || (features.links?.length ?? 0) > 0;
+  if (alreadyHasLinks && /portfolio|github|online profile|website|link/.test(lower)) {
     return false;
   }
   if (features.hasLinkedIn && /linkedin/.test(lower)) {
@@ -794,7 +881,7 @@ const evergreenSuggestionPool: string[] = [
 const genericSuggestionPool: Array<{ text: string; condition: (features: ResumeFeatures) => boolean }> = [
   {
     text: "Include links to GitHub, portfolio, or relevant online profiles near the top of your resume.",
-    condition: (features) => !features.hasPortfolioLink,
+    condition: (features) => !(features.hasPortfolioLink || features.hasGithub || (features.links?.length ?? 0) > 0),
   },
   {
     text: "Add clear, quantified achievements (numbers, percentages, or impact) for your key roles.",
@@ -885,25 +972,22 @@ function detectLayoutIssues(content: string): LayoutIssueReport {
   const leadingSpaceLines = lines.filter((line) => /^ {4,}\S/.test(line)).length;
 
   const reasons: string[] = [];
-  if (whitespaceRatio > 0.68) {
+  if (whitespaceRatio > 0.85) {
     reasons.push("Resume text contains excessive whitespace which makes parsing unreliable.");
   }
-  if (repeatedSpaces > 80) {
+  if (repeatedSpaces > 300) {
     reasons.push("Large blocks of spaces are being used for layout alignment.");
   }
-  if (tabCount > 40) {
+  if (tabCount > 200) {
     reasons.push("Too many tab characters detected; they often break ATS parsing.");
   }
-  if (longLineCount > Math.max(6, Math.floor(lines.length * 0.25))) {
+  if (longLineCount > Math.max(20, Math.floor(lines.length * 0.6))) {
     reasons.push("Several lines exceed 140 characters, indicating misaligned columns.");
   }
-  if (blankLineCount > Math.max(20, Math.floor(lines.length * 0.35))) {
+  if (blankLineCount > Math.max(50, Math.floor(lines.length * 0.5))) {
     reasons.push("Excessive blank lines reduce readability and cause spacing issues.");
   }
-  if (multiSpaceLineCount > Math.max(25, Math.floor(lines.length * 0.35))) {
-    reasons.push("Multiple lines rely on large runs of spaces for alignment; switch to single spaces or bullet formats.");
-  }
-  if (leadingSpaceLines > Math.max(20, Math.floor(lines.length * 0.3))) {
+  if (leadingSpaceLines > Math.max(50, Math.floor(lines.length * 0.5))) {
     reasons.push("Detected many lines starting with large indentations, suggesting layout alignment problems.");
   }
 
@@ -912,7 +996,9 @@ function detectLayoutIssues(content: string): LayoutIssueReport {
 }
 
 function extractLinks(content: string): { links: string[]; hasPortfolioLink: boolean; hasGithub: boolean; hasLinkedIn: boolean } {
-  const urlPattern = /(?:https?:\/\/)?[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}(?:\/[^\s)\]]*)?/gi;
+  // Capture http/https links plus bare domains (with or without www)
+  const urlPattern = /\b(?:https?:\/\/)?(?:www\.)?[a-z0-9][a-z0-9-_.]*\.[a-z]{2,}(?:\/[^\s)\]]*)?/gim;
+  // Capture LinkedIn short handles (e.g., "in/username")
   const handlePattern = /\bin\/[a-z0-9-_.]+/gi;
 
   const explicitLinks = content.match(urlPattern) || [];
@@ -920,22 +1006,54 @@ function extractLinks(content: string): { links: string[]; hasPortfolioLink: boo
 
   const combined = [...explicitLinks, ...handleLinks].map((link) => link.replace(/[.,)]$/, ''));
 
+  // Normalize and dedupe
   const uniqueLinks: string[] = [];
   const seen = new Set<string>();
   for (const raw of combined) {
     if (!raw || raw.length < 4) continue;
-    const normalized = raw.toLowerCase().replace(/^https?:\/\//, '');
+    const normalized = raw.trim().toLowerCase().replace(/^https?:\/\//, '');
     if (seen.has(normalized)) continue;
     seen.add(normalized);
-    uniqueLinks.push(raw);
+    uniqueLinks.push(raw.trim());
   }
 
   const lowerContent = content.toLowerCase();
-  const hasLinkedIn = uniqueLinks.some((link) => /linkedin\.com\/in\//i.test(link)) || /\blinkedin\.com|in\/[a-z0-9-_.]+/i.test(lowerContent);
-  const hasGithub = uniqueLinks.some((link) => /github\.com|gitlab\.com/i.test(link)) || /\bgithub\.com/i.test(lowerContent);
+  const portfolioHosts = [
+    "vercel.app",
+    "netlify.app",
+    "github.io",
+    "gitlab.io",
+    "notion.site",
+    "behance.net",
+    "dribbble.com",
+    "codepen.io",
+    "stackblitz.com",
+    "hashnode.dev",
+    "medium.com",
+    "dev.to",
+    "pages.dev",
+    "render.com",
+    "surge.sh",
+  ];
+
+  const hasLinkedIn =
+    uniqueLinks.some((link) => /linkedin\.com\/in\//i.test(link)) ||
+    /\blinkedin\.com|in\/[a-z0-9-_.]+/i.test(lowerContent);
+
+  const hasGithub =
+    uniqueLinks.some((link) => /github\.com|gitlab\.com|bitbucket\.org/i.test(link)) ||
+    /\bgithub\.com|gitlab\.com|bitbucket\.org|github\.io\b/i.test(lowerContent);
+
   const hasPortfolioLink =
-    uniqueLinks.length > 0 ||
-    /\b(portfolio|vercel\.app|netlify\.app|notion\.site|behance\.net|dribbble\.com|codepen\.io|stackblitz\.com|hashnode\.dev|medium\.com)\b/i.test(lowerContent);
+    uniqueLinks.some((link) => {
+      const lower = link.toLowerCase();
+      return (
+        portfolioHosts.some((host) => lower.includes(host)) ||
+        /portfolio|resume site|personal site|devfolio/.test(lower)
+      );
+    }) ||
+    portfolioHosts.some((host) => lowerContent.includes(host)) ||
+    /\bportfolio\b/.test(lowerContent);
 
   return { links: uniqueLinks, hasPortfolioLink, hasGithub, hasLinkedIn };
 }
@@ -1005,15 +1123,15 @@ async function analyzePersonality(responses: any[]): Promise<{
   const responseTexts = responses
     .filter(r => r && (typeof r === 'string' || r.userAnswer))
     .map(r => typeof r === 'string' ? r : r.userAnswer || '');
-  
+
   // Try Python AI service first
   if (responseTexts.length > 0) {
     const aiResult = await pythonAI.analyzePersonality(responseTexts);
-    
+
     if (aiResult) {
       const dominantTraits = aiResult.dominant_traits || [];
       const summary = `Your personality profile shows a ${dominantTraits.slice(0, 2).join(" and ").toLowerCase() || "balanced"} approach to work and problem-solving.`;
-      
+
       return {
         introvertExtrovert: aiResult.introvert_extrovert || 0,
         thinkerFeeler: aiResult.thinker_feeler || 0,
@@ -1024,7 +1142,7 @@ async function analyzePersonality(responses: any[]): Promise<{
       };
     }
   }
-  
+
   // Fallback to random
   const introvertExtrovert = (Math.random() * 2) - 1;
   const thinkerFeeler = (Math.random() * 2) - 1;
@@ -1058,11 +1176,11 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   app.get('/api/ai/health', isAuthenticated, isAdmin, async (req, res) => {
     try {
       const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8000';
-      
+
       // Try health endpoint first (with longer timeout for LLM check)
       const healthController = new AbortController();
       const healthTimeout = setTimeout(() => healthController.abort(), 10000); // 10 second timeout
-      
+
       let response = await fetch(`${PYTHON_AI_SERVICE_URL}/health`, {
         method: 'GET',
         headers: { 'Content-Type': 'application/json' },
@@ -1071,14 +1189,14 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         clearTimeout(healthTimeout);
         return null;
       });
-      
+
       clearTimeout(healthTimeout);
-      
+
       // If health endpoint fails or times out, try root endpoint as fallback
       if (!response || !response.ok) {
         const rootController = new AbortController();
         const rootTimeout = setTimeout(() => rootController.abort(), 2000);
-        
+
         response = await fetch(`${PYTHON_AI_SERVICE_URL}/`, {
           method: 'GET',
           headers: { 'Content-Type': 'application/json' },
@@ -1087,10 +1205,10 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           clearTimeout(rootTimeout);
           return null;
         });
-        
+
         clearTimeout(rootTimeout);
       }
-      
+
       if (response && response.ok) {
         let data;
         try {
@@ -1099,7 +1217,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           // If not JSON, service is running but health endpoint might be different
           data = { status: 'running', message: 'Service is running' };
         }
-        
+
         // Check if it's the health endpoint response (has llm_status)
         if (data.llm_status !== undefined) {
           res.json({
@@ -1213,7 +1331,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const aiContent = sanitizedFullText.slice(0, MAX_AI_CONTENT_LENGTH);
       const parseContent = sanitizedFullText.slice(0, MAX_PARSE_CONTENT_LENGTH);
       const defaultParsed = { skills: [], experience: [], education: [] };
-      
+
       // Kick-off parsing + AI analysis concurrently with timeouts
       const parsePromise = withTimeout(
         parseResume(parseContent),
@@ -1230,14 +1348,14 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       const [aiAnalysis, parsedResult] = await Promise.all([aiAnalysisPromise, parsePromise]);
       const { skills: parsedSkills, experience, education } = parsedResult || defaultParsed;
-      
+
       // Get AI-powered resume analysis FIRST (includes skills extraction)
       let overallScore = 60 + Math.random() * 30;
       let suggestions: string[] = [];
       let strengths: string[] = [];
       let improvements: string[] = [];
       let aiSkills: string[] = [];
-      
+
       if (aiAnalysis) {
         overallScore = aiAnalysis.score || overallScore;
         suggestions = aiAnalysis.suggestions || [];
@@ -1334,7 +1452,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const resume = await storage.createResume({
         userId,
         fileName: file.originalname,
-          parsedData: { 
+        parsedData: {
           raw: sanitizedFullText.substring(0, RAW_RESUME_STORE_LENGTH),
           aiAnalysis: aiAnalysis?.analysis || null,
           suggestions: suggestions.length > 0 ? suggestions : [],
@@ -1350,7 +1468,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         education,
         overallScore,
       });
-      
+
       console.log(`Resume created: Skills=${finalSkills.length}, Suggestions=${suggestions.length}, Score=${overallScore}`);
 
       res.json(resume);
@@ -1404,22 +1522,22 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           // Continue with basic analysis
         }
       }
-      
+
       const resumeInsights = (resume?.parsedData as any)?.insights?.features as ResumeFeatures | undefined;
-      
+
       if (jdSuggestions.length < 3) {
         const fallback = buildJdFallbackSuggestions(skillGaps, resumeSkills, resumeInsights, title || company || "this role");
         jdSuggestions = dedupeSuggestions([...jdSuggestions, ...fallback]);
       }
-      
+
       if (jdStrengths.length === 0) {
         jdStrengths = buildJdStrengthHighlights(requiredSkills, resumeSkills);
       }
-      
+
       if (jdImprovements.length === 0) {
         jdImprovements = buildJdImprovements(skillGaps);
       }
-      
+
       if (jdSuggestions.length > 8) {
         jdSuggestions = jdSuggestions.slice(0, 8);
       }
@@ -1500,7 +1618,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     try {
       const userId = req.userId;
       const user = await storage.getUser(userId);
-      
+
       // Admin can see all interviews, students only see their own
       if (user?.role === 'admin') {
         const allInterviews = await storage.getAllInterviews();
@@ -1534,11 +1652,11 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       // Admin creates interview for a specific student
       const { studentId, type, types, difficulty, company } = req.body;
       const userId = studentId; // Use the student's ID, not admin's ID
-      
+
       if (!userId) {
         return res.status(400).json({ message: "Student ID is required" });
       }
-      
+
       // Verify the student exists
       const student = await storage.getUser(userId);
       if (!student || student.role !== 'student') {
@@ -1546,12 +1664,12 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       }
 
       // Support both old (single type) and new (multiple types) format
-      const interviewTypes: string[] = types && Array.isArray(types) && types.length > 0 
-        ? types 
+      const interviewTypes: string[] = types && Array.isArray(types) && types.length > 0
+        ? types
         : (type ? [type] : ['technical']); // Fallback to technical if nothing provided
-      
+
       const difficultyLevel: 'easy' | 'medium' | 'hard' = difficulty || 'medium';
-      
+
       // Validate types
       const validTypes = ['technical', 'hr', 'behavioral', 'project', 'gd', 'company'];
       const filteredTypes = interviewTypes.filter(t => validTypes.includes(t));
@@ -1568,7 +1686,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       // Check Python AI service health
       const pythonHealth = await fetch(`${process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8000'}/health`).catch(() => null);
       const useLLM = pythonHealth && pythonHealth.ok;
-      
+
       if (useLLM) {
         console.log(`Python AI service is available, generating 10 LLM questions for types: ${filteredTypes.join(', ')}, difficulty: ${difficultyLevel}`);
       } else {
@@ -1579,28 +1697,28 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const totalQuestions = 10;
       const questionsPerType = Math.floor(totalQuestions / filteredTypes.length);
       const remainder = totalQuestions % filteredTypes.length;
-      
+
       // Optimize: Use more static questions, fewer LLM calls for speed
       // Generate only 1-2 LLM questions per type, rest from static pool
       const maxLLMQuestionsPerType = 1; // Reduced for faster generation
-      
+
       // Helper function to get static questions for a type
-  const getStaticPool = (questionType: string, options?: { preferCAndDb?: boolean }): string[] => {
+      const getStaticPool = (questionType: string, options?: { preferCAndDb?: boolean }): string[] => {
         switch (questionType) {
           case 'technical':
-        if (options?.preferCAndDb) {
-          return [
-            ...technicalCLanguageQuestions,
-            ...technicalDatabaseQuestions,
-            ...technicalQuestions,
-          ];
-        }
-        return [
-          ...technicalQuestions,
-          ...technicalPythonQuestions,
-          ...technicalCLanguageQuestions,
-          ...technicalDatabaseQuestions,
-        ];
+            if (options?.preferCAndDb) {
+              return [
+                ...technicalCLanguageQuestions,
+                ...technicalDatabaseQuestions,
+                ...technicalQuestions,
+              ];
+            }
+            return [
+              ...technicalQuestions,
+              ...technicalPythonQuestions,
+              ...technicalCLanguageQuestions,
+              ...technicalDatabaseQuestions,
+            ];
           case 'hr':
             return hrQuestions;
           case 'behavioral':
@@ -1621,7 +1739,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         const count = questionsPerType + (index < remainder ? 1 : 0);
         const questions: string[] = [];
         const preferCAndDbForType = questionType === 'technical' && preferTechnicalCAndDb;
-        
+
         try {
           if (questionType === 'gd') {
             // GD only needs 1 topic
@@ -1642,7 +1760,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
             const staticPool = getStaticPool(questionType, { preferCAndDb: preferCAndDbForType });
             const llmCount = useLLM ? Math.min(maxLLMQuestionsPerType, Math.max(1, Math.floor(count / 2))) : 0;
             const staticCount = count - llmCount;
-            
+
             // Generate LLM questions in parallel with timeout (8 seconds per question)
             const llmPromises = useLLM ? Array(llmCount).fill(0).map(() => {
               const contextHint = preferCAndDbForType
@@ -1651,32 +1769,32 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
               const questionPromise = questionType === 'company' && company
                 ? pythonAI.generateQuestion('company', company, contextHint, difficultyLevel)
                 : pythonAI.generateQuestion(questionType, undefined, contextHint, difficultyLevel);
-              
+
               return Promise.race([
                 questionPromise.catch(() => null),
                 new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
               ]);
             }) : [];
-            
+
             const llmResults = await Promise.all(llmPromises);
             const validLLMQuestions = llmResults.filter((q): q is string => typeof q === 'string' && q.trim() !== '');
-            
+
             // Fill rest with static questions
             const staticQuestions = getRandomQuestions(staticPool, staticCount + (llmCount - validLLMQuestions.length));
-            
+
             questions.push(...validLLMQuestions, ...staticQuestions);
           }
         } catch (error) {
           console.error(`Error generating questions for type ${questionType}:`, error);
           // Fallback to static questions
-              const staticPool = getStaticPool(questionType, { preferCAndDb: preferCAndDbForType });
+          const staticPool = getStaticPool(questionType, { preferCAndDb: preferCAndDbForType });
           if (questionType === 'gd') {
             questions.push(...getRandomQuestions(staticPool, 1));
           } else {
             questions.push(...getRandomQuestions(staticPool, count));
           }
         }
-        
+
         return questions;
       });
 
@@ -1736,7 +1854,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       });
 
       // Batch create interview questions in parallel for better performance
-      const dbQuestionPromises = allQuestions.map((question, index) => 
+      const dbQuestionPromises = allQuestions.map((question, index) =>
         storage.createInterviewQuestion({
           interviewId: interview.id,
           question: question,
@@ -1751,7 +1869,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       res.json(interview);
     } catch (error: any) {
       console.error("Error creating interview:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to create interview",
         error: error?.message || String(error)
       });
@@ -1763,28 +1881,28 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     try {
       const interviewId = req.params.id;
       const userId = req.userId;
-      
+
       const interview = await storage.getInterviewById(interviewId);
       if (!interview) {
         return res.status(404).json({ message: "Interview not found" });
       }
-      
+
       // Verify student owns this interview
       if (interview.userId !== userId) {
         return res.status(403).json({ message: "You can only start your own interviews" });
       }
-      
+
       // Only allow starting if status is pending
       if (interview.status !== 'pending') {
         return res.status(400).json({ message: `Interview is already ${interview.status}` });
       }
-      
+
       // Update interview status to in_progress
       const updatedInterview = await storage.updateInterview(interviewId, {
         status: 'in_progress',
         startedAt: new Date(),
       });
-      
+
       res.json(updatedInterview);
     } catch (error) {
       console.error("Error starting interview:", error);
@@ -1796,7 +1914,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     try {
       const interviewId = req.params.id;
       const userId = req.userId;
-      
+
       // Get user role - check multiple sources with fallback
       let userRole = req.userRole || req.user?.role;
       if (!userRole && userId) {
@@ -1805,22 +1923,22 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         userRole = user?.role;
       }
       const isAdminUser = userRole === 'admin';
-      
+
       console.log(`[Questions] User ID: ${userId}, Role: ${userRole}, Is Admin: ${isAdminUser}`);
       console.log(`[Questions] req.userRole: ${req.userRole}, req.user?.role: ${req.user?.role}`);
-      
+
       // Get interview to check status
       const interview = await storage.getInterviewById(interviewId);
       if (!interview) {
         return res.status(404).json({ message: "Interview not found" });
       }
-      
+
       console.log(`[Questions] Interview owner: ${interview.userId}, Interview status: ${interview.status}`);
-      
+
       // Verify student owns this interview OR user is admin
       if (interview.userId !== userId && !isAdminUser) {
         console.log(`[Questions] Access denied - User ${userId} (role: ${userRole}) does not own interview ${interviewId}`);
-        return res.status(403).json({ 
+        return res.status(403).json({
           message: "Access denied",
           debug: {
             userId,
@@ -1830,23 +1948,23 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           }
         });
       }
-      
+
       // Only return questions if interview is in_progress or completed (or if admin)
       // Students can access questions once interview is started
       if (interview.status === 'pending' && !isAdminUser) {
         return res.status(400).json({ message: "Interview not started yet. Please join the interview first." });
       }
-      
+
       // Allow access if interview is in_progress or completed
       if (interview.status !== 'pending' || isAdminUser) {
         const questions = await storage.getQuestionsByInterviewId(interviewId);
         console.log(`[Questions] Returning ${questions.length} questions for interview ${interviewId}`);
         return res.json(questions);
       }
-      
+
       // Should not reach here, but just in case
       return res.status(400).json({ message: "Interview not started yet." });
-      
+
       const questions = await storage.getQuestionsByInterviewId(interviewId);
       console.log(`[Questions] Returning ${questions.length} questions for interview ${interviewId}`);
       res.json(questions);
@@ -1931,7 +2049,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       })();
     } catch (error: any) {
       console.error("Error submitting answer:", error);
-      res.status(500).json({ 
+      res.status(500).json({
         message: "Failed to submit answer",
         error: error?.message || String(error)
       });
@@ -1945,7 +2063,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       const questions = await storage.getQuestionsByInterviewId(interviewId);
       const answeredQuestions = questions.filter(q => q.userAnswer);
-      
+
       const avgScore = answeredQuestions.length > 0
         ? answeredQuestions.reduce((acc, q) => acc + (q.score || 0), 0) / answeredQuestions.length
         : 50;
@@ -1975,7 +2093,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       const resume = await storage.getResumeByUserId(userId);
       const resumeScore = resume?.overallScore || 50;
-      
+
       // Get JD score if available
       const jds = await storage.getJobDescriptionsByUserId(userId);
       const jdScore = jds.length > 0 ? (jds[0].matchScore || 50) : 50;
@@ -2065,10 +2183,10 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           }
         });
       }
-      
+
       // Call Python AI service
       const result = await pythonAI.analyzeEmotion(req.file.buffer);
-      
+
       if (result) {
         return res.json({ success: true, data: result });
       } else {

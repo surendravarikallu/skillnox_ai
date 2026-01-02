@@ -88,7 +88,11 @@ function InterviewCard({ interview }: { interview: Interview }) {
         <div>
           <div className="flex items-center gap-2">
             <span className="font-medium capitalize">{interview.type} Interview</span>
-            {interview.company && <Badge variant="outline" size="sm">{interview.company}</Badge>}
+            {interview.company && (
+              <Badge variant="outline" className="px-2 py-0.5 text-xs">
+                {interview.company}
+              </Badge>
+            )}
           </div>
           <div className="flex items-center gap-2 text-sm text-muted-foreground">
             <Calendar className="w-3 h-3" />
@@ -103,7 +107,9 @@ function InterviewCard({ interview }: { interview: Interview }) {
         </div>
       </div>
       <div className="flex items-center gap-3">
-        <Badge className={getStatusColor(interview.status)} size="sm">{interview.status.replace('_', ' ')}</Badge>
+        <Badge className={`${getStatusColor(interview.status)} px-2 py-0.5 text-xs`}>
+          {interview.status.replace('_', ' ')}
+        </Badge>
         {interview.overallScore !== null && (
           <span className="font-semibold text-lg" data-testid={`text-interview-score-${interview.id}`}>
             {Math.round(interview.overallScore)}%

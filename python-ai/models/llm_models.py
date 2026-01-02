@@ -21,15 +21,14 @@ import os
 class LocalLLM:
     """Wrapper for local LLM models"""
     
-    def __init__(self, model_name: str = "Qwen/Qwen2.5-0.5B-Instruct", device: str = "cpu"):
+    def __init__(self, model_name: str = "Qwen/Qwen2.5-1.5B-Instruct", device: str = "cpu"):
         """
-        Initialize local LLM with memory-efficient model
+        Initialize local LLM with performance-optimized model
         
-        Options for model_name:
-        - "Qwen/Qwen2.5-0.5B-Instruct" (0.5B, ~1GB, best memory efficiency, recommended)
-        - "Qwen/Qwen2.5-1.5B-Instruct" (1.5B, ~3GB, better quality)
-        - "TinyLlama/TinyLlama-1.1B-Chat-v1.0" (1.1B, ~2.3GB, fast)
-        - "microsoft/Phi-3-mini-4k-instruct" (3.8B, ~7.5GB, requires more RAM)
+        Options:
+        - "Qwen/Qwen2.5-1.5B-Instruct" (1.5B, ~1.5GB VRAM with 4-bit, Best local balance)
+        - "Qwen/Qwen2.5-3B-Instruct" (3B, ~2.5GB VRAM with 4-bit, Smarter but slower)
+        - "Qwen/Qwen2.5-0.5B-Instruct" (0.5B, Very fast but less smart)
         """
         self.device = device
         self.model_name = model_name
@@ -44,39 +43,42 @@ class LocalLLM:
                 trust_remote_code=True
             )
             
-            # Add padding token if not present
             if self.tokenizer.pad_token is None:
                 self.tokenizer.pad_token = self.tokenizer.eos_token
             
-            # Load model with memory-efficient settings
-            # Qwen2.5 models support efficient quantization
+            # Load model with smart quantization logic
             try:
-                if device == "cpu":
-                    # For CPU, use float32 with low_cpu_mem_usage for memory efficiency
+                if device == "cuda":
+                    print("Loading with 4-bit quantization for GPU...")
+                    bnb_config = BitsAndBytesConfig(
+                        load_in_4bit=True,
+                        bnb_4bit_quant_type="nf4",
+                        bnb_4bit_compute_dtype=torch.float16,
+                        bnb_4bit_use_double_quant=True,
+                    )
+                    self.model = AutoModelForCausalLM.from_pretrained(
+                        model_name,
+                        quantization_config=bnb_config,
+                        device_map="auto",
+                        trust_remote_code=True
+                    )
+                else:
+                    # CPU optimization
+                    print("Loading for CPU execution...")
                     self.model = AutoModelForCausalLM.from_pretrained(
                         model_name,
                         torch_dtype=torch.float32,
                         trust_remote_code=True,
                         low_cpu_mem_usage=True
-                    )
-                    self.model = self.model.to(device)
-                else:
-                    # For GPU, use float16 for efficiency
-                    self.model = AutoModelForCausalLM.from_pretrained(
-                        model_name,
-                        torch_dtype=torch.float16,
-                        device_map="auto",
-                        trust_remote_code=True,
-                        low_cpu_mem_usage=True
-                    )
+                    ).to(device)
             except Exception as e:
-                print(f"Warning: Could not load model: {e}")
-                # Fallback to standard loading
+                print(f"Quantization/Loading failed ({e}), falling back to standard loading...")
                 self.model = AutoModelForCausalLM.from_pretrained(
                     model_name,
                     torch_dtype=torch.float32,
                     trust_remote_code=True,
-                    low_cpu_mem_usage=True
+                    low_cpu_mem_usage=True,
+                    device_map="auto" if device == "cuda" else None
                 )
                 if device == "cpu":
                     self.model = self.model.to(device)
@@ -254,12 +256,14 @@ class LocalLLM:
     
     def evaluate_answer(self, question: str, answer: str) -> Dict:
         """Evaluate answer using LLM"""
-        prompt = f"""Evaluate this interview answer and provide:
-1. A score from 0-100
-2. Brief feedback
-
+        prompt = f"""You are an expert interviewer. Evaluate the following answer critically.
+        
 Question: {question}
-Answer: {answer}
+Candidate Answer: {answer}
+
+Provide a structured evaluation:
+1. Score (0-100): Be strict. 0-40 for poor/irrelevant, 40-60 for average/generic, 60-80 for good, 80-100 for exceptional.
+2. Feedback: 2-3 sentences max. Highlight what was good and exactly what was missing.
 
 Evaluation:"""
         
@@ -545,7 +549,7 @@ class LightweightLLM:
 # Global LLM instance
 _llm_instance = None
 
-def get_llm(model_name: str = "Qwen/Qwen2.5-0.5B-Instruct", use_lightweight: bool = False) -> LocalLLM:
+def get_llm(model_name: str = "Qwen/Qwen2.5-1.5B-Instruct", use_lightweight: bool = False) -> LocalLLM:
     """Get or create LLM instance with memory-efficient model
     
     Args:
@@ -565,7 +569,7 @@ def get_llm(model_name: str = "Qwen/Qwen2.5-0.5B-Instruct", use_lightweight: boo
             # For fine-tuned models, we need to load base model and adapter
             try:
                 from peft import PeftModel
-                base_model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+                base_model_name = "Qwen/Qwen2.5-1.5B-Instruct"
                 base_model = AutoModelForCausalLM.from_pretrained(
                     base_model_name,
                     torch_dtype=torch.float32,
@@ -601,11 +605,11 @@ def get_llm(model_name: str = "Qwen/Qwen2.5-0.5B-Instruct", use_lightweight: boo
             except ImportError:
                 print("Warning: peft not installed. Cannot load fine-tuned model.")
                 print("Install with: pip install peft")
-                model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+                model_name = "Qwen/Qwen2.5-1.5B-Instruct"
             except Exception as e:
                 print(f"Warning: Could not load fine-tuned model: {e}")
                 print("Falling back to base model...")
-                model_name = "Qwen/Qwen2.5-0.5B-Instruct"
+                model_name = "Qwen/Qwen2.5-1.5B-Instruct"
     
     if _llm_instance is None:
         if use_lightweight:

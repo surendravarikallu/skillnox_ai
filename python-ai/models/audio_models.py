@@ -211,6 +211,42 @@ class AudioFeatureExtractor:
         return np.array(features, dtype=np.float32)
 
 
+class AudioTranscriber:
+    """Audio transcription using Faster Whisper"""
+    
+    def __init__(self, model_size="tiny.en", device="cpu"):
+        self.device = device
+        self.model_size = model_size
+        self.model = None
+        
+    def _load_model(self):
+        if self.model is None:
+            try:
+                from faster_whisper import WhisperModel
+                compute_type = "float16" if self.device == "cuda" else "int8"
+                self.model = WhisperModel(self.model_size, device=self.device, compute_type=compute_type)
+            except Exception as e:
+                print(f"Error loading Whisper model: {e}")
+                
+    def transcribe(self, audio_array: np.ndarray) -> str:
+        """Transcribe audio array to text"""
+        self._load_model()
+        if self.model is None:
+            return ""
+            
+        try:
+            # Faster Whisper expects float32 array
+            if audio_array.dtype != np.float32:
+                audio_array = audio_array.astype(np.float32)
+                
+            segments, info = self.model.transcribe(audio_array, beam_size=5)
+            transcript = " ".join([segment.text for segment in segments])
+            return transcript.strip()
+        except Exception as e:
+            print(f"Transcription error: {e}")
+            return ""
+
+
 class VoiceAnalysisService:
     """Complete voice analysis service"""
     
@@ -223,6 +259,7 @@ class VoiceAnalysisService:
         
         self.model.eval()
         self.feature_extractor = AudioFeatureExtractor()
+        self.transcriber = AudioTranscriber(device="cuda" if torch.cuda.is_available() else "cpu")
         
         # Common filler words
         self.filler_words = ['um', 'uh', 'er', 'ah', 'like', 'you know', 'actually', 'basically']
@@ -237,36 +274,15 @@ class VoiceAnalysisService:
         with torch.no_grad():
             scores = self.model(features_tensor)
         
-        # Extract scores
-        result = {
-            'fluency': float(scores['fluency'].cpu().numpy()[0]),
-            'grammar': float(scores['grammar'].cpu().numpy()[0]),
-            'tone': float(scores['tone'].cpu().numpy()[0]),
-            'pace': float(scores['pace'].cpu().numpy()[0]),
-            'filler_words': float(scores['filler_words'].cpu().numpy()[0]),
-            'clarity': float(scores['clarity'].cpu().numpy()[0])
-        }
-        
-        # If transcript provided, analyze filler words
-        if transcript:
-            filler_count = sum(transcript.lower().count(word) for word in self.filler_words)
-            word_count = len(transcript.split())
-            filler_ratio = (filler_count / word_count * 100) if word_count > 0 else 0
-            result['filler_word_count'] = filler_count
-            result['filler_word_ratio'] = filler_ratio
-            # Adjust filler word score based on actual count
-            result['filler_words'] = max(0, 100 - filler_ratio * 2)
-        
-        # Calculate overall voice score
-        result['overall_voice_score'] = np.mean([
-            result['fluency'],
-            result['grammar'],
-            result['tone'],
-            result['pace'],
-            result['clarity']
-        ])
-        
-        return result
+        # Helper to generate transcript if missing
+        if not transcript:
+            try:
+                y, _ = librosa.load(audio_path, sr=16000)
+                transcript = self.transcriber.transcribe(y)
+            except Exception as e:
+                print(f"Auto-transcription failed: {e}")
+
+        return self._format_results(scores, transcript)
     
     def analyze_audio_array(self, audio_array: np.ndarray, sr: int = 22050, transcript: str = None) -> Dict:
         """Analyze audio from numpy array"""
@@ -275,14 +291,27 @@ class VoiceAnalysisService:
         
         with torch.no_grad():
             scores = self.model(features_tensor)
+            
+        if not transcript:
+            # Resample for Whisper (16kHz)
+            try:
+                y_16k = librosa.resample(audio_array, orig_sr=sr, target_sr=16000)
+                transcript = self.transcriber.transcribe(y_16k)
+            except Exception as e:
+                print(f"Auto-transcription failed: {e}")
         
+        return self._format_results(scores, transcript)
+
+    def _format_results(self, scores, transcript):
+        """Format analysis results"""
         result = {
             'fluency': float(scores['fluency'].cpu().numpy()[0]),
             'grammar': float(scores['grammar'].cpu().numpy()[0]),
             'tone': float(scores['tone'].cpu().numpy()[0]),
             'pace': float(scores['pace'].cpu().numpy()[0]),
             'filler_words': float(scores['filler_words'].cpu().numpy()[0]),
-            'clarity': float(scores['clarity'].cpu().numpy()[0])
+            'clarity': float(scores['clarity'].cpu().numpy()[0]),
+            'transcript': transcript or ""
         }
         
         if transcript:
