@@ -14,7 +14,7 @@ export async function apiRequest(
 ): Promise<Response> {
   const token = localStorage.getItem("token");
   const headers: Record<string, string> = data ? { "Content-Type": "application/json" } : {};
-  
+
   if (token) {
     headers["Authorization"] = `Bearer ${token}`;
   }
@@ -35,39 +35,41 @@ export const getQueryFn: <T>(options: {
   on401: UnauthorizedBehavior;
 }) => QueryFunction<T> =
   ({ on401: unauthorizedBehavior }) =>
-  async ({ queryKey }) => {
-    const token = localStorage.getItem("token");
-    const headers: Record<string, string> = {};
-    
-    if (token) {
-      headers["Authorization"] = `Bearer ${token}`;
-    }
+    async ({ queryKey }) => {
+      const token = localStorage.getItem("token");
+      const headers: Record<string, string> = {};
 
-    const res = await fetch(queryKey.join("/") as string, {
-      credentials: "include",
-      headers,
-    });
+      if (token) {
+        headers["Authorization"] = `Bearer ${token}`;
+      }
 
-    if (unauthorizedBehavior === "returnNull" && res.status === 401) {
-      localStorage.removeItem("token");
-      return null;
-    }
+      const res = await fetch(queryKey.join("/") as string, {
+        credentials: "include",
+        headers,
+      });
 
-    await throwIfResNotOk(res);
-    return await res.json();
-  };
+      if (unauthorizedBehavior === "returnNull" && res.status === 401) {
+        localStorage.removeItem("token");
+        return null;
+      }
+
+      await throwIfResNotOk(res);
+      return await res.json();
+    };
 
 export const queryClient = new QueryClient({
   defaultOptions: {
     queries: {
       queryFn: getQueryFn({ on401: "throw" }),
-      refetchInterval: false,
-      refetchOnWindowFocus: false,
-      staleTime: Infinity,
-      retry: false,
+      // Optimized caching strategy
+      staleTime: 5 * 60 * 1000, // 5 minutes - data considered fresh
+      gcTime: 10 * 60 * 1000, // 10 minutes - keep unused data in cache
+      retry: 1, // Retry once on failure
+      refetchOnWindowFocus: false, // Don't refetch on every window focus
+      refetchOnMount: true, // Refetch on component mount if stale
     },
     mutations: {
-      retry: false,
+      retry: 1,
     },
   },
 });

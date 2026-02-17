@@ -1,11 +1,15 @@
 import { Button } from "@/components/ui/button";
+import { AnimatedButton } from "@/components/ui/animated-button";
 import { Card, CardContent } from "@/components/ui/card";
-import { 
-  Brain, 
-  FileText, 
-  Users, 
-  BarChart3, 
-  Mic, 
+import { GlassCard } from "@/components/ui/glass-card";
+import { ThemeToggle } from "@/components/theme-toggle";
+import { motion } from "framer-motion";
+import {
+  Brain,
+  FileText,
+  Users,
+  BarChart3,
+  Mic,
   Camera,
   Target,
   Sparkles,
@@ -57,7 +61,7 @@ const stats = [
 
 export default function Landing() {
   return (
-    <div className="min-h-screen bg-background">
+    <div className="min-h-screen bg-background relative">
       <nav className="fixed top-0 w-full bg-background/80 backdrop-blur-md border-b border-border z-50">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16 gap-4">
@@ -67,37 +71,57 @@ export default function Landing() {
               </div>
               <span className="text-xl font-semibold" data-testid="text-logo">Skillnox AI</span>
             </div>
-            <Button 
-              onClick={() => window.location.href = '/login'}
-              data-testid="button-login-nav"
-            >
-              Get Started
-              <ArrowRight className="w-4 h-4 ml-2" />
-            </Button>
+            <div className="flex items-center gap-2">
+              <ThemeToggle />
+              <Button
+                onClick={() => window.location.href = '/login'}
+                data-testid="button-login-nav"
+              >
+                Get Started
+                <ArrowRight className="w-4 h-4 ml-2" />
+              </Button>
+            </div>
           </div>
         </div>
       </nav>
 
-      <section className="pt-32 pb-20 px-4">
+      <section className="pt-32 pb-20 px-4 relative z-10">
         <div className="max-w-7xl mx-auto text-center">
-          <div className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.6 }}
+            className="inline-flex items-center gap-2 bg-primary/10 text-primary px-4 py-2 rounded-full text-sm font-medium mb-6"
+          >
             <Sparkles className="w-4 h-4" />
             Skillnox AI · Campus hiring preparation suite
-          </div>
-          
-          <h1 className="text-4xl md:text-6xl font-bold tracking-tight mb-6" data-testid="text-hero-title">
+          </motion.div>
+
+
+          <motion.h1
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.2 }}
+            className="text-4xl md:text-6xl font-bold tracking-tight mb-6"
+            data-testid="text-hero-title"
+          >
             Turn Students Into
             <br />
-            <span className="text-primary">Industry‑Ready Hires</span>
-          </h1>
-          
+            <span className="bg-gradient-to-r from-indigo-500 via-purple-500 to-cyan-400 bg-clip-text text-transparent">Industry‑Ready Hires</span>
+          </motion.h1>
+
           <p className="text-lg text-muted-foreground max-w-2xl mx-auto mb-10">
             Skillnox AI is your institute’s virtual placement lab: AI‑driven technical & HR interviews,
             resume intelligence, and actionable analytics so every student can walk into real interviews with confidence.
           </p>
 
-          <div className="flex flex-col sm:flex-row gap-4 justify-center">
-            <Button 
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.7, delay: 0.6 }}
+            className="flex flex-col sm:flex-row gap-4 justify-center"
+          >
+            <Button
               size="lg"
               onClick={() => window.location.href = '/login'}
               className="text-base"
@@ -120,39 +144,57 @@ export default function Landing() {
             >
               View capabilities
             </Button>
-          </div>
+          </motion.div>
 
           <div className="grid grid-cols-2 md:grid-cols-4 gap-6 mt-16 max-w-3xl mx-auto">
-            {stats.map((stat) => (
-              <div key={stat.label} className="text-center">
-                <div className="text-3xl font-bold text-primary" data-testid={`text-stat-${stat.label.toLowerCase().replace(/\s+/g, '-')}`}>{stat.value}</div>
+            {stats.map((stat, index) => (
+              <motion.div
+                key={stat.label}
+                initial={{ opacity: 0, scale: 0.5 }}
+                animate={{ opacity: 1, scale: 1 }}
+                transition={{ duration: 0.5, delay: 0.8 + index * 0.1 }}
+                className="text-center"
+              >
+                <div className="text-3xl font-bold bg-gradient-to-r from-indigo-500 to-purple-500 bg-clip-text text-transparent" data-testid={`text-stat-${stat.label.toLowerCase().replace(/\s+/g, '-')}`}>{stat.value}</div>
                 <div className="text-sm text-muted-foreground">{stat.label}</div>
-              </div>
+              </motion.div>
             ))}
           </div>
         </div>
       </section>
 
-      <section id="capabilities-section" className="py-20 px-4 bg-muted/30">
+      <section id="capabilities-section" className="py-20 px-4 bg-muted/30 relative z-10">
         <div className="max-w-7xl mx-auto">
-          <div className="text-center mb-16">
+          <motion.div
+            initial={{ opacity: 0, y: 20 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="text-center mb-16"
+          >
             <h2 className="text-3xl font-bold mb-4" data-testid="text-features-title">One Platform For End‑To‑End Interview Readiness</h2>
             <p className="text-muted-foreground max-w-2xl mx-auto">
               Comprehensive AI tools to help you prepare for every aspect of the interview process
             </p>
-          </div>
+          </motion.div>
 
           <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6">
-            {features.map((feature) => (
-              <Card key={feature.title} className="hover-elevate transition-all">
-                <CardContent className="p-6">
-                  <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center mb-4">
-                    <feature.icon className="w-6 h-6 text-primary" />
+            {features.map((feature, index) => (
+              <motion.div
+                key={feature.title}
+                initial={{ opacity: 0, y: 30 }}
+                whileInView={{ opacity: 1, y: 0 }}
+                viewport={{ once: true }}
+                transition={{ duration: 0.5, delay: index * 0.1 }}
+              >
+                <GlassCard variant="solid" className="h-full p-6 hover:scale-[1.02] transition-transform duration-300">
+                  <div className="w-12 h-12 rounded-lg bg-gradient-to-br from-indigo-500 to-purple-500 flex items-center justify-center mb-4">
+                    <feature.icon className="w-6 h-6 text-white" />
                   </div>
                   <h3 className="text-lg font-semibold mb-2" data-testid={`text-feature-${feature.title.toLowerCase().replace(/\s+/g, '-')}`}>{feature.title}</h3>
                   <p className="text-muted-foreground text-sm">{feature.description}</p>
-                </CardContent>
-              </Card>
+                </GlassCard>
+              </motion.div>
             ))}
           </div>
         </div>
@@ -169,8 +211,8 @@ export default function Landing() {
 
           <div className="flex flex-wrap justify-center gap-4">
             {companies.map((company) => (
-              <div 
-                key={company} 
+              <div
+                key={company}
                 className="px-6 py-3 bg-card border border-card-border rounded-lg font-medium text-sm"
                 data-testid={`text-company-${company.toLowerCase()}`}
               >
@@ -185,7 +227,7 @@ export default function Landing() {
         <div className="max-w-7xl mx-auto">
           <div className="grid lg:grid-cols-2 gap-12 items-center">
             <div>
-            <h2 className="text-3xl font-bold mb-6" data-testid="text-how-it-works-title">How Skillnox AI Fits Into Your Training</h2>
+              <h2 className="text-3xl font-bold mb-6" data-testid="text-how-it-works-title">How Skillnox AI Fits Into Your Training</h2>
               <div className="space-y-6">
                 {[
                   { step: "1", title: "Onboard Your Students", desc: "Bulk import student rosters with roll numbers and branches in a few clicks." },
@@ -245,7 +287,7 @@ export default function Landing() {
                   </div>
                 </div>
                 <div className="text-center lg:text-right">
-                  <Button 
+                  <Button
                     size="lg"
                     variant="secondary"
                     onClick={() => window.location.href = '/login'}
@@ -279,6 +321,6 @@ export default function Landing() {
           </div>
         </div>
       </footer>
-    </div>
+    </div >
   );
 }

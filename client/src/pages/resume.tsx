@@ -113,7 +113,7 @@ export default function ResumePage() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
-    if (file && (file.type === 'application/pdf' || file.type.includes('document'))) {
+    if (file && (file.type === 'application/pdf' || file.type.includes('document') || file.name.endsWith('.docx') || file.name.endsWith('.doc'))) {
       uploadResumeMutation.mutate(file);
     }
   }, [uploadResumeMutation]);
@@ -224,7 +224,7 @@ export default function ResumePage() {
 
                   <div>
                     <Label className="block mb-2">Update Resume</Label>
-                    <div 
+                    <div
                       className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
                       onDrop={handleDrop}
                       onDragOver={(e) => e.preventDefault()}
@@ -251,7 +251,7 @@ export default function ResumePage() {
                   </div>
                 </div>
               ) : (
-                <div 
+                <div
                   className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
                   onDrop={handleDrop}
                   onDragOver={(e) => e.preventDefault()}
@@ -360,8 +360,8 @@ export default function ResumePage() {
                   <Target className="w-5 h-5" />
                   Job Descriptions
                 </CardTitle>
-                <Button 
-                  variant="outline" 
+                <Button
+                  variant="outline"
                   size="sm"
                   onClick={() => setShowJdForm(!showJdForm)}
                   data-testid="button-add-jd"
@@ -406,15 +406,15 @@ export default function ResumePage() {
                     />
                   </div>
                   <div className="flex gap-2">
-                    <Button 
+                    <Button
                       onClick={handleAddJd}
                       disabled={addJdMutation.isPending}
                       data-testid="button-save-jd"
                     >
                       {addJdMutation.isPending ? 'Analyzing...' : 'Analyze & Save'}
                     </Button>
-                    <Button 
-                      variant="outline" 
+                    <Button
+                      variant="outline"
                       onClick={() => setShowJdForm(false)}
                       data-testid="button-cancel-jd"
                     >
@@ -433,8 +433,8 @@ export default function ResumePage() {
               ) : jobDescriptions && jobDescriptions.length > 0 ? (
                 <div className="space-y-4">
                   {jobDescriptions.map((jd) => (
-                    <div 
-                      key={jd.id} 
+                    <div
+                      key={jd.id}
                       className="p-4 border border-border rounded-lg"
                       data-testid={`card-jd-${jd.id}`}
                     >
@@ -446,7 +446,7 @@ export default function ResumePage() {
                           )}
                         </div>
                         {jd.matchScore !== null && (
-                          <Badge 
+                          <Badge
                             variant={jd.matchScore >= 70 ? "default" : "secondary"}
                             className={jd.matchScore >= 70 ? "bg-green-500" : ""}
                           >
@@ -454,7 +454,7 @@ export default function ResumePage() {
                           </Badge>
                         )}
                       </div>
-                      
+
                       {jd.skillGaps && jd.skillGaps.length > 0 && (
                         <div className="mt-3">
                           <p className="text-xs text-muted-foreground mb-1">Skill Gaps:</p>
@@ -531,7 +531,7 @@ export default function ResumePage() {
           {hasResume && jobDescriptions && jobDescriptions.length > 0 && jobDescriptions.map((jd) => {
             const jdData = jd.parsedData as any;
             if (!jdData || !jdData.suggestions || jdData.suggestions.length === 0) return null;
-            
+
             return (
               <Card key={jd.id}>
                 <CardHeader className="pb-2">

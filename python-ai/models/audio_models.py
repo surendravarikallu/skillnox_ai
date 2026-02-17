@@ -214,7 +214,16 @@ class AudioFeatureExtractor:
 class AudioTranscriber:
     """Audio transcription using Faster Whisper"""
     
-    def __init__(self, model_size="tiny.en", device="cpu"):
+    def __init__(self, model_size="small.en", device="cpu"):
+        """
+        Initialize audio transcriber with Whisper
+        
+        Model sizes and accuracy:
+        - tiny.en (39M): ~70% accuracy, very fast
+        - base.en (74M): ~85% accuracy, fast (RECOMMENDED for balance)
+        - small.en (244M): ~90% accuracy, moderate speed
+        - medium.en (769M): ~95% accuracy, slow
+        """
         self.device = device
         self.model_size = model_size
         self.model = None
@@ -223,13 +232,16 @@ class AudioTranscriber:
         if self.model is None:
             try:
                 from faster_whisper import WhisperModel
+                # Use int8 quantization for CPU to save memory while maintaining accuracy
                 compute_type = "float16" if self.device == "cuda" else "int8"
+                print(f"Loading Whisper model: {self.model_size} with compute_type={compute_type}")
                 self.model = WhisperModel(self.model_size, device=self.device, compute_type=compute_type)
+                print("✓ Whisper model loaded successfully")
             except Exception as e:
                 print(f"Error loading Whisper model: {e}")
                 
     def transcribe(self, audio_array: np.ndarray) -> str:
-        """Transcribe audio array to text"""
+        """Transcribe audio array to text with optimized settings"""
         self._load_model()
         if self.model is None:
             return ""
@@ -239,7 +251,14 @@ class AudioTranscriber:
             if audio_array.dtype != np.float32:
                 audio_array = audio_array.astype(np.float32)
                 
-            segments, info = self.model.transcribe(audio_array, beam_size=5)
+            # Use beam_size=7 for better accuracy (vs default 5)
+            # vad_filter helps remove silence for cleaner transcription
+            segments, info = self.model.transcribe(
+                audio_array, 
+                beam_size=7,
+                vad_filter=True,
+                vad_parameters=dict(min_silence_duration_ms=500)
+            )
             transcript = " ".join([segment.text for segment in segments])
             return transcript.strip()
         except Exception as e:

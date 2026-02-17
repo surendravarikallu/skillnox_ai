@@ -6,7 +6,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Progress } from "@/components/ui/progress";
+import { GlassCard } from "@/components/ui/glass-card";
+import { GradientStatCard } from "@/components/dashboard/gradient-stat-card";
+import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
+import { TimelineList, type TimelineItem } from "@/components/dashboard/timeline-list";
+import { ProgressRing } from "@/components/ui/progress-ring";
 import {
   Brain,
   FileText,
@@ -24,114 +28,9 @@ import {
 } from "lucide-react";
 import type { Interview, Resume, PlacementProbability, PersonalityAssessment } from "@shared/schema";
 
-interface ScoreCardProps {
-  title: string;
-  score: number | null;
-  icon: React.ElementType;
-  trend?: number;
-  color: string;
-}
+// ScoreCard component removed and replaced with GradientStatCard
 
-function ScoreCard({ title, score, icon: Icon, trend, color }: ScoreCardProps) {
-  return (
-    <Card className="hover-elevate">
-      <CardContent className="p-6">
-        <div className="flex items-start justify-between gap-4">
-          <div className={`w-12 h-12 rounded-lg flex items-center justify-center ${color}`}>
-            <Icon className="w-6 h-6" />
-          </div>
-          <div className="text-right">
-            <p className="text-sm text-muted-foreground">{title}</p>
-            <p className="text-2xl font-bold" data-testid={`text-score-${title.toLowerCase().replace(/\s+/g, '-')}`}>
-              {score !== null ? `${Math.round(score)}%` : '--'}
-            </p>
-            {trend !== undefined && (
-              <div className={`flex items-center gap-1 text-xs ${trend >= 0 ? 'text-green-600' : 'text-red-600'}`}>
-                <TrendingUp className={`w-3 h-3 ${trend < 0 ? 'rotate-180' : ''}`} />
-                {Math.abs(trend)}% from last
-              </div>
-            )}
-          </div>
-        </div>
-      </CardContent>
-    </Card>
-  );
-}
-
-function InterviewCard({ interview }: { interview: Interview }) {
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'technical': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      case 'hr': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'behavioral': return 'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200';
-      case 'company': return 'bg-orange-100 text-orange-800 dark:bg-orange-900 dark:text-orange-200';
-      case 'gd': return 'bg-pink-100 text-pink-800 dark:bg-pink-900 dark:text-pink-200';
-      case 'project': return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900 dark:text-yellow-200';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
-    }
-  };
-
-  const getStatusColor = (status: string) => {
-    switch (status) {
-      case 'completed': return 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200';
-      case 'in_progress': return 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200';
-      default: return 'bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-200';
-    }
-  };
-
-  return (
-    <div className="flex items-center justify-between p-4 border border-border rounded-lg hover-elevate" data-testid={`card-interview-${interview.id}`}>
-      <div className="flex items-center gap-4">
-        <div className="w-10 h-10 rounded-full bg-primary/10 flex items-center justify-center">
-          <Brain className="w-5 h-5 text-primary" />
-        </div>
-        <div>
-          <div className="flex items-center gap-2">
-            <span className="font-medium capitalize">{interview.type} Interview</span>
-            {interview.company && (
-              <Badge variant="outline" className="px-2 py-0.5 text-xs">
-                {interview.company}
-              </Badge>
-            )}
-          </div>
-          <div className="flex items-center gap-2 text-sm text-muted-foreground">
-            <Calendar className="w-3 h-3" />
-            {new Date(interview.createdAt!).toLocaleDateString()}
-            {interview.duration && (
-              <>
-                <Clock className="w-3 h-3 ml-2" />
-                {Math.round(interview.duration / 60)} min
-              </>
-            )}
-          </div>
-        </div>
-      </div>
-      <div className="flex items-center gap-3">
-        <Badge className={`${getStatusColor(interview.status)} px-2 py-0.5 text-xs`}>
-          {interview.status.replace('_', ' ')}
-        </Badge>
-        {interview.overallScore !== null && (
-          <span className="font-semibold text-lg" data-testid={`text-interview-score-${interview.id}`}>
-            {Math.round(interview.overallScore)}%
-          </span>
-        )}
-        {interview.status === 'pending' || interview.status === 'in_progress' ? (
-          <Link href={`/interview/${interview.id}/room`}>
-            <Button variant="ghost" size="icon" data-testid={`button-view-interview-${interview.id}`}>
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </Link>
-        ) : (
-          <Link href={`/interview/${interview.id}/results`}>
-            <Button variant="ghost" size="icon" data-testid={`button-view-interview-${interview.id}`}>
-              <ChevronRight className="w-5 h-5" />
-            </Button>
-          </Link>
-        )}
-      </div>
-    </div>
-  );
-}
+// InterviewCard component removed and replaced with TimelineList
 
 export default function Dashboard() {
   const { user } = useAuth();
@@ -154,18 +53,18 @@ export default function Dashboard() {
 
   const recentInterviews = interviews?.slice(0, 5) || [];
   const completedInterviews = interviews?.filter(i => i.status === 'completed') || [];
-  
-  const avgTechnical = completedInterviews.length > 0 
-    ? completedInterviews.reduce((acc, i) => acc + (i.technicalScore || 0), 0) / completedInterviews.length 
+
+  const avgTechnical = completedInterviews.length > 0
+    ? completedInterviews.reduce((acc, i) => acc + (i.technicalScore || 0), 0) / completedInterviews.length
     : null;
-  const avgHr = completedInterviews.length > 0 
-    ? completedInterviews.reduce((acc, i) => acc + (i.communicationScore || 0), 0) / completedInterviews.length 
+  const avgHr = completedInterviews.length > 0
+    ? completedInterviews.reduce((acc, i) => acc + (i.communicationScore || 0), 0) / completedInterviews.length
     : null;
-  const avgEmotion = completedInterviews.length > 0 
-    ? completedInterviews.reduce((acc, i) => acc + (i.emotionScore || 0), 0) / completedInterviews.length 
+  const avgEmotion = completedInterviews.length > 0
+    ? completedInterviews.reduce((acc, i) => acc + (i.emotionScore || 0), 0) / completedInterviews.length
     : null;
-  const avgVoice = completedInterviews.length > 0 
-    ? completedInterviews.reduce((acc, i) => acc + (i.voiceScore || 0), 0) / completedInterviews.length 
+  const avgVoice = completedInterviews.length > 0
+    ? completedInterviews.reduce((acc, i) => acc + (i.voiceScore || 0), 0) / completedInterviews.length
     : null;
 
   return (
@@ -205,32 +104,36 @@ export default function Dashboard() {
         </div>
       </div>
 
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <ScoreCard
+      <DashboardGrid columns={4} stagger>
+        <GradientStatCard
           title="Technical Score"
-          score={avgTechnical}
+          value={avgTechnical}
           icon={Brain}
-          color="bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300"
+          gradientFrom="indigo-500"
+          gradientTo="blue-600"
         />
-        <ScoreCard
+        <GradientStatCard
           title="Communication"
-          score={avgHr}
+          value={avgHr}
           icon={Users}
-          color="bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300"
+          gradientFrom="green-500"
+          gradientTo="emerald-600"
         />
-        <ScoreCard
+        <GradientStatCard
           title="Emotion Score"
-          score={avgEmotion}
+          value={avgEmotion}
           icon={Sparkles}
-          color="bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300"
+          gradientFrom="purple-500"
+          gradientTo="pink-600"
         />
-        <ScoreCard
+        <GradientStatCard
           title="Voice Score"
-          score={avgVoice}
+          value={avgVoice}
           icon={Target}
-          color="bg-orange-100 dark:bg-orange-900 text-orange-600 dark:text-orange-300"
+          gradientFrom="cyan-400"
+          gradientTo="blue-500"
         />
-      </div>
+      </DashboardGrid>
 
       <div className="grid lg:grid-cols-3 gap-6">
         <Card className="lg:col-span-2">
@@ -257,11 +160,23 @@ export default function Dashboard() {
                 ))}
               </div>
             ) : recentInterviews.length > 0 ? (
-              <div className="space-y-4">
-                {recentInterviews.map(interview => (
-                  <InterviewCard key={interview.id} interview={interview} />
-                ))}
-              </div>
+              <TimelineList
+                items={recentInterviews.map(interview => ({
+                  id: interview.id!.toString(),
+                  title: `${interview.type} Interview`,
+                  badge: interview.company || undefined,
+                  date: new Date(interview.createdAt!).toLocaleDateString(),
+                  duration: interview.duration ? `${Math.round(interview.duration / 60)} min` : undefined,
+                  score: interview.overallScore ?? undefined,
+                  status: interview.status,
+                  onClick: () => {
+                    const path = interview.status === 'pending' || interview.status === 'in_progress'
+                      ? `/interview/${interview.id}/room`
+                      : `/interview/${interview.id}/results`;
+                    window.location.href = path;
+                  }
+                }))}
+              />
             ) : (
               <div className="text-center py-12">
                 <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
@@ -269,7 +184,7 @@ export default function Dashboard() {
                 </div>
                 <h3 className="font-medium mb-2">No interviews yet</h3>
                 <p className="text-sm text-muted-foreground mb-4">
-                  {user?.role === 'admin' 
+                  {user?.role === 'admin'
                     ? 'Create an interview for a student to get started'
                     : 'Wait for an admin to assign you an interview'}
                 </p>
@@ -302,27 +217,30 @@ export default function Dashboard() {
                   ))}
                 </div>
               ) : placement ? (
-                <div className="space-y-4">
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm">30 Days</span>
-                      <span className="font-semibold" data-testid="text-prob-30">{Math.round(placement.probability30Days || 0)}%</span>
-                    </div>
-                    <Progress value={placement.probability30Days || 0} className="h-2" />
+                <div className="grid grid-cols-3 gap-4">
+                  <div className="flex flex-col items-center">
+                    <ProgressRing
+                      value={placement.probability30Days || 0}
+                      size={80}
+                      strokeWidth={6}
+                    />
+                    <span className="text-sm text-muted-foreground mt-2" data-testid="text-prob-30">30 Days</span>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm">60 Days</span>
-                      <span className="font-semibold" data-testid="text-prob-60">{Math.round(placement.probability60Days || 0)}%</span>
-                    </div>
-                    <Progress value={placement.probability60Days || 0} className="h-2" />
+                  <div className="flex flex-col items-center">
+                    <ProgressRing
+                      value={placement.probability60Days || 0}
+                      size={80}
+                      strokeWidth={6}
+                    />
+                    <span className="text-sm text-muted-foreground mt-2" data-testid="text-prob-60">60 Days</span>
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between mb-2">
-                      <span className="text-sm">90 Days</span>
-                      <span className="font-semibold" data-testid="text-prob-90">{Math.round(placement.probability90Days || 0)}%</span>
-                    </div>
-                    <Progress value={placement.probability90Days || 0} className="h-2" />
+                  <div className="flex flex-col items-center">
+                    <ProgressRing
+                      value={placement.probability90Days || 0}
+                      size={80}
+                      strokeWidth={6}
+                    />
+                    <span className="text-sm text-muted-foreground mt-2" data-testid="text-prob-90">90 Days</span>
                   </div>
                 </div>
               ) : (

@@ -7,7 +7,7 @@ const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://local
 
 function sanitizeGeneratedQuestion(question?: string | null): string | null {
   if (!question) return null;
-  
+
   // Remove common prefixes and filler text - more aggressive cleaning
   let cleaned = question
     // Remove opening phrases (case insensitive, with variations)
@@ -53,17 +53,17 @@ function sanitizeGeneratedQuestion(question?: string | null): string | null {
   }
 
   // If no question mark, take the first substantial sentence that looks like a question
-  const firstSubstantial = sentences.find(s => 
-    s.length > 20 && 
-    (s.toLowerCase().includes('how') || 
-     s.toLowerCase().includes('what') || 
-     s.toLowerCase().includes('why') || 
-     s.toLowerCase().includes('explain') ||
-     s.toLowerCase().includes('describe') ||
-     s.toLowerCase().includes('write') ||
-     s.toLowerCase().includes('implement'))
+  const firstSubstantial = sentences.find(s =>
+    s.length > 20 &&
+    (s.toLowerCase().includes('how') ||
+      s.toLowerCase().includes('what') ||
+      s.toLowerCase().includes('why') ||
+      s.toLowerCase().includes('explain') ||
+      s.toLowerCase().includes('describe') ||
+      s.toLowerCase().includes('write') ||
+      s.toLowerCase().includes('implement'))
   );
-  
+
   if (firstSubstantial) {
     return firstSubstantial.trim();
   }
@@ -74,7 +74,7 @@ function sanitizeGeneratedQuestion(question?: string | null): string | null {
 
 async function callPythonService(endpoint: string, method: 'GET' | 'POST', body?: any, file?: { data: Buffer; filename: string; contentType: string }): Promise<any> {
   const url = `${PYTHON_AI_SERVICE_URL}${endpoint}`;
-  
+
   try {
     let options: RequestInit = {
       method,
@@ -88,11 +88,11 @@ async function callPythonService(endpoint: string, method: 'GET' | 'POST', body?
       // @ts-ignore
       const blob = new Blob([file.data], { type: file.contentType });
       formData.append('file', blob, file.filename);
-      
+
       if (body && body.transcript) {
         formData.append('transcript', body.transcript);
       }
-      
+
       options.body = formData;
       // Don't set Content-Type header - let fetch set it with boundary
     } else if (body) {
@@ -102,8 +102,11 @@ async function callPythonService(endpoint: string, method: 'GET' | 'POST', body?
       options.body = JSON.stringify(body);
     }
 
-    const response = await fetch(url, options);
-    
+    const response = await fetch(url, {
+      ...options,
+      signal: AbortSignal.timeout(60000), // 60 second timeout
+    });
+
     if (!response.ok) {
       const errorText = await response.text();
       console.error(`Python AI service error: ${response.status} - ${errorText}`);
@@ -139,7 +142,7 @@ export async function scoreResume(resumeText: string) {
 
 export async function analyzeResumeWithAI(resumeText: string, jdText?: string) {
   try {
-    const result = await callPythonService('/api/llm/analyze-resume', 'POST', { 
+    const result = await callPythonService('/api/llm/analyze-resume', 'POST', {
       resume_text: resumeText,
       jd_text: jdText || undefined
     });
@@ -159,6 +162,12 @@ export async function evaluateAnswer(answer: string, question?: string) {
   const result = await callPythonService('/api/answer/evaluate', 'POST', { answer, question });
   return result?.data || null;
 }
+
+export async function evaluateCommunication(answer: string, question?: string) {
+  const result = await callPythonService('/api/answer/evaluate-communication', 'POST', { answer, question });
+  return result?.data || null;
+}
+
 
 export async function analyzePersonality(responses: string[]) {
   const result = await callPythonService('/api/personality/analyze', 'POST', { responses });

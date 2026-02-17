@@ -55,51 +55,105 @@ class InferenceService:
         return vocab
     
     def _load_models(self):
-        """Load all trained models"""
-        try:
-            # NLP Models
-            self.resume_parser = ResumeParser().to(self.device)
+        """Initialize model references (lazy load on first access)"""
+        # Models will be loaded on first access via properties
+        self._resume_parser = None
+        self._answer_evaluator = None
+        self._personality_model = None
+        self._emotion_analyzer = None
+        self._voice_analyzer = None
+        self._placement_predictor = None
+        
+        print("✓ Inference service initialized (models will load on demand)")
+    
+    @property
+    def resume_parser(self):
+        """Lazy load resume parser"""
+        if self._resume_parser is None:
+            print("Loading resume parser...")
+            self._resume_parser = ResumeParser().to(self.device)
             resume_parser_path = self.model_dir / 'resume_parser.pth'
             if resume_parser_path.exists():
-                self.resume_parser.load_state_dict(torch.load(resume_parser_path, map_location=self.device))
-            self.resume_parser.eval()
-            
-            self.answer_evaluator = AnswerEvaluator().to(self.device)
+                self._resume_parser.load_state_dict(torch.load(resume_parser_path, map_location=self.device))
+            self._resume_parser.eval()
+        return self._resume_parser
+    
+    @property
+    def answer_evaluator(self):
+        """Lazy load answer evaluator"""
+        if self._answer_evaluator is None:
+            print("Loading answer evaluator...")
+            self._answer_evaluator = AnswerEvaluator().to(self.device)
             answer_eval_path = self.model_dir / 'answer_evaluator.pth'
             if answer_eval_path.exists():
-                self.answer_evaluator.load_state_dict(torch.load(answer_eval_path, map_location=self.device))
-            self.answer_evaluator.eval()
-            
-            self.personality_model = PersonalityModel().to(self.device)
+                self._answer_evaluator.load_state_dict(torch.load(answer_eval_path, map_location=self.device))
+            self._answer_evaluator.eval()
+        return self._answer_evaluator
+    
+    @property
+    def personality_model(self):
+        """Lazy load personality model"""
+        if self._personality_model is None:
+            print("Loading personality model...")
+            self._personality_model = PersonalityModel().to(self.device)
             personality_path = self.model_dir / 'personality_model.pth'
             if personality_path.exists():
-                self.personality_model.load_state_dict(torch.load(personality_path, map_location=self.device))
-            self.personality_model.eval()
-            
-            # Vision Model
+                self._personality_model.load_state_dict(torch.load(personality_path, map_location=self.device))
+            self._personality_model.eval()
+        return self._personality_model
+    
+    @property
+    def emotion_analyzer(self):
+        """Lazy load emotion analyzer"""
+        if self._emotion_analyzer is None:
+            print("Loading emotion analyzer...")
             emotion_model_path = self.model_dir / 'emotion_cnn.pth'
-            self.emotion_analyzer = EmotionAnalyzer(
+            self._emotion_analyzer = EmotionAnalyzer(
                 model_path=str(emotion_model_path) if emotion_model_path.exists() else None,
                 device=str(self.device)
             )
-            
-            # Audio Model
+        return self._emotion_analyzer
+    
+    @property
+    def voice_analyzer(self):
+        """Lazy load voice analyzer"""
+        if self._voice_analyzer is None:
+            print("Loading voice analyzer...")
             voice_model_path = self.model_dir / 'voice_analyzer.pth'
-            self.voice_analyzer = VoiceAnalysisService(
+            self._voice_analyzer = VoiceAnalysisService(
                 model_path=str(voice_model_path) if voice_model_path.exists() else None,
                 device=str(self.device)
             )
-            
-            # ML Model
-            self.placement_predictor = PlacementPredictor(input_features=10).to(self.device)
+        return self._voice_analyzer
+    
+    @property
+    def placement_predictor(self):
+        """Lazy load placement predictor"""
+        if self._placement_predictor is None:
+            print("Loading placement predictor...")
+            self._placement_predictor = PlacementPredictor(input_features=10).to(self.device)
             placement_path = self.model_dir / 'placement_predictor.pth'
             if placement_path.exists():
-                self.placement_predictor.load_state_dict(torch.load(placement_path, map_location=self.device))
-            self.placement_predictor.eval()
-            
-        except Exception as e:
-            print(f"Warning: Could not load some models: {e}")
-            print("Models will use random weights (for testing)")
+                self._placement_predictor.load_state_dict(torch.load(placement_path, map_location=self.device))
+            self._placement_predictor.eval()
+        return self._placement_predictor
+    
+    def cleanup(self):
+        """Explicitly unload models and free memory"""
+        import gc
+        
+        self._resume_parser = None
+        self._answer_evaluator = None
+        self._personality_model = None
+        self._emotion_analyzer = None
+        self._voice_analyzer = None
+        self._placement_predictor = None
+        
+        gc.collect()
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+        
+        print("✓ Models unloaded, memory freed")
     
     def parse_resume(self, resume_text: str) -> Dict:
         """Parse resume and extract information"""

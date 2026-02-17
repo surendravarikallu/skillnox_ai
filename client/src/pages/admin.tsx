@@ -1,4 +1,4 @@
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -25,7 +25,9 @@ import {
   Eye,
   FileText,
   Upload,
-  Rocket
+  Rocket,
+  Pause,
+  Play
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
@@ -68,6 +70,47 @@ export default function AdminPage() {
     queryKey: ["/api/admin/skill-gaps"],
   });
 
+  const { data: settings, isLoading: loadingSettings } = useQuery<Array<{ key: string; value: string }>>({
+    queryKey: ["/api/admin/settings"],
+  });
+
+  const interviewsPaused = settings?.find(s => s.key === 'interviews_paused')?.value === 'true';
+
+  const toggleInterviewsMutation = useMutation({
+    mutationFn: async () => {
+      const newValue = interviewsPaused ? 'false' : 'true';
+      const response = await fetch('/api/admin/settings', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+        },
+        credentials: 'include',
+        body: JSON.stringify({
+          key: 'interviews_paused',
+          value: newValue,
+        }),
+      });
+      if (!response.ok) throw new Error('Failed to update settings');
+      return response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ["/api/admin/settings"] });
+      toast({
+        title: interviewsPaused ? "Interviews resumed" : "Interviews paused",
+        description: interviewsPaused
+          ? "Students can now access interviews"
+          : "All interviews are now paused",
+      });
+    },
+    onError: () => {
+      toast({
+        title: "Error",
+        description: "Failed to update interview status",
+        variant: "destructive",
+      });
+    },
+  });
+
   const filteredStudents =
     students
       ?.filter((student) => {
@@ -107,7 +150,7 @@ export default function AdminPage() {
       year: s.year || 'N/A',
       interviews: s.interviewCount || 0,
     }));
-    
+
     const csv = [
       ['Name', 'Email', 'Department', 'Year', 'Interviews'],
       ...data.map(row => [row.name, row.email, row.department, row.year, row.interviews])
@@ -222,10 +265,20 @@ export default function AdminPage() {
             Overview of student performance and analytics
           </p>
         </div>
-        <Button onClick={handleExport} data-testid="button-export">
-          <Download className="w-4 h-4 mr-2" />
-          Export Report
-        </Button>
+        <div className="flex gap-2">
+          <Button
+            variant={interviewsPaused ? "default" : "destructive"}
+            onClick={() => toggleInterviewsMutation.mutate()}
+            disabled={toggleInterviewsMutation.isPending || loadingSettings}
+          >
+            {interviewsPaused ? <Play className="w-4 h-4 mr-2" /> : <Pause className="w-4 h-4 mr-2" />}
+            {interviewsPaused ? "Resume All Interviews" : "Pause All Interviews"}
+          </Button>
+          <Button onClick={handleExport} data-testid="button-export">
+            <Download className="w-4 h-4 mr-2" />
+            Export Report
+          </Button>
+        </div>
       </div>
 
       <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
@@ -434,9 +487,9 @@ export default function AdminPage() {
                       <span className="text-sm">{gap.skill}</span>
                       <span className="text-sm font-medium">{gap.count} students</span>
                     </div>
-                    <Progress 
-                      value={(gap.count / (skillGaps[0]?.count || 1)) * 100} 
-                      className="h-2" 
+                    <Progress
+                      value={(gap.count / (skillGaps[0]?.count || 1)) * 100}
+                      className="h-2"
                     />
                   </div>
                 ))}

@@ -83,6 +83,16 @@ class LocalLLM:
                 if device == "cpu":
                     self.model = self.model.to(device)
             
+            # Apply dynamic quantization for CPU to save memory
+            if device == "cpu":
+                print("Applying dynamic quantization (int8) to reduce memory usage...")
+                self.model = torch.quantization.quantize_dynamic(
+                    self.model,
+                    {torch.nn.Linear},
+                    dtype=torch.qint8
+                )
+                print("✓ Model quantized successfully! Memory usage reduced by ~75%")
+            
             self.model.eval()
             
             # Create pipeline for easier generation (only if model loaded successfully)
@@ -198,17 +208,75 @@ class LocalLLM:
             if difficulty not in difficulty_guidance:
                 difficulty = 'medium'
             
+            # Chain of Thought Prompt Templates
             prompts = {
-                "technical": f"Generate a {difficulty} technical interview question for a software engineering position. The question should test programming concepts, data structures, or algorithms. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
-                "hr": f"Generate a {difficulty} HR interview question that assesses a candidate's communication skills, motivation, and cultural fit. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
-                "behavioral": f"Generate a {difficulty} behavioral interview question that asks about past experiences and how the candidate handled specific situations. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
-                "project": f"Generate a {difficulty} question about a candidate's project that tests their understanding of architecture, challenges, and technical decisions. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}",
-                "company": f"Generate a {difficulty} company-specific interview question that tests knowledge about the company and role fit. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}"
+                "technical": f"""
+You are an expert technical interviewer.
+Context: {context or "General Software Engineering"}
+Difficulty: {difficulty}
+
+Task: Generate a technical interview question.
+Step 1: Identify a core concept relevant to the context and difficulty.
+Step 2: Formulate a question that tests deep understanding, not just memorization.
+Step 3: Output ONLY the question.
+
+Question:""",
+                "hr": f"""
+You are an expert HR manager.
+Context: {context or "General Interaction"}
+Difficulty: {difficulty}
+
+Task: Generate an HR interview question.
+Step 1: Consider the candidate's potential fit and motivation.
+Step 2: Formulate a question about their soft skills or career goals.
+Step 3: Output ONLY the question.
+
+Question:""",
+                "behavioral": f"""
+You are an expert behavioral interviewer.
+Context: {context or "Professional Experience"}
+Difficulty: {difficulty}
+
+Task: Generate a behavioral question using the STAR method context.
+Step 1: Think of a challenging professional situation.
+Step 2: Formulate a "Tell me about a time..." question.
+Step 3: Output ONLY the question.
+
+Question:""",
+                "project": f"""
+You are a Senior Architect reviewing a candidate's project.
+Context: {context or "Project Review"}
+Difficulty: {difficulty}
+
+Task: Generate a project-specific question.
+Step 1: Focus on architectural decisions or challenges.
+Step 2: Formulate a question that probes *why* certain choices were made.
+Step 3: Output ONLY the question.
+
+Question:""",
+                "company": f"""
+You are a Hiring Manager at {company if 'company' in locals() else 'the company'}.
+Difficulty: {difficulty}
+
+Task: Generate a company-culture fit question.
+Step 1: Consider the company's values and mission.
+Step 2: Formulate a question about how the candidate aligns with these.
+Step 3: Output ONLY the question.
+
+Question:""",
+                "communication": f"""
+You are a Communication Coach.
+Difficulty: {difficulty}
+
+Task: Generate a question to test communication skills.
+Step 1: Think of a complex topic that needs simple explanation.
+Step 2: Formulate a question asking the candidate to explain it to a non-technical audience.
+Step 3: Output ONLY the question.
+
+Question:"""
             }
             
             prompt = prompts.get(question_type, prompts["technical"])
-            if context:
-                prompt += f"\nContext: {context}"
             
             result = self.generate(prompt, max_length=150)
             
@@ -248,6 +316,11 @@ class LocalLLM:
                 "easy": "What do you know about our company?",
                 "medium": "Why do you want to join our company?",
                 "hard": "How do you see yourself contributing to our company's mission?"
+            },
+            "communication": {
+                "easy": "Describe your daily routine from morning to evening.",
+                "medium": "Explain how you would teach someone a skill you're good at.",
+                "hard": "Describe a complex problem you solved and explain it in simple terms."
             }
         }
         
@@ -255,32 +328,54 @@ class LocalLLM:
         return type_questions.get(difficulty, type_questions["medium"])
     
     def evaluate_answer(self, question: str, answer: str) -> Dict:
-        """Evaluate answer using LLM"""
-        prompt = f"""You are an expert interviewer. Evaluate the following answer critically.
-        
+        """Evaluate answer using LLM with strict, detailed criteria"""
+        prompt = f"""You are an expert technical interviewer conducting a rigorous evaluation. Analyze the candidate's answer critically and provide strict, honest feedback.
+
 Question: {question}
 Candidate Answer: {answer}
 
-Provide a structured evaluation:
-1. Score (0-100): Be strict. 0-40 for poor/irrelevant, 40-60 for average/generic, 60-80 for good, 80-100 for exceptional.
-2. Feedback: 2-3 sentences max. Highlight what was good and exactly what was missing.
+Evaluation Criteria:
+1. **Relevance (0-25)**: Does the answer directly address the question asked?
+2. **Technical Accuracy (0-25)**: Are technical concepts explained correctly?
+3. **Depth & Detail (0-25)**: Does the answer show deep understanding with examples?
+4. **Communication (0-25)**: Is the answer well-structured and clearly articulated?
+
+Scoring Guidelines:
+- 0-40: Poor/Irrelevant - Answer misses the point, has major errors, or is too brief
+- 41-60: Below Average - Answer is generic, lacks depth, or has some inaccuracies
+- 61-75: Average - Answer is correct but could be more detailed or specific
+- 76-85: Good - Answer is solid with good examples and clear explanation
+- 86-100: Excellent - Answer is comprehensive, insightful, with real-world examples
+
+Provide evaluation in this format:
+Score: [number 0-100]
+Feedback: [2-3 specific sentences highlighting strengths AND weaknesses]
+
+Be strict but constructive. Focus on what's missing or could be improved.
 
 Evaluation:"""
         
-        evaluation = self.generate(prompt, max_length=150)
+        evaluation = self.generate(prompt, max_length=200)
         
         # Extract score and feedback
-        score = 70  # Default
+        score = 60  # Default to lower score
         feedback = evaluation
         
         # Try to extract score
         import re
-        score_match = re.search(r'\b(\d{1,2}|100)\b', evaluation)
+        score_match = re.search(r'Score:\s*(\d{1,3})', evaluation, re.IGNORECASE)
         if score_match:
             try:
-                score = int(score_match.group(1))
+                extracted_score = int(score_match.group(1))
+                # Ensure score is in valid range
+                score = max(0, min(100, extracted_score))
             except:
                 pass
+        
+        # Extract feedback portion
+        feedback_match = re.search(r'Feedback:\s*(.+?)(?:\n\n|$)', evaluation, re.IGNORECASE | re.DOTALL)
+        if feedback_match:
+            feedback = feedback_match.group(1).strip()
         
         return {
             "score": score,
@@ -302,6 +397,93 @@ Evaluation:"""
         }
         prompt = f"Generate a {difficulty} specific interview question that {company} might ask during their recruitment process. The question should test both technical knowledge and company fit. {difficulty_guidance.get(difficulty, difficulty_guidance['medium'])}"
         return self.generate(prompt, max_length=150)
+    
+    def evaluate_communication(self, answer: str, question: str = None) -> Dict:
+        """Evaluate communication-specific aspects using LLM"""
+        prompt = f"""You are an expert communication evaluator. Analyze this candidate's verbal communication skills critically.
+
+Question: {question or "General communication assessment"}
+Candidate Answer: {answer}
+
+Evaluate the following aspects (0-100 each):
+1. **Clarity (0-100)**: How clear and understandable is the response? Are ideas expressed simply?
+2. **Fluency (0-100)**: How smooth and natural is the speech flow? Any awkward phrasing?
+3. **Tone (0-100)**: Is the tone professional, confident, and appropriate?
+4. **Structure (0-100)**: Is the answer well-organized with logical flow?
+5. **Confidence (0-100)**: Does the candidate sound confident and assured?
+
+Scoring Guidelines:
+- 0-40: Poor - Major issues in this area
+- 41-60: Below Average - Needs significant improvement
+- 61-75: Average - Acceptable but could be better
+- 76-85: Good - Strong performance
+- 86-100: Excellent - Outstanding communication
+
+Provide evaluation in this exact format:
+Clarity: [score 0-100]
+Fluency: [score 0-100]
+Tone: [score 0-100]
+Structure: [score 0-100]
+Confidence: [score 0-100]
+Overall: [average of above scores]
+Feedback: [2-3 specific sentences on communication strengths and areas to improve]
+
+Be strict but constructive. Focus on what could make communication more effective.
+
+Evaluation:"""
+        
+        evaluation = self.generate(prompt, max_length=300)
+        
+        # Extract scores and feedback
+        import re
+        
+        clarity = 60
+        fluency = 60
+        tone = 60
+        structure = 60
+        confidence = 60
+        feedback = evaluation
+        
+        # Try to extract scores
+        clarity_match = re.search(r'Clarity:\s*(\d{1,3})', evaluation, re.IGNORECASE)
+        if clarity_match:
+            clarity = max(0, min(100, int(clarity_match.group(1))))
+        
+        fluency_match = re.search(r'Fluency:\s*(\d{1,3})', evaluation, re.IGNORECASE)
+        if fluency_match:
+            fluency = max(0, min(100, int(fluency_match.group(1))))
+        
+        tone_match = re.search(r'Tone:\s*(\d{1,3})', evaluation, re.IGNORECASE)
+        if tone_match:
+            tone = max(0, min(100, int(tone_match.group(1))))
+        
+        structure_match = re.search(r'Structure:\s*(\d{1,3})', evaluation, re.IGNORECASE)
+        if structure_match:
+            structure = max(0, min(100, int(structure_match.group(1))))
+        
+        confidence_match = re.search(r'Confidence:\s*(\d{1,3})', evaluation, re.IGNORECASE)
+        if confidence_match:
+            confidence = max(0, min(100, int(confidence_match.group(1))))
+        
+        overall = round((clarity + fluency + tone + structure + confidence) / 5)
+        
+        # Extract feedback portion
+        feedback_match = re.search(r'Feedback:\s*(.+?)(?:\n\n|$)', evaluation, re.IGNORECASE | re.DOTALL)
+        if feedback_match:
+            feedback = feedback_match.group(1).strip()
+        
+        return {
+            "clarity": clarity,
+            "fluency": fluency,
+            "tone": tone,
+            "structure": structure,
+            "confidence": confidence,
+            "overall": overall,
+            "score": overall,  # For compatibility
+            "feedback": feedback,
+            "detailed_analysis": evaluation
+        }
+
     
     def analyze_resume(self, resume_text: str, jd_text: Optional[str] = None) -> Dict:
         """Analyze resume using LLM with detailed evaluation and suggestions"""
@@ -471,12 +653,14 @@ Analysis:"""
         # Look for skill patterns (capitalized words, technical terms)
         import re
         # Pattern for potential skills (capitalized words, technical terms)
-        skill_patterns = re.findall(r'\b([A-Z][a-z]+(?:\s+[A-Z][a-z]+)?)\b', text)
+        # Pattern for potential skills (capitalized words, technical terms)
+        # Improved: Catches "C++", "C#", "Node.js", "React.js" and standard capitalized words
+        skill_patterns = re.findall(r'\b([A-Z][a-zA-Z0-9.+]+(?:[.][a-zA-Z0-9]+)?(?:\s+[A-Z][a-zA-Z0-9.+]+)?)\b', text)
         for pattern in skill_patterns:
-            if len(pattern) > 2 and pattern not in found_skills:
+            if len(pattern) > 1 and pattern not in found_skills:
                 # Check if it looks like a skill (not common words)
-                common_words = ['the', 'and', 'for', 'with', 'from', 'this', 'that', 'have', 'been', 'your']
-                if pattern.lower() not in common_words and len(pattern.split()) <= 2:
+                common_words = ['The', 'And', 'For', 'With', 'From', 'This', 'That', 'Have', 'Been', 'Your', 'Work', 'Year', 'Time', 'Team', 'Data', 'User', 'Code']
+                if pattern not in common_words and len(pattern.split()) <= 3:
                     found_skills.append(pattern)
         
         # Remove duplicates and limit

@@ -1,9 +1,10 @@
 import type { Express } from "express";
 import type { Server } from "http";
 import { randomUUID } from "crypto";
-import { createRequire } from "module";
+import path from "path";
+
 import { storage } from "./storage";
-import { isAuthenticated, isAdmin, isStudent, hasRole, registerHandler, loginHandler, logoutHandler } from "./auth";
+import { isAuthenticated, isAdmin, isStudent, hasRole, registerHandler, loginHandler, logoutHandler, comparePassword, hashPassword } from "./auth";
 import multer from "multer";
 import { z } from "zod";
 import {
@@ -13,9 +14,10 @@ import {
   type User
 } from "@shared/schema";
 import * as pythonAI from "./pythonAI";
-import { hashPassword } from "./auth";
 
-const require = createRequire(import.meta.url);
+import mammoth from "mammoth";
+
+
 // Use pdfjs-dist directly (more stable than recent pdf-parse ESM/CJS exports)
 // Suppress TS resolution errors for the legacy build path used by pdfjs-dist
 // eslint-disable-next-line @typescript-eslint/ban-ts-comment
@@ -35,7 +37,7 @@ const upload = multer({
   limits: { fileSize: 5 * 1024 * 1024 }
 });
 
-const AI_ANALYSIS_TIMEOUT_MS = 15000;
+const AI_ANALYSIS_TIMEOUT_MS = 60000;
 const PARSE_TIMEOUT_MS = 10000;
 const SCORE_TIMEOUT_MS = 8000;
 const PDF_CONTENT_WARNING_LENGTH = 15000;
@@ -63,7 +65,10 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
       try {
         const pdfjs = await getPdfJs();
         // pdfjs expects a Uint8Array, not a Node Buffer
-        const loadingTask = pdfjs.getDocument({ data: new Uint8Array(file.buffer) });
+        const loadingTask = pdfjs.getDocument({
+          data: new Uint8Array(file.buffer),
+          standardFontDataUrl: path.resolve(process.cwd(), "node_modules/pdfjs-dist/standard_fonts/")
+        });
         const pdf = await loadingTask.promise;
         let fullText = "";
         const totalPages = pdf.numPages || 0;
@@ -80,7 +85,20 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
         // Fall through to UTF-8 fallback
       }
     }
-    // Fallback for non-PDF or failed parse
+
+    // Check for DOCX
+    const isDocx = file.mimetype === 'application/vnd.openxmlformats-officedocument.wordprocessingml.document' || file.originalname.toLowerCase().endsWith('.docx');
+    if (isDocx) {
+      try {
+        const result = await mammoth.extractRawText({ buffer: file.buffer });
+        const text = result.value.trim();
+        if (text.length > 0) return text;
+      } catch (docxError) {
+        console.error("DOCX parsing failed, falling back to text extraction:", docxError);
+      }
+    }
+
+    // Fallback for non-PDF/DOCX or failed parse
     return file.buffer.toString('utf8');
   } catch (error) {
     console.error("Error extracting text from file:", error);
@@ -141,6 +159,19 @@ const technicalQuestions = [
   "What is the difference between HTTP and HTTPS?",
   "Describe the process of debugging a complex issue in production.",
   "What is version control and why is it important?",
+  "What is the difference between a process and a thread?",
+  "Explain the concept of Deadlock and how to prevent it.",
+  "What is the difference between TCP and UDP?",
+  "Explain the significance of the CAP theorem in distributed systems.",
+  "What is a hash map and how does it verify uniqueness?",
+  "Explain the difference between synchronous and asynchronous programming.",
+  "What is Dependency Injection and why is it useful?",
+  "Explain the concept of a microservices architecture.",
+  "What is the difference between authentication and authorization?",
+  "Explain the concept of recursion with an example.",
+  "What is a closure in programming?",
+  "What is the difference between SQL and NoSQL databases?",
+  "Explain the concept of a Singleton design pattern."
 ];
 
 const technicalCLanguageQuestions = [
@@ -208,48 +239,104 @@ const gdTopics = [
   "Are smartphones beneficial or harmful for students?",
 ];
 
+const communicationQuestions = [
+  "Describe your daily routine from morning to evening in detail.",
+  "Explain how to make your favorite dish step by step.",
+  "Tell me about a recent news event and share your opinion on it.",
+  "Describe your hometown and what makes it special to you.",
+  "Explain a complex technical concept to someone who has no technical background.",
+  "Tell me about a book or movie you enjoyed recently and why you liked it.",
+  "Describe how you would give directions to someone visiting your city for the first time.",
+  "Talk about your favorite hobby and why you enjoy it.",
+  "Explain the process of learning a new skill that you recently acquired.",
+  "Describe a typical day at your college or workplace.",
+];
+
+
 const companyQuestions: Record<string, string[]> = {
   TCS: [
     "What do you know about TCS and its values?",
     "How do you handle multiple projects with conflicting deadlines?",
     "Explain a situation where you had to learn a new technology quickly.",
     "What is your approach to continuous learning?",
+    "Why do you want to start your career with TCS?",
+    "Are you willing to relocate to any location in India?",
+    "What is your understanding of the IT service industry?",
+    "Describe a time you worked in a team. What was your role?",
+    "What are your long-term career goals?",
+    "How do you handle pressure and stress?"
   ],
   Infosys: [
     "What attracts you to Infosys as a company?",
     "Describe your experience with agile methodologies.",
     "How do you ensure quality in your deliverables?",
     "What is your understanding of digital transformation?",
+    "What do you know about Infosys foundation?",
+    "Are you comfortable working in shifts?",
+    "How do you stay updated with the latest technology trends?",
+    "Why should we hire you over other candidates?",
+    "Describe a challenging project you worked on.",
+    "What is your preferred programming language and why?"
   ],
   Wipro: [
     "Why do you want to join Wipro?",
     "Describe your experience working in a team environment.",
     "How do you stay updated with industry trends?",
     "What is your approach to problem-solving?",
+    "What do you know about Wipro's recent acquisitions or projects?",
+    "How do you handle constructive criticism?",
+    "Are you a quick learner? Give an example.",
+    "What are your strengths and weaknesses?",
+    "Where do you see yourself in 5 years?",
+    "Explain a technical concept to a non-technical person."
   ],
   Accenture: [
     "What do you know about Accenture's business areas?",
     "How would you handle a disagreement with a colleague?",
     "Describe a project where you used innovative thinking.",
     "What is your experience with client-facing work?",
+    "Why Accenture?",
+    "Describe a situation where you demonstrated leadership.",
+    "How do you prioritize tasks when everything is urgent?",
+    "What is your understanding of cloud computing?",
+    "Tell me about a time you failed and what you learned.",
+    "How strictly do you follow deadlines?"
   ],
   Cognizant: [
     "Why Cognizant over other IT companies?",
     "How do you manage work-life balance?",
     "Describe a time when you had to meet challenging targets.",
     "What is your understanding of digital engineering?",
+    "What do you know about Cognizant's core values?",
+    "How do you handle difficult clients or team members?",
+    "What is your favorite subject in your curriculum and why?",
+    "Are you open to learning legacy technologies if required?",
+    "Describe a time you took initiative.",
+    "What motivates you to work hard?"
   ],
   Capgemini: [
     "What attracts you to Capgemini?",
     "How do you approach learning new technologies?",
     "Describe your experience with collaborative projects.",
     "What are your career aspirations?",
+    "What do you know about Capgemini's 7 values?",
+    "How do you handle change?",
+    "Describe a complex problem you solved.",
+    "What defines a good team player for you?",
+    "Why is diversity important in the workplace?",
+    "How do you handle feedback?"
   ],
   Amazon: [
     "Tell me about a time you disagreed with a manager's decision.",
     "Describe a situation where you had to dive deep to solve a problem.",
     "How do you prioritize when you have multiple deadlines?",
     "Tell me about a time you simplified a complex process.",
+    "Explain the concept of customer obsession.",
+    "Tell me about a time you failed to meet a deadline.",
+    "Describe a time when you took a calculated risk.",
+    "How do you handle ambiguity?",
+    "What is the most innovative thing you have done?",
+    "Tell me about a time you went above and beyond for a customer."
   ],
 };
 
@@ -377,7 +464,7 @@ async function evaluateAnswer(answer: string, question?: string): Promise<{ scor
 
     const aiResult = await withTimeout(
       pythonAI.evaluateAnswer(truncatedAnswerForAI, truncatedQuestionForAI),
-      1500, // keep UI very responsive; fall back quickly if Python is slow
+      60000, // increased timeout for reliability
       null,
       "Answer evaluation"
     );
@@ -394,33 +481,48 @@ async function evaluateAnswer(answer: string, question?: string): Promise<{ scor
   let score = baseScore;
   let feedback = baseFeedback ? baseFeedback + " " : "";
 
+  // Stricter penalties for short or irrelevant answers
   if (isVeryShort) {
-    score = Math.min(score, 20);
+    score = Math.min(score, 15); // More strict penalty
     feedback += "Answer is too short. Please provide more detail with concrete points and examples. ";
   } else if (isShort) {
-    score = Math.min(score, 35);
+    score = Math.min(score, 30); // More strict penalty
     feedback += "Answer is brief. Try to elaborate with specific reasons and examples. ";
   }
 
   if (relevanceScore === 0 && question) {
-    score = Math.min(score, 40);
+    score = Math.min(score, 35); // More strict penalty
     feedback += "Your answer doesn't clearly address the question. Focus on the main point being asked. ";
   }
 
+  // Heuristic refinement layer - tuned to be more generous
   // Extra credit for structure in heuristic-only scenarios
   if (!question && !trimmed) {
     score = 0;
     feedback = "No answer detected. Please respond to the question.";
   } else {
-    const hasExample = /example|instance|situation/i.test(trimmed);
-    const hasReasoning = /because|reason|therefore|so that/i.test(trimmed);
+    // Basic length reward
+    if (wordCount > 30) {
+      score = Math.min(100, score + 10);
+      // Only add "Good detail" if not already there and if score is high enough to warrant it
+      if (score > 70 && !feedback.includes("Good detail")) {
+        feedback += " Good detail provided.";
+      }
+    }
+
+    const hasExample = /example|instance|situation|for instance|such as|like/i.test(trimmed);
+    const hasReasoning = /because|reason|therefore|so that|due to|as a result|since/i.test(trimmed);
     if (hasExample) {
-      score += 5;
-      feedback += "Good use of examples. ";
+      score = Math.min(100, score + 5);
+      if (!feedback.toLowerCase().includes("example")) {
+        feedback += " Good use of examples.";
+      }
     }
     if (hasReasoning) {
-      score += 5;
-      feedback += "Clear reasoning is shown. ";
+      score = Math.min(100, score + 5);
+      if (!feedback.toLowerCase().includes("reasoning")) {
+        feedback += " Clear reasoning is shown.";
+      }
     }
   }
 
@@ -1265,6 +1367,81 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   app.post('/api/auth/login', loginHandler);
   app.post('/api/auth/logout', logoutHandler);
 
+  // User profile management endpoints
+  app.patch('/api/user/profile', isAuthenticated, async (req: any, res) => {
+    try {
+      const updateSchema = z.object({
+        firstName: z.string().min(1).optional(),
+        lastName: z.string().optional(),
+      });
+
+      const data = updateSchema.parse(req.body);
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      const updateData: Partial<User> = {};
+      if (data.firstName !== undefined) {
+        updateData.firstName = data.firstName;
+      }
+      if (data.lastName !== undefined) {
+        updateData.lastName = data.lastName || null;
+      }
+
+      const updated = await storage.updateUser(userId, updateData as any);
+      const { passwordHash, ...responseUser } = updated as any;
+      res.json(responseUser);
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+      }
+      console.error("Error updating profile:", error);
+      res.status(500).json({ message: error.message || "Failed to update profile" });
+    }
+  });
+
+  app.patch('/api/user/password', isAuthenticated, async (req: any, res) => {
+    try {
+      const passwordSchema = z.object({
+        currentPassword: z.string().min(1),
+        newPassword: z.string().min(6, "Password must be at least 6 characters"),
+      });
+
+      const data = passwordSchema.parse(req.body);
+      const userId = req.userId;
+
+      if (!userId) {
+        return res.status(401).json({ message: "Unauthorized" });
+      }
+
+      // Get user with password hash
+      const user = await storage.getUser(userId) as any;
+      if (!user || !user.passwordHash) {
+        return res.status(404).json({ message: "User not found" });
+      }
+
+      // Verify current password
+      const isValidPassword = await comparePassword(data.currentPassword, user.passwordHash);
+      if (!isValidPassword) {
+        return res.status(401).json({ message: "Current password is incorrect" });
+      }
+
+      // Hash new password and update
+      const hashedPassword = await hashPassword(data.newPassword);
+      await storage.updateUser(userId, { passwordHash: hashedPassword } as any);
+
+      res.json({ message: "Password updated successfully" });
+    } catch (error: any) {
+      if (error instanceof z.ZodError) {
+        return res.status(400).json({ message: "Invalid input", errors: error.errors });
+      }
+      console.error("Error updating password:", error);
+      res.status(500).json({ message: error.message || "Failed to update password" });
+    }
+  });
+
   app.get('/api/auth/user', isAuthenticated, async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -1619,13 +1796,19 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const userId = req.userId;
       const user = await storage.getUser(userId);
 
+      // Parse pagination params
+      const limit = req.query.limit ? parseInt(req.query.limit as string) : 50;
+      const offset = req.query.offset ? parseInt(req.query.offset as string) : 0;
+
       // Admin can see all interviews, students only see their own
       if (user?.role === 'admin') {
-        const allInterviews = await storage.getAllInterviews();
-        res.json(allInterviews);
+        const interviews = await storage.getAllInterviews(limit, offset);
+        const total = await storage.getInterviewCount();
+        res.json({ interviews, total, limit, offset });
       } else {
-        const interviews = await storage.getInterviewsByUserId(userId);
-        res.json(interviews);
+        const interviews = await storage.getInterviewsByUserId(userId, limit, offset);
+        const total = await storage.getInterviewCount(userId);
+        res.json({ interviews, total, limit, offset });
       }
     } catch (error) {
       console.error("Error fetching interviews:", error);
@@ -1671,7 +1854,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const difficultyLevel: 'easy' | 'medium' | 'hard' = difficulty || 'medium';
 
       // Validate types
-      const validTypes = ['technical', 'hr', 'behavioral', 'project', 'gd', 'company'];
+      const validTypes = ['technical', 'hr', 'behavioral', 'project', 'gd', 'company', 'communication'];
       const filteredTypes = interviewTypes.filter(t => validTypes.includes(t));
       if (filteredTypes.length === 0) {
         return res.status(400).json({ message: "At least one valid interview type is required" });
@@ -1727,6 +1910,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
             return projectQuestions;
           case 'gd':
             return gdTopics;
+          case 'communication':
+            return communicationQuestions;
           case 'company':
             return company && companyQuestions[company] ? companyQuestions[company] : technicalQuestions;
           default:
@@ -1895,6 +2080,15 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       // Only allow starting if status is pending
       if (interview.status !== 'pending') {
         return res.status(400).json({ message: `Interview is already ${interview.status}` });
+      }
+
+      // Check if interviews are globally paused
+      const pausedSetting = await storage.getGlobalSetting('interviews_paused');
+      if (pausedSetting && pausedSetting.value === 'true') {
+        return res.status(403).json({
+          message: "Interviews are currently paused by the administrator. Please try again later.",
+          code: "INTERVIEWS_PAUSED"
+        });
       }
 
       // Update interview status to in_progress
@@ -2237,16 +2431,17 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
   app.get('/api/admin/stats', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      const students = await storage.getStudents();
-      const interviews = await storage.getAllInterviews();
+      // Optimized: Use count methods instead of loading all records
+      const totalStudents = await storage.getStudentCount();
+      const totalInterviews = await storage.getInterviewCount();
       const avgScores = await storage.getAverageScores();
 
-      const completedInterviews = interviews.filter(i => i.status === 'completed');
+      // Mock placement probability - could be calculated from actual data
       const avgPlacementProb = 60 + Math.random() * 20;
 
       res.json({
-        totalStudents: students.length,
-        totalInterviews: interviews.length,
+        totalStudents,
+        totalInterviews,
         avgTechnicalScore: avgScores.technical,
         avgHrScore: avgScores.hr,
         avgGdScore: avgScores.gd,
@@ -2261,7 +2456,14 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   app.get('/api/admin/students', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const students = await storage.getStudents();
-      res.json(students);
+
+      // SECURITY: Remove password hashes from response
+      const sanitizedStudents = students.map(student => {
+        const { passwordHash, ...studentWithoutPassword } = student as any;
+        return studentWithoutPassword;
+      });
+
+      res.json(sanitizedStudents);
     } catch (error) {
       console.error("Error fetching students:", error);
       res.status(500).json({ message: "Failed to fetch students" });
@@ -2490,6 +2692,195 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     } catch (error) {
       console.error("Error fetching skill gaps:", error);
       res.status(500).json({ message: "Failed to fetch skill gaps" });
+    }
+  });
+
+  // ====== ADMIN - College Trial Features ======
+
+  /**
+   * Get global system settings (interviews enabled, etc.)
+   */
+  app.get('/api/admin/settings', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { db } = await import("./db.js");
+      const { globalSettings } = await import("@shared/schema");
+
+      const settings = await db.select().from(globalSettings);
+
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching settings:", error);
+      res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  /**
+   * Update a global setting (e.g., toggle interviews on/off)
+   */
+  app.post('/api/admin/settings', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { key, value, description } = req.body;
+
+      if (!key || value === undefined) {
+        return res.status(400).json({ message: "key and value are required" });
+      }
+
+      const { setGlobalSetting } = await import("./adminUtils.js");
+      await setGlobalSetting(key, String(value), description);
+
+      res.json({ success: true, message: "Setting updated" });
+    } catch (error) {
+      console.error("Error updating setting:", error);
+      res.status(500).json({ message: "Failed to update setting" });
+    }
+  });
+
+  /**
+   * Get dashboard analytics
+   */
+  app.get('/api/admin/analytics', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { getDailyAnalytics, getTodayStats } = await import("./adminUtils.js");
+      const { db } = await import("./db.js");
+      const { interviews } = await import("@shared/schema");
+      const { count } = await import("drizzle-orm");
+
+      const days = parseInt(req.query.days as string) || 7;
+
+      const dailyStats = await getDailyAnalytics(days);
+      const todayStats = await getTodayStats();
+
+      // Get total counts
+      const totalInterviewsResult = await db.select({ count: count() }).from(interviews);
+      const totalInterviews = totalInterviewsResult[0]?.count || 0;
+
+      res.json({
+        today: todayStats,
+        daily: dailyStats,
+        totals: {
+          interviews: totalInterviews
+        }
+      });
+    } catch (error) {
+      console.error("Error fetching analytics:", error);
+      res.status(500).json({ message: "Failed to fetch analytics" });
+    }
+  });
+
+  /**
+   * Get available interview slots
+   */
+  app.get('/api/interview-slots', isAuthenticated, async (req: any, res) => {
+    try {
+      const { db } = await import("./db.js");
+      const { interviewSlots } = await import("@shared/schema");
+      const { gte } = await import("drizzle-orm");
+
+      const now = new Date();
+
+      const slots = await db.select()
+        .from(interviewSlots)
+        .where(gte(interviewSlots.startTime, now))
+        .orderBy(interviewSlots.startTime);
+
+      res.json(slots);
+    } catch (error) {
+      console.error("Error fetching interview slots:", error);
+      res.status(500).json({ message: "Failed to fetch interview slots" });
+    }
+  });
+
+  /**
+    * Book an interview slot
+    */
+  app.post('/api/interview-slots/:slotId/book', isAuthenticated, async (req: any, res) => {
+    try {
+      const { db } = await import("./db.js");
+      const { interviewSlots } = await import("@shared/schema");
+      const { eq, and } = await import("drizzle-orm");
+
+      const slotId = req.params.slotId;
+      const userId = req.user.id;
+
+      // Check if slot exists and is available
+      const slot = await db.select()
+        .from(interviewSlots)
+        .where(and(
+          eq(interviewSlots.id, slotId),
+          eq(interviewSlots.isBooked, false)
+        ))
+        .limit(1);
+
+      if (slot.length === 0) {
+        return res.status(400).json({ message: "Slot not available" });
+      }
+
+      // Book the slot
+      await db.update(interviewSlots)
+        .set({
+          isBooked: true,
+          bookedByUserId: userId
+        })
+        .where(eq(interviewSlots.id, slotId));
+
+      res.json({ success: true, message: "Slot booked successfully" });
+    } catch (error) {
+      console.error("Error booking slot:", error);
+      res.status(500).json({ message: "Failed to book slot" });
+    }
+  });
+
+  /**
+   * Admin: Create interview slots
+   */
+  app.post('/api/admin/interview-slots', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { db } = await import("./db.js");
+      const { interviewSlots } = await import("@shared/schema");
+
+      const { startTime, endTime } = req.body;
+
+      if (!startTime || !endTime) {
+        return res.status(400).json({ message: "startTime and endTime are required" });
+      }
+
+      const [slot] = await db.insert(interviewSlots)
+        .values({
+          startTime: new Date(startTime),
+          endTime: new Date(endTime),
+          isBooked: false
+        })
+        .returning();
+
+      res.json(slot);
+    } catch (error) {
+      console.error("Error creating slot:", error);
+      res.status(500).json({ message: "Failed to create slot" });
+    }
+  });
+
+  // Global Settings endpoints for admin controls (e.g., pause/resume interviews)
+  app.get('/api/admin/settings', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const settings = await storage.getGlobalSettings();
+      res.json(settings);
+    } catch (error) {
+      console.error("Error fetching global settings:", error);
+      res.status(500).json({ message: "Failed to fetch settings" });
+    }
+  });
+
+  app.post('/api/admin/settings', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { key, value } = req.body;
+      if (!key || value === undefined) {
+        return res.status(400).json({ message: "key and value are required" });
+      }
+      const setting = await storage.setGlobalSetting(key, String(value));
+      res.json(setting);
+    } catch (error) {
+      console.error("Error updating global setting:", error);
+      res.status(500).json({ message: "Failed to update setting" });
     }
   });
 

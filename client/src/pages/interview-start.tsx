@@ -5,11 +5,11 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { 
-  Brain, 
-  Users, 
-  Briefcase, 
-  MessageSquare, 
+import {
+  Brain,
+  Users,
+  Briefcase,
+  MessageSquare,
   FolderKanban,
   ArrowRight,
   Check,
@@ -60,6 +60,14 @@ const interviewTypes = [
     description: 'Explain your projects, architecture decisions, and technical challenges',
     icon: FolderKanban,
     color: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-300',
+    duration: '5-10 min'
+  },
+  {
+    id: 'communication',
+    title: 'Communication Skills',
+    description: 'Verbal communication, clarity, tone, accent, pace, and articulation assessment',
+    icon: MessageSquare,
+    color: 'bg-teal-100 dark:bg-teal-900 text-teal-600 dark:text-teal-300',
     duration: '5-10 min'
   }
 ];
@@ -230,7 +238,7 @@ export default function InterviewStart() {
           Target all students, a branch, or specific students with AI-powered interviews.
         </p>
       </div>
-      
+
       {/* Target Selection */}
       <Card>
         <CardHeader>
@@ -418,9 +426,8 @@ export default function InterviewStart() {
                 {(['easy', 'medium', 'hard'] as const).map((level) => (
                   <Card
                     key={level}
-                    className={`cursor-pointer hover-elevate transition-all ${
-                      selectedDifficulty === level ? 'ring-2 ring-primary' : ''
-                    }`}
+                    className={`cursor-pointer hover-elevate transition-all ${selectedDifficulty === level ? 'ring-2 ring-primary' : ''
+                      }`}
                     onClick={() => setSelectedDifficulty(level)}
                   >
                     <CardContent className="p-4 text-center">
@@ -446,11 +453,10 @@ export default function InterviewStart() {
             <CardContent>
               <div className="grid md:grid-cols-2 gap-4">
                 {interviewTypes.map((type) => (
-                  <Card 
+                  <Card
                     key={type.id}
-                    className={`cursor-pointer hover-elevate transition-all ${
-                      selectedTypes.includes(type.id) ? 'ring-2 ring-primary' : ''
-                    }`}
+                    className={`cursor-pointer hover-elevate transition-all ${selectedTypes.includes(type.id) ? 'ring-2 ring-primary' : ''
+                      }`}
                     onClick={() => handleTypeToggle(type.id)}
                     data-testid={`card-type-${type.id}`}
                   >
@@ -478,10 +484,9 @@ export default function InterviewStart() {
                   </Card>
                 ))}
 
-                <Card 
-                  className={`cursor-pointer hover-elevate transition-all ${
-                    selectedTypes.includes('company') ? 'ring-2 ring-primary' : ''
-                  }`}
+                <Card
+                  className={`cursor-pointer hover-elevate transition-all ${selectedTypes.includes('company') ? 'ring-2 ring-primary' : ''
+                    }`}
                   onClick={() => handleTypeToggle('company')}
                   data-testid="card-type-company"
                 >
@@ -517,8 +522,8 @@ export default function InterviewStart() {
 
       {step === 2 && selectedTypes.includes('company') && (
         <div className="space-y-6">
-          <Button 
-            variant="ghost" 
+          <Button
+            variant="ghost"
             onClick={() => { setStep(1); setSelectedCompany(null); }}
             className="mb-4"
             data-testid="button-back"
@@ -528,11 +533,10 @@ export default function InterviewStart() {
 
           <div className="grid md:grid-cols-2 gap-4">
             {companyData.map((company) => (
-              <Card 
+              <Card
                 key={company.id}
-                className={`cursor-pointer hover-elevate transition-all ${
-                  selectedCompany === company.id ? 'ring-2 ring-primary' : ''
-                }`}
+                className={`cursor-pointer hover-elevate transition-all ${selectedCompany === company.id ? 'ring-2 ring-primary' : ''
+                  }`}
                 onClick={() => setSelectedCompany(company.id)}
                 data-testid={`card-company-${company.id.toLowerCase()}`}
               >
@@ -561,7 +565,7 @@ export default function InterviewStart() {
 
       {selectedTypes.length > 0 && (!selectedTypes.includes('company') || selectedCompany) && (
         <div className="flex justify-center pt-4">
-          <Button 
+          <Button
             size="lg"
             onClick={handleStartInterview}
             disabled={startInterviewMutation.isPending || !selectedStudentId || selectedTypes.length === 0}

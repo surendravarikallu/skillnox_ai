@@ -21,6 +21,18 @@ from models.llm_models import get_llm
 
 app = FastAPI(title="AI Interview System API")
 
+# Warm-up on startup to reduce first request latency
+@app.on_event("startup")
+async def startup_event():
+    """Warm up models on startup"""
+    print("🔥 Warming up LLM model...")
+    try:
+        # Generate a dummy question to load model into memory
+        _ = llm.generate_question("technical", "Python", "easy")
+        print("✅ LLM model ready")
+    except Exception as e:
+        print(f"⚠️  Warm-up warning: {e}")
+
 # Initialize LLM for question generation (use fine-tuned model if available)
 try:
     finetuned_path = Path(__file__).parent.parent / "models" / "finetuned_llm"
@@ -171,6 +183,17 @@ def evaluate_answer(request: AnswerEvaluateRequest):
             return {"success": True, "data": result}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/api/answer/evaluate-communication")
+def evaluate_communication(request: AnswerEvaluateRequest):
+    """Evaluate communication-specific aspects of answer"""
+    try:
+        result = llm.evaluate_communication(request.answer, request.question)
+        return {"success": True, "data": result}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 @app.post("/api/personality/analyze")
@@ -350,4 +373,17 @@ def analyze_resume(request: ResumeAnalyzeRequest):
 
 if __name__ == "__main__":
     import uvicorn
+    import gc
+    
+    # Trigger GC only after heavy operations (LLM generation)
+    @app.middleware("http")
+    async def cleanup_middleware(request, call_next):
+        response = await call_next(request)
+        
+        # Only trigger GC after LLM generation, not evaluation or other lightweight ops
+        if '/generate' in request.url.path:
+            gc.collect()
+        
+        return response
+    
     uvicorn.run(app, host="0.0.0.0", port=8000)

@@ -1,8 +1,11 @@
 import { useState, useRef, useCallback } from "react";
 
+export type ConnectionState = "disconnected" | "connecting" | "connected" | "reconnecting";
+
 interface UseVoiceToTextReturn {
   transcript: string;
   isListening: boolean;
+  connectionState: ConnectionState;
   startListening: () => void;
   stopListening: () => void;
   clearTranscript: () => void;
@@ -12,6 +15,7 @@ interface UseVoiceToTextReturn {
 export function useVoiceToText(): UseVoiceToTextReturn {
   const [transcript, setTranscript] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const recognitionRef = useRef<SpeechRecognition | null>(null);
   const lastProcessedIndexRef = useRef<number>(0);
@@ -24,86 +28,94 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       return;
     }
 
+    // If already connected/connecting, don't restart
+    if (connectionState === "connected" || connectionState === "connecting") return;
+
+    setConnectionState("connecting");
+
     const SpeechRecognition = (window as any).webkitSpeechRecognition || (window as any).SpeechRecognition;
     const recognition = new SpeechRecognition();
-    
+
     recognition.continuous = true;
     recognition.interimResults = true;
-    // Use an English variant that better matches common Indian accents for higher accuracy
-    // (e.g. "am I audible" instead of mishearing as "am I abdul").
-    recognition.lang = "en-IN";
+    recognition.lang = "en-US";
     if ("maxAlternatives" in recognition) {
-      (recognition as SpeechRecognition & { maxAlternatives?: number }).maxAlternatives = 1;
+      (recognition as SpeechRecognition & { maxAlternatives?: number }).maxAlternatives = 3;
     }
 
     autoRestartRef.current = true;
 
     recognition.onstart = () => {
       setIsListening(true);
+      setConnectionState("connected");
       setError(null);
-      // Reset index for the new SpeechRecognition session but keep
-      // the existing finalTranscriptRef so previous speech isn't lost
-      // when the mic is stopped and started again for the same answer.
-      lastProcessedIndexRef.current = 0;
     };
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interimTranscript = "";
-      let newFinalTranscript = "";
-
-      // Process only new results (starting from last processed index)
-      for (let i = Math.max(event.resultIndex, lastProcessedIndexRef.current); i < event.results.length; i++) {
+      for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const transcriptText = result[0].transcript;
-        
         if (result.isFinal) {
-          // Only add final results that we haven't processed yet
-          if (i >= lastProcessedIndexRef.current) {
-            newFinalTranscript += transcriptText + " ";
-            lastProcessedIndexRef.current = i + 1;
-          }
+          finalTranscriptRef.current += transcriptText + " ";
         } else {
-          // Interim results - replace, don't append
-          interimTranscript = transcriptText;
+          interimTranscript += transcriptText;
         }
       }
-
-      // Update final transcript only with new final results
-      if (newFinalTranscript) {
-        finalTranscriptRef.current += newFinalTranscript;
-      }
-
-      // Combine final transcript with current interim result
-      setTranscript(finalTranscriptRef.current + interimTranscript);
+      const cleanFinal = finalTranscriptRef.current.replace(/\s+/g, ' ');
+      setTranscript(cleanFinal + interimTranscript);
     };
 
     recognition.onerror = (event: any) => {
-      setError(`Speech recognition error: ${event.error}`);
-      setIsListening(false);
-    };
-
-    recognition.onend = () => {
-      setIsListening(false);
-      if (autoRestartRef.current) {
-        try {
-          recognition.start();
-        } catch (restartError) {
-          console.warn("Speech recognition restart failed:", restartError);
+      if (event.error === 'no-speech') return;
+      if (event.error !== 'aborted') {
+        console.warn(`Speech recognition error: ${event.error}`);
+        if (event.error === 'network') {
+          setConnectionState("reconnecting");
         }
       }
     };
 
-    recognition.start();
-    recognitionRef.current = recognition;
-  }, []);
+    recognition.onend = () => {
+      // If we want to stay alive (autoRestart), we need to restart.
+      // Best practice: Create a NEW instance to avoid memory/buffer issues with long sessions.
+      if (autoRestartRef.current) {
+        setConnectionState("reconnecting");
+        // Small delay to prevent CPU thrashing if it fails instantly
+        setTimeout(() => {
+          try {
+            recognition.start();
+          } catch (e) {
+            console.error("Failed to restart recognition:", e);
+            // If restart fails, we must give up or user has to click mic again
+            setIsListening(false);
+            setConnectionState("disconnected");
+          }
+        }, 100);
+      } else {
+        setIsListening(false);
+        setConnectionState("disconnected");
+      }
+    };
+
+    try {
+      recognition.start();
+      recognitionRef.current = recognition;
+    } catch (e) {
+      console.error("Failed to start recognition:", e);
+      setError("Failed to start microphone");
+      setConnectionState("disconnected");
+    }
+  }, [connectionState]);
 
   const stopListening = useCallback(() => {
+    autoRestartRef.current = false;
     if (recognitionRef.current) {
-      autoRestartRef.current = false;
       recognitionRef.current.stop();
       recognitionRef.current = null;
     }
     setIsListening(false);
+    setConnectionState("disconnected");
   }, []);
 
   const clearTranscript = useCallback(() => {
@@ -115,6 +127,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
   return {
     transcript,
     isListening,
+    connectionState,
     startListening,
     stopListening,
     clearTranscript,

@@ -36,7 +36,7 @@ import { useAuth } from "@/hooks/useAuth";
 
 const ENHANCED_AUDIO_CONSTRAINTS: MediaTrackConstraints = {
   echoCancellation: true,
-  noiseSuppression: false,
+  noiseSuppression: true,
   autoGainControl: true,
   sampleRate: 44100,
   channelCount: 1,
@@ -47,7 +47,7 @@ export default function InterviewRoom() {
   const [, navigate] = useLocation();
   const { toast } = useToast();
   const { user } = useAuth();
-  
+
   const [cameraEnabled, setCameraEnabled] = useState(true);
   const [micEnabled, setMicEnabled] = useState(true);
   const [currentQuestionIndex, setCurrentQuestionIndex] = useState(0);
@@ -59,14 +59,22 @@ export default function InterviewRoom() {
   const [hasSpokenCurrentQuestion, setHasSpokenCurrentQuestion] = useState(false);
   const [noiseWarning, setNoiseWarning] = useState<string | null>(null);
   const [streamVersion, setStreamVersion] = useState(0);
-  
-  const { transcript, isListening, startListening, stopListening, clearTranscript } = useVoiceToText();
+
+  const { transcript, isListening, connectionState, startListening, stopListening, clearTranscript } = useVoiceToText();
   const { isSpeaking: isAISpeaking, speak: speakText, stop: stopSpeaking } = useTextToSpeech();
-  
+
   const videoRef = useRef<HTMLVideoElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const audioMonitorRef = useRef<{ context: AudioContext; rafId: number } | null>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Auto-scroll to bottom of transcript when it updates
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+    }
+  }, [transcript]);
 
   const { data: interview, isLoading: loadingInterview } = useQuery<Interview>({
     queryKey: ['/api/interviews', id],
@@ -172,22 +180,22 @@ export default function InterviewRoom() {
         }
         return;
       }
-      
+
       // Don't initialize if interview is pending
       if (interview?.status === 'pending') return;
-      
+
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
             facingMode: 'user'
-          }, 
-          audio: ENHANCED_AUDIO_CONSTRAINTS 
+          },
+          audio: ENHANCED_AUDIO_CONSTRAINTS
         });
         streamRef.current = stream;
         setStreamVersion(prev => prev + 1);
-        
+
         // Set video source immediately
         if (videoRef.current) {
           videoRef.current.srcObject = stream;
@@ -199,9 +207,9 @@ export default function InterviewRoom() {
               });
             }
           };
-          
+
           playVideo();
-          
+
           // Also try when metadata is loaded
           videoRef.current.addEventListener('loadedmetadata', playVideo, { once: true });
           videoRef.current.addEventListener('canplay', playVideo, { once: true });
@@ -247,7 +255,7 @@ export default function InterviewRoom() {
 
     const analyzeEmotion = async () => {
       if (!cameraEnabled || !videoRef.current) return;
-      
+
       try {
         const canvas = document.createElement('canvas');
         canvas.width = videoRef.current.videoWidth;
@@ -255,19 +263,19 @@ export default function InterviewRoom() {
         const ctx = canvas.getContext('2d');
         if (ctx && videoRef.current) {
           ctx.drawImage(videoRef.current, 0, 0);
-          
+
           canvas.toBlob(async (blob) => {
             if (blob) {
               const formData = new FormData();
               formData.append('file', blob, 'frame.jpg');
-              
+
               try {
                 const response = await fetch('/api/emotion/analyze', {
                   method: 'POST',
                   body: formData,
                   credentials: 'include',
                 });
-                
+
                 if (response.ok) {
                   const data = await response.json();
                   if (data && data.data) {
@@ -292,81 +300,81 @@ export default function InterviewRoom() {
     return () => clearInterval(interval);
   }, [cameraEnabled, user, videoRef]);
 
-useEffect(() => {
-  const stream = streamRef.current;
-  if (!micEnabled || !stream) {
-    if (audioMonitorRef.current) {
-      cancelAnimationFrame(audioMonitorRef.current.rafId);
-      audioMonitorRef.current.context.close();
-      audioMonitorRef.current = null;
-    }
-    setNoiseWarning(null);
-    return;
-  }
-
-  if (typeof window === "undefined") {
-    return;
-  }
-  const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
-  if (!AudioContextClass) {
-    return;
-  }
-
-  const audioContext = new AudioContextClass();
-  const source = audioContext.createMediaStreamSource(stream);
-  const analyser = audioContext.createAnalyser();
-  analyser.fftSize = 2048;
-  const dataArray = new Float32Array(analyser.fftSize);
-  source.connect(analyser);
-
-  let noiseHold = 0;
-  const analyze = () => {
-    analyser.getFloatTimeDomainData(dataArray);
-    let sumSquares = 0;
-    for (let i = 0; i < dataArray.length; i++) {
-      sumSquares += dataArray[i] * dataArray[i];
-    }
-    const rms = Math.sqrt(sumSquares / dataArray.length);
-    if (rms > 0.012 && rms < 0.08) {
-      noiseHold = Math.min(4000, noiseHold + 120);
-    } else {
-      noiseHold = Math.max(0, noiseHold - 200);
+  useEffect(() => {
+    const stream = streamRef.current;
+    if (!micEnabled || !stream) {
+      if (audioMonitorRef.current) {
+        cancelAnimationFrame(audioMonitorRef.current.rafId);
+        audioMonitorRef.current.context.close();
+        audioMonitorRef.current = null;
+      }
+      setNoiseWarning(null);
+      return;
     }
 
-    if (noiseHold > 1500) {
-      setNoiseWarning(prev => prev ?? "Background fan noise detected. Move closer to the mic or mute when silent.");
-    } else if (noiseHold < 600) {
-      setNoiseWarning(prev => (prev ? null : prev));
+    if (typeof window === "undefined") {
+      return;
     }
+    const AudioContextClass = window.AudioContext || (window as any).webkitAudioContext;
+    if (!AudioContextClass) {
+      return;
+    }
+
+    const audioContext = new AudioContextClass();
+    const source = audioContext.createMediaStreamSource(stream);
+    const analyser = audioContext.createAnalyser();
+    analyser.fftSize = 2048;
+    const dataArray = new Float32Array(analyser.fftSize);
+    source.connect(analyser);
+
+    let noiseHold = 0;
+    const analyze = () => {
+      analyser.getFloatTimeDomainData(dataArray);
+      let sumSquares = 0;
+      for (let i = 0; i < dataArray.length; i++) {
+        sumSquares += dataArray[i] * dataArray[i];
+      }
+      const rms = Math.sqrt(sumSquares / dataArray.length);
+      if (rms > 0.012 && rms < 0.08) {
+        noiseHold = Math.min(4000, noiseHold + 120);
+      } else {
+        noiseHold = Math.max(0, noiseHold - 200);
+      }
+
+      if (noiseHold > 1500) {
+        setNoiseWarning(prev => prev ?? "Background fan noise detected. Move closer to the mic or mute when silent.");
+      } else if (noiseHold < 600) {
+        setNoiseWarning(prev => (prev ? null : prev));
+      }
+
+      audioMonitorRef.current = {
+        context: audioContext,
+        rafId: requestAnimationFrame(analyze),
+      };
+    };
 
     audioMonitorRef.current = {
       context: audioContext,
       rafId: requestAnimationFrame(analyze),
     };
-  };
 
-  audioMonitorRef.current = {
-    context: audioContext,
-    rafId: requestAnimationFrame(analyze),
-  };
+    return () => {
+      if (audioMonitorRef.current) {
+        cancelAnimationFrame(audioMonitorRef.current.rafId);
+        audioMonitorRef.current.context.close();
+        audioMonitorRef.current = null;
+      }
+      setNoiseWarning(null);
+    };
+  }, [micEnabled, streamVersion]);
 
-  return () => {
-    if (audioMonitorRef.current) {
-      cancelAnimationFrame(audioMonitorRef.current.rafId);
-      audioMonitorRef.current.context.close();
-      audioMonitorRef.current = null;
-    }
-    setNoiseWarning(null);
-  };
-}, [micEnabled, streamVersion]);
-
-// We only show background-noise feedback inline in the UI now (no toast popups),
-// so students are not distracted during the interview.
+  // We only show background-noise feedback inline in the UI now (no toast popups),
+  // so students are not distracted during the interview.
 
   const toggleCamera = useCallback(async () => {
     const newState = !cameraEnabled;
     setCameraEnabled(newState);
-    
+
     if (streamRef.current) {
       if (newState) {
         // Re-enable video tracks
@@ -388,13 +396,13 @@ useEffect(() => {
     } else if (newState && (interview?.status === 'in_progress' || interview?.status === 'completed')) {
       // Initialize camera if stream doesn't exist
       try {
-        const stream = await navigator.mediaDevices.getUserMedia({ 
-          video: { 
+        const stream = await navigator.mediaDevices.getUserMedia({
+          video: {
             width: { ideal: 1280 },
             height: { ideal: 720 },
             facingMode: 'user'
-          }, 
-          audio: ENHANCED_AUDIO_CONSTRAINTS 
+          },
+          audio: ENHANCED_AUDIO_CONSTRAINTS
         });
         streamRef.current = stream;
         setStreamVersion(prev => prev + 1);
@@ -446,15 +454,36 @@ useEffect(() => {
       return;
     }
     const currentQuestion = questions[currentQuestionIndex];
-    submitAnswerMutation.mutate({ 
-      questionId: currentQuestion.id, 
+    submitAnswerMutation.mutate({
+      questionId: currentQuestion.id,
       answer: answerText
     });
     // Clear transcript after submission
     clearTranscript();
   };
 
-  const handleComplete = () => {
+  const handleComplete = async () => {
+    // Submit the last answer before completing the interview
+    if (!questions) return;
+    const answerText = transcript.trim();
+    const currentQuestion = questions[currentQuestionIndex];
+
+    // If there's an answer to submit, submit it first
+    if (answerText && currentQuestion) {
+      try {
+        await submitAnswerMutation.mutateAsync({
+          questionId: currentQuestion.id,
+          answer: answerText
+        });
+        // Clear transcript after submission
+        clearTranscript();
+      } catch (error) {
+        console.error('Error submitting last answer:', error);
+        // Continue to complete even if submission fails
+      }
+    }
+
+    // Now complete the interview
     completeInterviewMutation.mutate();
   };
 
@@ -468,7 +497,7 @@ useEffect(() => {
     if (currentQuestion?.question && !loadingQuestions && !hasSpokenCurrentQuestion && interview?.status === 'in_progress') {
       const questionText = currentQuestion.question;
       setHasSpokenCurrentQuestion(true);
-      
+
       // Speak the question
       speakText(questionText).catch((error) => {
         console.error('Error speaking question:', error);
@@ -609,8 +638,8 @@ useEffect(() => {
             <span>Question {currentQuestionIndex + 1} of {questions?.length || 0}</span>
           </div>
         </div>
-        <Button 
-          variant="destructive" 
+        <Button
+          variant="destructive"
           onClick={handleComplete}
           disabled={completeInterviewMutation.isPending}
           data-testid="button-end-interview"
@@ -654,11 +683,19 @@ useEffect(() => {
                     <p className="text-sm text-muted-foreground">Camera disabled</p>
                   </div>
                 )}
-                
+
                 {isRecording && (
                   <div className="absolute top-3 right-3 flex items-center gap-2 bg-red-500 text-white px-2 py-1 rounded-full text-xs">
                     <span className="w-2 h-2 bg-white rounded-full animate-pulse" />
                     Recording
+                  </div>
+                )}
+
+                {/* Visual Feedback for Voice Connection */}
+                {connectionState === "reconnecting" && (
+                  <div className="absolute bottom-3 left-3 right-3 bg-yellow-500/90 text-white px-3 py-2 rounded-lg text-sm flex items-center justify-center gap-2">
+                    <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                    Reconnecting to microphone...
                   </div>
                 )}
 
@@ -689,14 +726,6 @@ useEffect(() => {
                 >
                   {micEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
                 </Button>
-                <Button
-                  variant={isRecording ? "destructive" : "default"}
-                  size="icon"
-                  onClick={() => setIsRecording(!isRecording)}
-                  data-testid="button-toggle-recording"
-                >
-                  {isRecording ? <Square className="w-5 h-5" /> : <Play className="w-5 h-5" />}
-                </Button>
               </div>
             </CardContent>
           </Card>
@@ -704,7 +733,7 @@ useEffect(() => {
           <Card>
             <CardContent className="p-6">
               <div className="flex flex-col items-center gap-4">
-                <AIAvatar 
+                <AIAvatar
                   gender={avatarGender}
                   isSpeaking={isAISpeaking}
                   isListening={isListening && micEnabled}
@@ -781,7 +810,10 @@ useEffect(() => {
               </div>
             </CardHeader>
             <CardContent>
-              <div className="min-h-[150px] border rounded-lg p-4 bg-muted/50">
+              <div
+                ref={scrollRef}
+                className="min-h-[150px] max-h-[400px] overflow-y-auto border rounded-lg p-4 bg-muted/50"
+              >
                 {transcript ? (
                   <p className="text-sm whitespace-pre-wrap">{transcript}</p>
                 ) : (

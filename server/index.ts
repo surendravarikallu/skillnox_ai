@@ -3,6 +3,7 @@ import "./load-env";
 
 import express, { type Request, Response, NextFunction } from "express";
 import cookieParser from "cookie-parser";
+import compression from "compression";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
@@ -26,6 +27,9 @@ app.use(
 
 app.use(express.urlencoded({ extended: false }));
 app.use(cookieParser());
+
+// Enable gzip compression for all responses
+app.use(compression());
 
 export function log(message: string, source = "express") {
   const formattedTime = new Date().toLocaleTimeString("en-US", {

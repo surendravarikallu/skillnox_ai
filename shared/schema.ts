@@ -16,7 +16,7 @@ import { z } from "zod";
 
 // Enums
 export const userRoleEnum = pgEnum('user_role', ['student', 'admin']);
-export const interviewTypeEnum = pgEnum('interview_type', ['technical', 'hr', 'behavioral', 'company', 'gd', 'project']);
+export const interviewTypeEnum = pgEnum('interview_type', ['technical', 'hr', 'behavioral', 'company', 'gd', 'project', 'communication']);
 export const interviewStatusEnum = pgEnum('interview_status', ['pending', 'in_progress', 'completed', 'cancelled']);
 export const difficultyEnum = pgEnum('difficulty', ['easy', 'medium', 'hard']);
 export const genderEnum = pgEnum('gender', ['male', 'female']);
@@ -175,6 +175,38 @@ export const systemLogs = pgTable("system_logs", {
   createdAt: timestamp("created_at").defaultNow(),
 });
 
+// Global Settings table (for admin controls like kill switch)
+export const globalSettings = pgTable("global_settings", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  key: varchar("key").unique().notNull(),
+  value: text("value").notNull(),
+  description: text("description"),
+  updatedAt: timestamp("updated_at").defaultNow(),
+});
+
+// Interview Slots table (for scheduled interview sessions)
+export const interviewSlots = pgTable("interview_slots", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  startTime: timestamp("start_time").notNull(),
+  endTime: timestamp("end_time").notNull(),
+  isBooked: boolean("is_booked").default(false).notNull(),
+  bookedByUserId: varchar("booked_by_user_id").references(() => users.id, { onDelete: 'set null' }),
+  interviewId: varchar("interview_id").references(() => interviews.id, { onDelete: 'set null' }),
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Daily Analytics table (aggregated metrics for admin dashboard)
+export const dailyAnalytics = pgTable("daily_analytics", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  date: timestamp("date").notNull().unique(),
+  totalInterviews: integer("total_interviews").default(0).notNull(),
+  avgDurationMinutes: real("avg_duration_minutes"),
+  peakHour: integer("peak_hour"), // 0-23
+  totalUsers: integer("total_users").default(0).notNull(),
+  aiServiceUptime: real("ai_service_uptime"), // percentage
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
 // Relations
 export const usersRelations = relations(users, ({ many }) => ({
   resumes: many(resumes),
@@ -235,6 +267,17 @@ export const gdSessionsRelations = relations(gdSessions, ({ one }) => ({
   }),
 }));
 
+export const interviewSlotsRelations = relations(interviewSlots, ({ one }) => ({
+  bookedByUser: one(users, {
+    fields: [interviewSlots.bookedByUserId],
+    references: [users.id],
+  }),
+  interview: one(interviews, {
+    fields: [interviewSlots.interviewId],
+    references: [interviews.id],
+  }),
+}));
+
 // Insert Schemas
 export const insertUserSchema = createInsertSchema(users).omit({
   id: true,
@@ -279,6 +322,21 @@ export const insertGdSessionSchema = createInsertSchema(gdSessions).omit({
   createdAt: true,
 });
 
+export const insertGlobalSettingSchema = createInsertSchema(globalSettings).omit({
+  id: true,
+  updatedAt: true,
+});
+
+export const insertInterviewSlotSchema = createInsertSchema(interviewSlots).omit({
+  id: true,
+  createdAt: true,
+});
+
+export const insertDailyAnalyticsSchema = createInsertSchema(dailyAnalytics).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -305,10 +363,19 @@ export type InsertPlacementProbability = z.infer<typeof insertPlacementProbabili
 export type GdSession = typeof gdSessions.$inferSelect;
 export type InsertGdSession = z.infer<typeof insertGdSessionSchema>;
 
+export type GlobalSetting = typeof globalSettings.$inferSelect;
+export type InsertGlobalSetting = z.infer<typeof insertGlobalSettingSchema>;
+
+export type InterviewSlot = typeof interviewSlots.$inferSelect;
+export type InsertInterviewSlot = z.infer<typeof insertInterviewSlotSchema>;
+
+export type DailyAnalytics = typeof dailyAnalytics.$inferSelect;
+export type InsertDailyAnalytics = z.infer<typeof insertDailyAnalyticsSchema>;
+
 // Company types for interview simulator
 export const COMPANIES = [
   'TCS',
-  'Infosys', 
+  'Infosys',
   'Wipro',
   'Accenture',
   'Cognizant',
