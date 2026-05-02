@@ -1,7 +1,9 @@
 """
 LLM Service for generating questions and evaluating answers
+Uses Ollama backend for fast local inference
 """
 
+import os
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 from typing import Optional
@@ -14,8 +16,13 @@ from models.llm_models import get_llm
 
 app = FastAPI(title="LLM Service for Interview System")
 
-# Initialize LLM with memory-efficient model
-llm = get_llm(model_name="models/finetuned_llm", use_lightweight=False)
+# Initialize LLM via Ollama
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+FINETUNED_MODEL = os.environ.get("OLLAMA_FINETUNED_MODEL", "")
+
+model_to_use = FINETUNED_MODEL if FINETUNED_MODEL else OLLAMA_MODEL
+print(f"Initializing LLM with model: {model_to_use}")
+llm = get_llm(model_name=model_to_use)
 
 
 class QuestionRequest(BaseModel):
@@ -36,7 +43,7 @@ class ResumeAnalyzeRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "LLM Service for Interview System", "status": "running"}
+    return {"message": "LLM Service for Interview System (Ollama)", "status": "running"}
 
 
 @app.post("/api/llm/generate-question")
@@ -47,7 +54,7 @@ def generate_question(request: QuestionRequest):
             question = llm.generate_company_question(request.company)
         else:
             question = llm.generate_question(request.question_type, request.context)
-        
+
         return {
             "success": True,
             "question": question,
@@ -99,4 +106,3 @@ def analyze_resume(request: ResumeAnalyzeRequest):
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(app, host="0.0.0.0", port=8001)
-

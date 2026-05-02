@@ -123,3 +123,7 @@ Contributions are welcome! Please feel free to submit a Pull Request.
 
 ## 📄 License
 This project is licensed under the MIT License.
+
+
+## Fine-Tuning Pipeline
+SkillnoxAI uses a custom QLoRA fine-tuning pipeline targeting Qwen2.5-7B. See python-ai/training for the Colab notebook and extended datasets.
