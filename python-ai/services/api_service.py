@@ -1,8 +1,10 @@
 """
 FastAPI service for AI inference
 Communicates with Node.js backend
+Uses Ollama for LLM inference (fast C++ backend)
 """
 
+import os
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -21,31 +23,27 @@ from models.llm_models import get_llm
 
 app = FastAPI(title="AI Interview System API")
 
+# Initialize LLM via Ollama (fast startup, no heavy model loading)
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+FINETUNED_MODEL = os.environ.get("OLLAMA_FINETUNED_MODEL", "")
+
+model_to_use = FINETUNED_MODEL if FINETUNED_MODEL else OLLAMA_MODEL
+print(f"Initializing Ollama LLM: {model_to_use}")
+llm = get_llm(model_name=model_to_use)
+
+
 # Warm-up on startup to reduce first request latency
 @app.on_event("startup")
 async def startup_event():
-    """Warm up models on startup"""
-    print("🔥 Warming up LLM model...")
+    """Warm up Ollama model on startup"""
+    print("🔥 Warming up Ollama LLM model...")
     try:
-        # Generate a dummy question to load model into memory
+        # Generate a dummy question to ensure model is loaded in Ollama's memory
         _ = llm.generate_question("technical", "Python", "easy")
-        print("✅ LLM model ready")
+        print("✅ Ollama LLM model ready")
     except Exception as e:
         print(f"⚠️  Warm-up warning: {e}")
 
-# Initialize LLM for question generation (use fine-tuned model if available)
-try:
-    finetuned_path = Path(__file__).parent.parent / "models" / "finetuned_llm"
-    if finetuned_path.exists() and (finetuned_path / "adapter_config.json").exists():
-        print("Using fine-tuned LLM model")
-        llm = get_llm(model_name="models/finetuned_llm", use_lightweight=False)
-    else:
-        print("Using base LLM model (fine-tuned not found)")
-        llm = get_llm(use_lightweight=False)
-except Exception as e:
-    print(f"Warning: Could not load fine-tuned model: {e}")
-    print("Falling back to base model")
-    llm = get_llm(use_lightweight=False)
 
 # CORS middleware
 app.add_middleware(
@@ -56,7 +54,7 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Initialize inference service
+# Initialize inference service (NLP, Vision, Audio models — non-LLM)
 inference_service = InferenceService(device='cpu')
 
 
@@ -117,26 +115,28 @@ class FollowUpQuestionRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "AI Interview System API", "status": "running"}
+    return {"message": "AI Interview System API (Ollama)", "status": "running"}
 
 
 @app.get("/health")
 def health():
-    """Health check endpoint - fast check without generating questions"""
+    """Health check endpoint"""
     try:
-        # Quick check if LLM is loaded (just check if model exists, don't generate)
-        if llm and hasattr(llm, 'model') and llm.model is not None:
-            llm_status = "loaded"
-        else:
-            llm_status = "not_loaded"
+        # Quick check: verify Ollama connection
+        import requests
+        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
+        resp = requests.get(f"{base_url}/api/tags", timeout=5)
+        llm_status = "loaded" if resp.status_code == 200 else "error"
     except Exception as e:
         llm_status = f"error: {str(e)}"
-    
+
     return {
         "status": "healthy",
         "llm_status": llm_status,
+        "llm_backend": "ollama",
+        "model": model_to_use,
         "service": "AI Interview System API",
-        "version": "1.0.0"
+        "version": "2.0.0"
     }
 
 
@@ -174,7 +174,7 @@ def extract_jd_skills(request: JDExtractRequest):
 def evaluate_answer(request: AnswerEvaluateRequest):
     """Evaluate interview answer"""
     try:
-        # Use LLM for better evaluation
+        # Use Ollama LLM for evaluation
         if request.question:
             result = llm.evaluate_answer(request.question, request.answer)
             return {"success": True, "data": result}
@@ -226,24 +226,24 @@ async def analyze_voice(
     try:
         import librosa
         import tempfile
-        import os
-        
+        import os as _os
+
         # Save uploaded file temporarily
         with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as tmp_file:
             audio_data = await file.read()
             tmp_file.write(audio_data)
             tmp_file_path = tmp_file.name
-        
+
         try:
             # Load audio with librosa
             audio_array, sr = librosa.load(tmp_file_path, sr=22050)
-            
+
             result = inference_service.analyze_voice(audio_array, transcript=transcript)
             return {"success": True, "data": result}
         finally:
             # Clean up temp file
-            if os.path.exists(tmp_file_path):
-                os.unlink(tmp_file_path)
+            if _os.path.exists(tmp_file_path):
+                _os.unlink(tmp_file_path)
     except Exception as e:
         # Return default values on error
         return {
@@ -295,20 +295,20 @@ def analyze_skill_gap(request: SkillGapRequest):
 
 @app.post("/api/llm/generate-question")
 def generate_question(request: QuestionGenerateRequest):
-    """Generate interview question using LLM"""
+    """Generate interview question using Ollama LLM"""
     try:
         difficulty = request.difficulty or 'medium'
         print(f"Generating question: type={request.question_type}, difficulty={difficulty}, company={request.company}")
-        
+
         if request.company:
             question = llm.generate_company_question(request.company, difficulty)
         else:
             question = llm.generate_question(request.question_type, request.context, difficulty)
-        
+
         if not question or question.strip() == "":
             print("Warning: Generated empty question, using fallback")
             question = f"Tell me about your experience with {request.question_type}."
-        
+
         return {"success": True, "question": question}
     except Exception as e:
         import traceback
@@ -323,12 +323,12 @@ def generate_followup_question(request: FollowUpQuestionRequest):
     try:
         # Build context from conversation history
         context = f"Previous question: {request.previous_question}\nAnswer: {request.answer}"
-        
+
         if request.conversation_history:
             context += "\n\nConversation history:\n"
             for msg in request.conversation_history[-3:]:  # Last 3 exchanges
                 context += f"{msg.get('role', 'user')}: {msg.get('content', '')}\n"
-        
+
         # Generate follow-up question
         prompt = f"""Based on this interview answer, generate a relevant follow-up question for a {request.interview_type} interview.
         
@@ -341,7 +341,7 @@ Generate a follow-up question that:
 3. Is relevant to {request.interview_type} interview context
 
 Follow-up question:"""
-        
+
         followup = llm.generate(prompt, max_length=100)
         return {"success": True, "question": followup.strip()}
     except Exception as e:
@@ -373,17 +373,4 @@ def analyze_resume(request: ResumeAnalyzeRequest):
 
 if __name__ == "__main__":
     import uvicorn
-    import gc
-    
-    # Trigger GC only after heavy operations (LLM generation)
-    @app.middleware("http")
-    async def cleanup_middleware(request, call_next):
-        response = await call_next(request)
-        
-        # Only trigger GC after LLM generation, not evaluation or other lightweight ops
-        if '/generate' in request.url.path:
-            gc.collect()
-        
-        return response
-    
     uvicorn.run(app, host="0.0.0.0", port=8000)
