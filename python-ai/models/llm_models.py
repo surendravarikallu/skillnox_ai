@@ -483,6 +483,113 @@ class OllamaLLM:
         found = [s for s in common if s.lower() in text.lower()]
         return found[:15]
 
+    # ------------------------------------------------------------------
+    # Personality Analysis (replaces untrained LSTM)
+    # ------------------------------------------------------------------
+
+    def analyze_personality(self, responses: List[str]) -> Dict:
+        """Analyze personality traits from interview responses using LLM."""
+        system = (
+            "You are an expert psychologist analyzing interview responses. "
+            "Evaluate the candidate's personality on these 4 dimensions, "
+            "each scored from -1.0 (left trait) to +1.0 (right trait):\n"
+            "1. Introvert (-1) to Extrovert (+1)\n"
+            "2. Thinker (-1) to Feeler (+1)\n"
+            "3. Logical (-1) to Creative (+1)\n"
+            "4. Planner (-1) to Spontaneous (+1)\n\n"
+            "Respond EXACTLY in this format:\n"
+            "IE: [score]\nTF: [score]\nLC: [score]\nPS: [score]\n"
+            "Traits: [comma-separated dominant traits]"
+        )
+
+        combined = "\n".join(
+            [f"Response {i+1}: {r[:500]}" for i, r in enumerate(responses[:5])]
+        )
+        prompt = f"Analyze personality from these interview responses:\n\n{combined}"
+
+        evaluation = self.generate(prompt, max_length=200, system_prompt=system)
+
+        def extract_dim(name):
+            m = re.search(rf"{name}:\s*([+-]?\d*\.?\d+)", evaluation, re.IGNORECASE)
+            if m:
+                return max(-1.0, min(1.0, float(m.group(1))))
+            return 0.0
+
+        ie = extract_dim("IE")
+        tf = extract_dim("TF")
+        lc = extract_dim("LC")
+        ps = extract_dim("PS")
+
+        # Extract trait names
+        traits = []
+        if ie > 0.3: traits.append("Extroverted")
+        elif ie < -0.3: traits.append("Introverted")
+        if tf < -0.3: traits.append("Analytical")
+        elif tf > 0.3: traits.append("Empathetic")
+        if lc > 0.3: traits.append("Creative")
+        elif lc < -0.3: traits.append("Logical")
+        if ps < -0.3: traits.append("Organized")
+        elif ps > 0.3: traits.append("Adaptable")
+        if not traits:
+            traits = ["Balanced"]
+
+        return {
+            "introvert_extrovert": ie,
+            "thinker_feeler": tf,
+            "logical_creative": lc,
+            "planner_spontaneous": ps,
+            "dominant_traits": traits,
+        }
+
+    # ------------------------------------------------------------------
+    # LLM-Powered Skill Extraction (enhances rule-based)
+    # ------------------------------------------------------------------
+
+    def extract_skills_from_text(self, text: str) -> List[str]:
+        """Extract skills from resume or JD text using LLM."""
+        system = (
+            "Extract ALL technical and soft skills from the following text. "
+            "Output ONLY a comma-separated list of skills. No explanation."
+        )
+        prompt = f"Extract skills from:\n\n{text[:3000]}"
+
+        result = self.generate(prompt, max_length=300, system_prompt=system)
+        skills = [s.strip() for s in result.split(",") if s.strip() and len(s.strip()) > 1]
+        return skills[:20]
+
+    # ------------------------------------------------------------------
+    # LLM-Powered Resume Parsing (replaces untrained LSTM)
+    # ------------------------------------------------------------------
+
+    def parse_resume_structured(self, resume_text: str) -> Dict:
+        """Parse resume and extract structured info using LLM."""
+        system = (
+            "Extract structured information from this resume. "
+            "Respond in this EXACT format:\n"
+            "Skills: skill1, skill2, ...\n"
+            "Experience: yes/no\n"
+            "Education: yes/no\n"
+            "Years: [number or 0]"
+        )
+        prompt = f"Parse this resume:\n\n{resume_text[:3000]}"
+
+        result = self.generate(prompt, max_length=300, system_prompt=system)
+
+        # Parse skills
+        skills = []
+        skills_match = re.search(r"Skills?:\s*(.+)", result, re.IGNORECASE)
+        if skills_match:
+            skills = [s.strip() for s in skills_match.group(1).split(",") if s.strip()]
+
+        has_exp = bool(re.search(r"Experience:\s*yes", result, re.IGNORECASE))
+        has_edu = bool(re.search(r"Education:\s*yes", result, re.IGNORECASE))
+
+        return {
+            "skills": skills[:15],
+            "has_experience": has_exp,
+            "has_education": has_edu,
+        }
+
 
 # ---------------------------------------------------------------------------
 # Module-level singleton
