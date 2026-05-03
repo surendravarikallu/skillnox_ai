@@ -61,6 +61,10 @@ class PlacementPredictor(nn.Module):
         self.temperature = nn.Parameter(torch.ones(1))
 
     def forward(self, x):
+        # Validate input shape
+        if x.shape[1] != 10:
+            raise ValueError(f"PlacementPredictor expects exactly 10 features, got {x.shape[1]}")
+
         # Split inputs into score features and personality features
         score_features = x[:, :7]
         personality_features = x[:, 7:10]

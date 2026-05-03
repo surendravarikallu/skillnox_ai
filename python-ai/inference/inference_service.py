@@ -251,8 +251,13 @@ class InferenceService:
         """Analyze skill gap between resume and JD"""
         # Try LLM-enhanced extraction
         try:
-            resume_skills = self.llm.extract_skills_from_text(resume_text)
-            jd_skills = self.llm.extract_skills_from_text(jd_text)
+            import concurrent.futures
+            with concurrent.futures.ThreadPoolExecutor(max_workers=2) as executor:
+                future_resume = executor.submit(self.llm.extract_skills_from_text, resume_text)
+                future_jd = executor.submit(self.llm.extract_skills_from_text, jd_text)
+                
+                resume_skills = future_resume.result()
+                jd_skills = future_jd.result()
 
             if resume_skills and jd_skills:
                 matched = list(set(s.lower() for s in resume_skills) & set(s.lower() for s in jd_skills))

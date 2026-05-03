@@ -73,7 +73,10 @@ class HSEmotionRecognizer:
                     probs = np.zeros(7)
                     probs[6] = 1.0  # Neutral fallback
 
-                # Normalize to sum to 1
+                # Apply softmax to logits
+                probs = np.exp(probs) / np.sum(np.exp(probs))
+
+                # Normalize to sum to 1 (safety)
                 probs = probs / (probs.sum() + 1e-8)
                 predicted_idx = np.argmax(probs)
                 predicted_emotion = self.EMOTION_LABELS[predicted_idx]
