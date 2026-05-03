@@ -12,6 +12,10 @@ import os
 import requests
 from typing import Dict, List, Optional
 
+__all__ = ['AudioFeatureExtractor', 'AudioTranscriber', 'LLMVoiceAnalyzer', 'VoiceAnalysisService', 'DEFAULT_WHISPER_MODEL']
+
+DEFAULT_WHISPER_MODEL = "large-v3-turbo"
+
 
 # ---------------------------------------------------------------------------
 # Audio Feature Extractor (Real acoustic analysis via librosa)
@@ -130,7 +134,7 @@ class AudioFeatureExtractor:
 class AudioTranscriber:
     """Audio transcription using Faster Whisper large-v3-turbo"""
 
-    def __init__(self, model_size="large-v3-turbo", device="cpu"):
+    def __init__(self, model_size=DEFAULT_WHISPER_MODEL, device="cpu"):
         """
         Initialize audio transcriber with Whisper.
 
@@ -328,7 +332,7 @@ class LLMVoiceAnalyzer:
                     "stream": False,
                     "options": {"temperature": 0.3, "num_predict": 150},
                 },
-                timeout=30,
+                timeout=60,
             )
             if resp.status_code == 200:
                 text = resp.json().get("response", "")
@@ -359,7 +363,7 @@ class VoiceAnalysisService:
         self.device = device
         self.feature_extractor = AudioFeatureExtractor()
         self.transcriber = AudioTranscriber(
-            model_size="large-v3-turbo",
+            model_size=DEFAULT_WHISPER_MODEL,
             device="cuda" if torch.cuda.is_available() else "cpu"
         )
         self.voice_analyzer = LLMVoiceAnalyzer()
