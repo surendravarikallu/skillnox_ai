@@ -18,8 +18,12 @@ from pathlib import Path
 # Configuration
 # ---------------------------------------------------------------------------
 
+from dotenv import load_dotenv
+env_path = Path(__file__).parent.parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "120"))
 
 
@@ -58,17 +62,17 @@ class OllamaLLM:
             if resp.status_code == 200:
                 models = [m["name"] for m in resp.json().get("models", [])]
                 if self.model_name in models or f"{self.model_name}:latest" in models:
-                    print(f"✓ Ollama LLM ready: {self.model_name}")
+                    print(f"[OK] Ollama LLM ready: {self.model_name}")
                 else:
-                    print(f"⚠ Model '{self.model_name}' not found. Available: {models}")
+                    print(f"[WARN] Model '{self.model_name}' not found. Available: {models}")
                     print(f"  Run: ollama pull {self.model_name}")
             else:
-                print(f"⚠ Ollama returned status {resp.status_code}")
+                print(f"[WARN] Ollama returned status {resp.status_code}")
         except requests.ConnectionError:
-            print("⚠ Cannot connect to Ollama. Ensure it is running.")
+            print("[WARN] Cannot connect to Ollama. Ensure it is running.")
             print("  Start with: ollama serve")
         except Exception as e:
-            print(f"⚠ Ollama connection check failed: {e}")
+            print(f"[WARN] Ollama connection check failed: {e}")
 
     # ------------------------------------------------------------------
     # Core generation
@@ -106,10 +110,10 @@ class OllamaLLM:
             return resp.json().get("response", "").strip()
 
         except requests.Timeout:
-            print(f"⚠ Ollama request timed out ({self.timeout}s)")
+            print(f"[WARN] Ollama request timed out ({self.timeout}s)")
             return self._fallback_generate(prompt)
         except requests.ConnectionError:
-            print("⚠ Cannot connect to Ollama server")
+            print("[WARN] Cannot connect to Ollama server")
             return self._fallback_generate(prompt)
         except Exception as e:
             print(f"Error in Ollama generation: {e}")
@@ -199,41 +203,86 @@ class OllamaLLM:
     # ------------------------------------------------------------------
 
     def evaluate_answer(self, question: str, answer: str) -> Dict:
-        """Evaluate answer with strict, detailed criteria."""
+        """Evaluate answer with strict, detailed criteria and ideal answer guidance."""
+        is_behavioral = any(word in question.lower() for word in ["tell me about a time", "situation", "describe a scenario", "how do you handle", "conflict", "experience"])
+        
         system = (
-            "You are an expert technical interviewer conducting a rigorous evaluation. "
+            "You are an expert technical and behavioral interviewer conducting a rigorous evaluation. "
             "Analyze the candidate's answer critically and provide strict, honest feedback. "
-            "ALWAYS respond in this exact format:\n"
+            "ALWAYS respond in this EXACT format with NO extra text:\n"
             "Score: [number 0-100]\n"
-            "Feedback: [2-3 specific sentences]\n\n"
-            "Scoring: 0-40 Poor, 41-60 Below Average, 61-75 Average, 76-85 Good, 86-100 Excellent."
+            "Feedback: [2-3 specific sentences about what was good/bad]\n"
+            "IdealAnswer: [A concise 2-4 sentence model answer showing how to properly answer this question]\n\n"
+            "Scoring Rubric:\n"
+            "- 0-30: Vague, irrelevant, or extremely short (under 10 words).\n"
+            "- 31-50: Partially addresses question but lacks depth or examples.\n"
+            "- 51-70: Good answer, addresses most points, but could be more structured.\n"
+            "- 71-85: Strong answer with clear examples and technical/behavioral maturity.\n"
+            "- 86-100: Exceptional, uses STAR method (for behavioral) or high technical depth, perfectly articulated.\n\n"
+            + ("For this BEHAVIORAL question, look specifically for the STAR method: Situation, Task, Action, Result. Penalize if the result or specific actions are missing.\n" if is_behavioral else "For this TECHNICAL question, look for accuracy, depth, and mention of relevant tools/frameworks.\n") +
+            "DO NOT include any reasoning, breakdown, thought process, or markdown. "
+            "ONLY output Score, Feedback, and IdealAnswer."
         )
 
         prompt = (
+            f"/no_think\n"
             f"Question: {question}\n"
             f"Candidate Answer: {answer}\n\n"
-            "Evaluate with Score (0-100) and Feedback."
+            "Evaluate with Score (0-100), Feedback, and IdealAnswer. "
+            "START YOUR RESPONSE WITH 'Score: '."
         )
 
-        evaluation = self.generate(prompt, max_length=250, system_prompt=system)
+        evaluation = self.generate(prompt, max_length=450, system_prompt=system)
+
+        # Strip any <think>...</think> blocks from reasoning models
+        evaluation = re.sub(r'<think>.*?</think>', '', evaluation, flags=re.DOTALL).strip()
 
         # Parse score
-        score = 60
+        score = 50
         score_match = re.search(r"Score:\s*(\d{1,3})", evaluation, re.IGNORECASE)
         if score_match:
             score = max(0, min(100, int(score_match.group(1))))
+        else:
+            fallback_match = re.search(r"score.*?(\d{1,3})", evaluation, re.IGNORECASE)
+            if fallback_match:
+                score = max(0, min(100, int(fallback_match.group(1))))
 
         # Parse feedback
-        feedback = evaluation
+        feedback = ""
         fb_match = re.search(
-            r"Feedback:\s*(.+?)(?:\n\n|$)", evaluation, re.IGNORECASE | re.DOTALL
+            r"Feedback:\s*(.+?)(?:IdealAnswer:|Ideal Answer:|$)", evaluation, re.IGNORECASE | re.DOTALL
         )
         if fb_match:
             feedback = fb_match.group(1).strip()
 
+        # Parse ideal answer
+        ideal_answer = ""
+        ideal_match = re.search(
+            r"(?:IdealAnswer|Ideal Answer):\s*(.+?)$", evaluation, re.IGNORECASE | re.DOTALL
+        )
+        if ideal_match:
+            ideal_answer = ideal_match.group(1).strip()
+
+        # Fallback: if no structured feedback found
+        if not feedback:
+            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', evaluation.replace('\n', ' ')) if s.strip()]
+            if len(sentences) > 2:
+                feedback = " ".join(sentences[:2]) # Take first 2 for feedback
+                if len(sentences) > 2:
+                    ideal_answer = " ".join(sentences[2:5]) # Take next few for ideal answer
+            else:
+                feedback = evaluation.strip()
+            if len(feedback) > 300:
+                feedback = feedback[:297] + "..."
+
+        # Combine feedback with ideal answer for the UI
+        combined_feedback = feedback
+        if ideal_answer:
+            combined_feedback = f"{feedback}\n\nHow to answer: {ideal_answer}"
+
         return {
             "score": score,
-            "feedback": feedback,
+            "feedback": combined_feedback,
             "detailed_analysis": evaluation,
         }
 
@@ -605,7 +654,7 @@ def get_llm(
     """Get or create Ollama LLM instance.
 
     Args:
-        model_name: Ollama model name (e.g. "qwen3.5:9b")
+        model_name: Ollama model name (e.g. "qwen3:8b")
         use_lightweight: Deprecated, ignored. Kept for backward compatibility.
     """
     global _llm_instance

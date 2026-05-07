@@ -20,12 +20,18 @@ import {
   TrendingUp,
   Plus,
   X,
-  Sparkles
+  Sparkles,
+  Zap,
+  ArrowUpRight,
+  ShieldCheck
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { BorderBeam } from "@/components/ui/border-beam";
+import { motion, AnimatePresence } from "framer-motion";
 import type { Resume, JobDescription } from "@shared/schema";
+import { cn } from "@/lib/utils";
 
 export default function ResumePage() {
   const { toast } = useToast();
@@ -57,17 +63,7 @@ export default function ResumePage() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/resume'] });
-      toast({
-        title: "Success",
-        description: "Resume uploaded and analyzed successfully!",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to upload resume. Please try again.",
-        variant: "destructive",
-      });
+      toast({ title: "Intelligence Synced", description: "Your resume has been analyzed by our AI models." });
     },
   });
 
@@ -78,20 +74,8 @@ export default function ResumePage() {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/job-descriptions'] });
       setShowJdForm(false);
-      setJdTitle("");
-      setJdCompany("");
-      setJdDescription("");
-      toast({
-        title: "Success",
-        description: "Job description added and analyzed!",
-      });
-    },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to add job description.",
-        variant: "destructive",
-      });
+      setJdTitle(""); setJdCompany(""); setJdDescription("");
+      toast({ title: "Opportunity Indexed", description: "Job matching analysis complete." });
     },
   });
 
@@ -99,11 +83,7 @@ export default function ResumePage() {
     const file = e.target.files?.[0];
     if (file) {
       if (file.size > 5 * 1024 * 1024) {
-        toast({
-          title: "File too large",
-          description: "Please upload a file smaller than 5MB",
-          variant: "destructive",
-        });
+        toast({ title: "Payload Overflow", description: "Limit file size to 5MB for analysis.", variant: "destructive" });
         return;
       }
       uploadResumeMutation.mutate(file);
@@ -113,462 +93,225 @@ export default function ResumePage() {
   const handleDrop = useCallback((e: React.DragEvent) => {
     e.preventDefault();
     const file = e.dataTransfer.files?.[0];
-    if (file && (file.type === 'application/pdf' || file.type.includes('document') || file.name.endsWith('.docx') || file.name.endsWith('.doc'))) {
+    if (file && (file.type === 'application/pdf' || file.name.endsWith('.docx'))) {
       uploadResumeMutation.mutate(file);
     }
   }, [uploadResumeMutation]);
 
-  const handleAddJd = () => {
-    if (!jdTitle.trim() || !jdDescription.trim()) {
-      toast({
-        title: "Missing fields",
-        description: "Please provide a title and description",
-        variant: "destructive",
-      });
-      return;
-    }
-    addJdMutation.mutate({
-      title: jdTitle,
-      company: jdCompany,
-      description: jdDescription,
-    });
-  };
-
-  // Treat resumes with null id (backend "empty" object) as no resume
   const hasResume = !!resume && !!resume.id;
   const parsedData = hasResume ? (resume.parsedData as any) : null;
   const skills = hasResume ? (resume.skills || []) : [];
-  const [analysisProgress, setAnalysisProgress] = useState(0);
-  const isAnalyzingResume = uploadResumeMutation.isPending;
-
-  useEffect(() => {
-    if (isAnalyzingResume) {
-      setAnalysisProgress(12);
-      const interval = setInterval(() => {
-        setAnalysisProgress((prev) => {
-          if (prev >= 92) return prev;
-          return Math.min(92, prev + Math.random() * 8 + 2);
-        });
-      }, 700);
-      return () => clearInterval(interval);
-    } else {
-      setAnalysisProgress(0);
-    }
-  }, [isAnalyzingResume]);
-
-  const renderAnalyzingState = (
-    <div className="mt-4 p-4 bg-primary/5 border border-primary/20 rounded-lg space-y-3 animate-in fade-in duration-300">
-      <div className="flex items-center gap-3">
-        <div className="w-5 h-5 border-2 border-primary border-t-transparent rounded-full animate-spin" />
-        <div>
-          <p className="font-medium">Analyzing your resume with AI...</p>
-          <p className="text-xs text-muted-foreground">
-            This usually takes 5-15 seconds while we extract skills & insights.
-          </p>
-        </div>
-      </div>
-      <Progress value={analysisProgress || 10} className="h-2" />
-    </div>
-  );
   const experience = (hasResume ? (resume.experience as any[]) : []) || [];
   const education = (hasResume ? (resume.education as any[]) : []) || [];
 
   return (
-    <div className="max-w-5xl mx-auto space-y-8">
-      <div>
-        <h1 className="text-3xl font-bold" data-testid="text-page-title">Resume & Job Matching</h1>
-        <p className="text-muted-foreground mt-1">
-          Upload your resume and job descriptions for AI-powered analysis
-        </p>
-      </div>
+    <div className="max-w-[1400px] mx-auto space-y-10 pb-12">
+      {/* Header Section */}
+      <section>
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest mb-4">
+          <Sparkles className="w-3 h-3" />
+          AI Portfolio Intelligence
+        </div>
+        <h1 className="text-4xl font-black tracking-tight mb-2">Resume Architecture</h1>
+        <p className="text-muted-foreground text-lg">Align your professional identity with global industry standards.</p>
+      </section>
 
-      <div className="grid lg:grid-cols-2 gap-6">
-        <div className="space-y-6">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <FileText className="w-5 h-5" />
-                Your Resume
-              </CardTitle>
+      <div className="grid lg:grid-cols-12 gap-8">
+        {/* Left: Resume Details */}
+        <div className="lg:col-span-7 space-y-8">
+          <Card className="rounded-[2.5rem] glass-card overflow-hidden relative">
+            <CardHeader className="p-8 pb-4">
+              <div className="flex items-center justify-between">
+                <CardTitle className="text-2xl font-black tracking-tight flex items-center gap-3">
+                  <FileText className="w-6 h-6 text-primary" />
+                  Primary Repository
+                </CardTitle>
+                {hasResume && <Badge className="bg-emerald-500/20 text-emerald-500 border-0 uppercase font-black tracking-widest text-[10px]">Active</Badge>}
+              </div>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-8">
               {loadingResume ? (
-                <div className="space-y-4">
-                  <Skeleton className="h-32" />
-                  <Skeleton className="h-4 w-1/2" />
-                </div>
+                <div className="space-y-6"><Skeleton className="h-40 rounded-3xl" /><Skeleton className="h-6 w-1/2" /></div>
               ) : hasResume ? (
-                <div className="space-y-6">
-                  <div className="flex items-center gap-4 p-4 bg-green-50 dark:bg-green-950 rounded-lg border border-green-200 dark:border-green-800">
-                    <CheckCircle className="w-8 h-8 text-green-500" />
-                    <div>
-                      <p className="font-medium">{resume.fileName}</p>
-                      <p className="text-sm text-muted-foreground">
-                        Uploaded {new Date(resume.createdAt!).toLocaleDateString()}
-                      </p>
+                <div className="space-y-8">
+                  <div className="flex items-center gap-6 p-6 rounded-3xl bg-muted/50 border border-border group hover:border-primary/30 transition-all">
+                    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
+                      <FileText className="w-8 h-8 text-primary" />
                     </div>
+                    <div className="flex-1 min-w-0">
+                      <p className="font-bold text-lg truncate">{resume.fileName}</p>
+                      <p className="text-xs text-muted-foreground uppercase font-black tracking-widest opacity-60">System Synchronized: {new Date(resume.createdAt!).toLocaleDateString()}</p>
+                    </div>
+                    <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary">
+                      <ArrowUpRight className="w-5 h-5" />
+                    </Button>
                   </div>
 
-                  {/* Only show score to admins, not students */}
-                  {resume.overallScore !== null && user?.role === 'admin' && (
-                    <div className="p-4 bg-muted/50 rounded-lg">
-                      <div className="flex items-center justify-between mb-2">
-                        <span className="font-medium">Resume Score</span>
-                        <span className="text-2xl font-bold text-primary" data-testid="text-resume-score">
-                          {Math.round(resume.overallScore)}%
-                        </span>
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="p-6 rounded-3xl bg-muted/50 border border-border space-y-4">
+                      <Label className="text-[10px] font-black uppercase tracking-widest opacity-50">Upload Revision</Label>
+                      <div 
+                        className="border-2 border-dashed border-border rounded-2xl p-6 text-center cursor-pointer hover:border-primary/50 hover:bg-primary/5 transition-all"
+                        onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
+                      >
+                        <input type="file" accept=".pdf,.docx" onChange={handleFileChange} className="hidden" id="resume-re-upload" />
+                        <label htmlFor="resume-re-upload" className="cursor-pointer space-y-2">
+                          <Upload className="w-6 h-6 mx-auto text-muted-foreground" />
+                          <p className="text-[10px] font-black uppercase tracking-widest">Select New Payload</p>
+                        </label>
                       </div>
-                      <Progress value={resume.overallScore} className="h-2" />
                     </div>
-                  )}
-
-                  <div>
-                    <Label className="block mb-2">Update Resume</Label>
-                    <div
-                      className="border-2 border-dashed border-border rounded-lg p-6 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                      onDrop={handleDrop}
-                      onDragOver={(e) => e.preventDefault()}
-                    >
-                      <input
-                        type="file"
-                        accept=".pdf,.doc,.docx"
-                        onChange={handleFileChange}
-                        className="hidden"
-                        id="resume-upload-update"
-                        disabled={uploadResumeMutation.isPending}
-                      />
-                      <label htmlFor="resume-upload-update" className="cursor-pointer">
-                        <Upload className="w-8 h-8 text-muted-foreground mx-auto mb-2" />
-                        <p className="text-sm text-muted-foreground flex items-center justify-center gap-2">
-                          {uploadResumeMutation.isPending && (
-                            <span className="w-4 h-4 border-2 border-muted border-t-transparent rounded-full animate-spin" />
-                          )}
-                          {uploadResumeMutation.isPending ? 'Analyzing updated resume...' : 'Drop new resume or click to upload'}
-                        </p>
-                      </label>
+                    
+                    <div className="p-6 rounded-3xl bg-primary/5 border border-primary/10 flex flex-col justify-center text-center space-y-2 relative overflow-hidden">
+                       <Zap className="absolute top-2 right-2 w-12 h-12 text-primary/10" />
+                       <p className="text-sm font-bold text-primary uppercase tracking-[0.2em]">ATS Optimization</p>
+                       <span className="text-4xl font-black tracking-tighter text-foreground">{Math.round(resume.overallScore || 0)}%</span>
+                       <p className="text-[10px] font-black uppercase tracking-widest opacity-60">AI Global Index</p>
                     </div>
-                    {isAnalyzingResume && renderAnalyzingState}
                   </div>
                 </div>
               ) : (
-                <div
-                  className="border-2 border-dashed border-border rounded-lg p-8 text-center cursor-pointer hover:border-primary/50 transition-colors"
-                  onDrop={handleDrop}
-                  onDragOver={(e) => e.preventDefault()}
+                <div 
+                  className="border-2 border-dashed border-border rounded-[2rem] p-16 text-center hover:border-primary transition-all group relative overflow-hidden"
+                  onDrop={handleDrop} onDragOver={(e) => e.preventDefault()}
                 >
-                  <input
-                    type="file"
-                    accept=".pdf,.doc,.docx"
-                    onChange={handleFileChange}
-                    className="hidden"
-                    id="resume-upload"
-                    disabled={uploadResumeMutation.isPending}
-                    data-testid="input-resume-upload"
-                  />
-                  <label htmlFor="resume-upload" className="cursor-pointer">
-                    <Upload className="w-12 h-12 text-muted-foreground mx-auto mb-4" />
-                    <p className="font-medium mb-1 flex items-center justify-center gap-2">
-                      {uploadResumeMutation.isPending && (
-                        <span className="w-5 h-5 border-2 border-muted border-t-transparent rounded-full animate-spin" />
-                      )}
-                      {uploadResumeMutation.isPending ? 'Analyzing Resume...' : 'Upload Your Resume'}
-                    </p>
-                    <p className="text-sm text-muted-foreground">
-                      Drag & drop or click to select (PDF, DOC, DOCX)
-                    </p>
+                  <div className="absolute inset-0 bg-primary/5 opacity-0 group-hover:opacity-100 transition-opacity" />
+                  <input type="file" accept=".pdf,.docx" onChange={handleFileChange} className="hidden" id="resume-initial-upload" />
+                  <label htmlFor="resume-initial-upload" className="cursor-pointer relative z-10 block space-y-6">
+                    <div className="w-20 h-20 bg-primary/10 rounded-3xl flex items-center justify-center mx-auto group-hover:scale-110 transition-transform">
+                      <Upload className="w-10 h-10 text-primary" />
+                    </div>
+                    <div className="space-y-2">
+                      <h3 className="text-2xl font-black tracking-tight">Deploy Resume</h3>
+                      <p className="text-muted-foreground max-w-xs mx-auto">Drop your professional blueprints here (PDF/DOCX) for instantaneous AI decomposition.</p>
+                    </div>
                   </label>
-                  {isAnalyzingResume && renderAnalyzingState}
+                  <BorderBeam size={200} />
                 </div>
               )}
             </CardContent>
+            <BorderBeam size={400} duration={15} />
           </Card>
 
-          {hasResume && skills.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Code className="w-5 h-5" />
-                  Extracted Skills
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
+          {/* Detailed Decomposition */}
+          <div className="grid md:grid-cols-2 gap-8">
+             <Card className="rounded-[2rem] glass-card p-8 space-y-6">
+                <div className="flex items-center gap-3">
+                  <Code className="w-5 h-5 text-primary" />
+                  <h3 className="font-black uppercase tracking-widest text-xs">Vectorized Skills</h3>
+                </div>
                 <div className="flex flex-wrap gap-2">
-                  {skills.map((skill, index) => (
-                    <Badge key={index} variant="secondary" data-testid={`badge-skill-${index}`}>
-                      {skill}
-                    </Badge>
-                  ))}
+                  {skills.length > 0 ? skills.map((s, i) => (
+                    <motion.div key={i} initial={{ opacity: 0, scale: 0.8 }} animate={{ opacity: 1, scale: 1 }} transition={{ delay: i * 0.05 }}>
+                      <Badge variant="secondary" className="rounded-lg bg-muted border-border px-3 py-1 text-xs hover:bg-primary/20 transition-colors">{s}</Badge>
+                    </motion.div>
+                  )) : <p className="text-xs text-muted-foreground italic">No skills indexed.</p>}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+             </Card>
 
-          {hasResume && experience && experience.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Briefcase className="w-5 h-5" />
-                  Experience
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-4">
-                  {experience.map((exp, index) => (
-                    <div key={index} className="border-l-2 border-primary pl-4">
-                      <p className="font-medium">{exp.title || exp.role}</p>
-                      <p className="text-sm text-muted-foreground">{exp.company}</p>
-                      {exp.duration && (
-                        <p className="text-xs text-muted-foreground">{exp.duration}</p>
-                      )}
-                    </div>
-                  ))}
+             <Card className="rounded-[2rem] glass-card p-8 space-y-6">
+                <div className="flex items-center gap-3">
+                  <Briefcase className="w-5 h-5 text-primary" />
+                  <h3 className="font-black uppercase tracking-widest text-xs">Experience Log</h3>
                 </div>
-              </CardContent>
-            </Card>
-          )}
-
-          {hasResume && education && education.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <GraduationCap className="w-5 h-5" />
-                  Education
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
                 <div className="space-y-4">
-                  {education.map((edu, index) => (
-                    <div key={index} className="border-l-2 border-primary pl-4">
-                      <p className="font-medium">{edu.degree}</p>
-                      <p className="text-sm text-muted-foreground">{edu.institution}</p>
-                      {edu.year && (
-                        <p className="text-xs text-muted-foreground">{edu.year}</p>
-                      )}
+                  {experience.length > 0 ? experience.map((exp, i) => (
+                    <div key={i} className="border-l border-primary/30 pl-4 py-1">
+                      <p className="font-bold text-sm">{exp.title || exp.role}</p>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-60">{exp.company}</p>
                     </div>
-                  ))}
+                  )) : <p className="text-xs text-muted-foreground italic">No experience data.</p>}
                 </div>
-              </CardContent>
-            </Card>
-          )}
+             </Card>
+          </div>
         </div>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader className="pb-2">
-              <div className="flex items-center justify-between gap-4">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Target className="w-5 h-5" />
-                  Job Descriptions
+        {/* Right: Job Intelligence */}
+        <div className="lg:col-span-5 space-y-8">
+          <Card className="rounded-[2.5rem] glass-card p-8">
+            <CardHeader className="p-0 mb-8 flex flex-row items-center justify-between">
+              <div>
+                <CardTitle className="text-2xl font-black tracking-tight flex items-center gap-3">
+                  <Target className="w-6 h-6 text-primary" />
+                  Job Alignment
                 </CardTitle>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setShowJdForm(!showJdForm)}
-                  data-testid="button-add-jd"
-                >
-                  <Plus className="w-4 h-4 mr-1" />
-                  Add JD
-                </Button>
+                <p className="text-xs text-muted-foreground mt-1 uppercase tracking-widest font-black opacity-60">Target Analysis</p>
               </div>
-              <CardDescription>
-                Add job descriptions to match against your resume
-              </CardDescription>
+              <Button size="icon" variant="outline" className="rounded-xl border-border bg-muted/50" onClick={() => setShowJdForm(!showJdForm)}>
+                {showJdForm ? <X className="w-4 h-4" /> : <Plus className="w-4 h-4" />}
+              </Button>
             </CardHeader>
-            <CardContent>
-              {showJdForm && (
-                <div className="space-y-4 p-4 bg-muted/50 rounded-lg mb-4">
-                  <div>
-                    <Label>Job Title *</Label>
-                    <Input
-                      value={jdTitle}
-                      onChange={(e) => setJdTitle(e.target.value)}
-                      placeholder="e.g., Software Engineer"
-                      data-testid="input-jd-title"
-                    />
-                  </div>
-                  <div>
-                    <Label>Company</Label>
-                    <Input
-                      value={jdCompany}
-                      onChange={(e) => setJdCompany(e.target.value)}
-                      placeholder="e.g., Google"
-                      data-testid="input-jd-company"
-                    />
-                  </div>
-                  <div>
-                    <Label>Job Description *</Label>
-                    <Textarea
-                      value={jdDescription}
-                      onChange={(e) => setJdDescription(e.target.value)}
-                      placeholder="Paste the full job description here..."
-                      className="min-h-[120px]"
-                      data-testid="input-jd-description"
-                    />
-                  </div>
-                  <div className="flex gap-2">
-                    <Button
-                      onClick={handleAddJd}
-                      disabled={addJdMutation.isPending}
-                      data-testid="button-save-jd"
-                    >
-                      {addJdMutation.isPending ? 'Analyzing...' : 'Analyze & Save'}
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowJdForm(false)}
-                      data-testid="button-cancel-jd"
-                    >
-                      Cancel
-                    </Button>
-                  </div>
-                </div>
-              )}
 
-              {loadingJds ? (
+            <CardContent className="p-0 space-y-6">
+              <AnimatePresence>
+                {showJdForm && (
+                  <motion.div initial={{ opacity: 0, y: -20 }} animate={{ opacity: 1, y: 0 }} exit={{ opacity: 0, y: -20 }} className="space-y-4 p-6 rounded-3xl bg-muted/50 border border-border mb-6">
+                    <div className="space-y-4">
+                      <Input value={jdTitle} onChange={(e) => setJdTitle(e.target.value)} placeholder="Position Title" className="h-12 bg-transparent border-border rounded-xl" />
+                      <Input value={jdCompany} onChange={(e) => setJdCompany(e.target.value)} placeholder="Organization" className="h-12 bg-transparent border-border rounded-xl" />
+                      <Textarea value={jdDescription} onChange={(e) => setJdDescription(e.target.value)} placeholder="Payload (Job Description)..." className="min-h-[150px] bg-transparent border-border rounded-xl resize-none" />
+                      <Button className="w-full h-12 rounded-xl font-black uppercase tracking-widest text-xs" onClick={() => { if(!jdTitle.trim() || !jdDescription.trim()) return; addJdMutation.mutate({ title: jdTitle, company: jdCompany, description: jdDescription }); }}>
+                        Analyze Delta
+                      </Button>
+                    </div>
+                  </motion.div>
+                )}
+              </AnimatePresence>
+
+              {loadingJds ? <Skeleton className="h-60 w-full rounded-3xl" /> : (
                 <div className="space-y-4">
-                  {[1, 2].map(i => (
-                    <Skeleton key={i} className="h-24" />
-                  ))}
-                </div>
-              ) : jobDescriptions && jobDescriptions.length > 0 ? (
-                <div className="space-y-4">
-                  {jobDescriptions.map((jd) => (
-                    <div
-                      key={jd.id}
-                      className="p-4 border border-border rounded-lg"
-                      data-testid={`card-jd-${jd.id}`}
-                    >
-                      <div className="flex items-start justify-between gap-4">
+                  {jobDescriptions?.map((jd) => (
+                    <Card key={jd.id} className="rounded-3xl border-border bg-muted/50 hover:bg-muted transition-colors p-6 group">
+                      <div className="flex items-center justify-between mb-4">
                         <div>
-                          <p className="font-medium">{jd.title}</p>
-                          {jd.company && (
-                            <p className="text-sm text-muted-foreground">{jd.company}</p>
-                          )}
+                          <h4 className="font-bold text-lg group-hover:text-primary transition-colors">{jd.title}</h4>
+                          <p className="text-[10px] font-black uppercase tracking-widest opacity-50">{jd.company || 'Unknown Org'}</p>
                         </div>
-                        {jd.matchScore !== null && (
-                          <Badge
-                            variant={jd.matchScore >= 70 ? "default" : "secondary"}
-                            className={jd.matchScore >= 70 ? "bg-green-500" : ""}
-                          >
-                            {Math.round(jd.matchScore)}% Match
-                          </Badge>
-                        )}
+                        <div className="text-right">
+                          <span className="text-xl font-black text-primary">{Math.round(jd.matchScore || 0)}%</span>
+                          <p className="text-[8px] font-black uppercase tracking-[0.2em] opacity-40">Match</p>
+                        </div>
                       </div>
-
+                      
                       {jd.skillGaps && jd.skillGaps.length > 0 && (
-                        <div className="mt-3">
-                          <p className="text-xs text-muted-foreground mb-1">Skill Gaps:</p>
-                          <div className="flex flex-wrap gap-1">
-                            {jd.skillGaps.slice(0, 5).map((gap, index) => (
-                              <Badge
-                                key={index}
-                                variant="outline"
-                                className="text-orange-600 border-orange-300 text-xs px-2 py-0.5"
-                              >
-                                {gap}
-                              </Badge>
-                            ))}
-                            {jd.skillGaps.length > 5 && (
-                              <Badge variant="outline" className="text-xs px-2 py-0.5">
-                                +{jd.skillGaps.length - 5} more
-                              </Badge>
-                            )}
-                          </div>
+                        <div className="flex flex-wrap gap-1.5">
+                          {jd.skillGaps.slice(0, 3).map((gap, i) => (
+                            <Badge key={i} variant="outline" className="border-orange-500/30 bg-orange-500/5 text-orange-500 text-[9px] uppercase font-black px-2 py-0.5">{gap}</Badge>
+                          ))}
                         </div>
                       )}
-                    </div>
+                    </Card>
                   ))}
-                </div>
-              ) : (
-                <div className="text-center py-8">
-                  <Target className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-muted-foreground">
-                    No job descriptions yet. Add one to see how well your resume matches.
-                  </p>
+                  {(!jobDescriptions || jobDescriptions.length === 0) && (
+                    <div className="py-12 text-center opacity-40 space-y-4">
+                      <Target className="w-12 h-12 mx-auto" />
+                      <p className="text-[10px] font-black uppercase tracking-widest">No target benchmarks defined.</p>
+                    </div>
+                  )}
                 </div>
               )}
             </CardContent>
           </Card>
 
-          {/* AI Recommendations from Resume Analysis */}
-          {hasResume && parsedData && parsedData.suggestions && Array.isArray(parsedData.suggestions) && parsedData.suggestions.length > 0 && (
-            <Card>
-              <CardHeader className="pb-2">
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <Sparkles className="w-5 h-5" />
-                  AI Resume Recommendations
-                </CardTitle>
-                <CardDescription>
-                  Personalized suggestions to improve your resume for overall job market
-                </CardDescription>
-              </CardHeader>
-              <CardContent>
-                <ul className="space-y-3">
-                  {parsedData.suggestions.map((suggestion: string, index: number) => (
-                    <li key={index} className="flex items-start gap-3">
-                      <TrendingUp className="w-5 h-5 text-green-500 shrink-0 mt-0.5" />
-                      <span className="text-sm">{suggestion}</span>
-                    </li>
-                  ))}
-                </ul>
-                {parsedData.strengths && parsedData.strengths.length > 0 && (
-                  <div className="mt-4 pt-4 border-t">
-                    <p className="text-sm font-medium mb-2">Your Strengths:</p>
-                    <div className="flex flex-wrap gap-2">
-                      {parsedData.strengths.map((strength: string, index: number) => (
-                        <Badge key={index} variant="secondary" className="bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200">
-                          {strength}
-                        </Badge>
-                      ))}
+          {/* AI Intelligence Stream */}
+          {hasResume && parsedData?.suggestions && (
+            <Card className="rounded-[2.5rem] glass-card bg-gradient-to-br from-card/90 to-primary/5 p-8 space-y-6">
+              <div className="flex items-center gap-3">
+                <ShieldCheck className="w-5 h-5 text-primary" />
+                <h3 className="font-black uppercase tracking-widest text-xs">Optimization Directives</h3>
+              </div>
+              <div className="space-y-4">
+                {parsedData.suggestions.slice(0, 4).map((s: string, i: number) => (
+                  <div key={i} className="flex gap-4 group">
+                    <div className="w-6 h-6 rounded-lg bg-primary/10 flex items-center justify-center shrink-0 mt-0.5 group-hover:bg-primary group-hover:text-white transition-all">
+                      <TrendingUp className="w-3 h-3" />
                     </div>
+                    <p className="text-sm text-foreground/80 leading-relaxed">{s}</p>
                   </div>
-                )}
-              </CardContent>
+                ))}
+              </div>
             </Card>
           )}
-
-          {/* JD-Based Recommendations */}
-          {hasResume && jobDescriptions && jobDescriptions.length > 0 && jobDescriptions.map((jd) => {
-            const jdData = jd.parsedData as any;
-            if (!jdData || !jdData.suggestions || jdData.suggestions.length === 0) return null;
-
-            return (
-              <Card key={jd.id}>
-                <CardHeader className="pb-2">
-                  <CardTitle className="text-lg flex items-center gap-2">
-                    <Target className="w-5 h-5" />
-                    AI Recommendations for {jd.title}
-                    {jd.company && <span className="text-sm font-normal text-muted-foreground">at {jd.company}</span>}
-                  </CardTitle>
-                  <CardDescription>
-                    Personalized suggestions based on this job description
-                  </CardDescription>
-                </CardHeader>
-                <CardContent>
-                  <ul className="space-y-3">
-                    {jdData.suggestions.map((suggestion: string, index: number) => (
-                      <li key={index} className="flex items-start gap-3">
-                        <TrendingUp className="w-5 h-5 text-blue-500 shrink-0 mt-0.5" />
-                        <span className="text-sm">{suggestion}</span>
-                      </li>
-                    ))}
-                  </ul>
-                  {jdData.strengths && jdData.strengths.length > 0 && (
-                    <div className="mt-4 pt-4 border-t">
-                      <p className="text-sm font-medium mb-2">Your Strengths for this Role:</p>
-                      <div className="flex flex-wrap gap-2">
-                        {jdData.strengths.map((strength: string, index: number) => (
-                          <Badge key={index} variant="secondary" className="bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200">
-                            {strength}
-                          </Badge>
-                        ))}
-                      </div>
-                    </div>
-                  )}
-                </CardContent>
-              </Card>
-            );
-          })}
         </div>
       </div>
     </div>

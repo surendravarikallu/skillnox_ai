@@ -22,6 +22,7 @@ const PersonalityPage = lazy(() => import("@/pages/personality"));
 const PlacementPage = lazy(() => import("@/pages/placement"));
 const AdminPage = lazy(() => import("@/pages/admin"));
 const AdminStudentsPage = lazy(() => import("@/pages/admin-students"));
+const AdminAssignPage = lazy(() => import("@/pages/admin-assign"));
 const AIStatusPage = lazy(() => import("@/pages/ai-status"));
 const Settings = lazy(() => import("@/pages/settings"));
 
@@ -34,13 +35,21 @@ function PageLoader() {
   );
 }
 
+function RoleBasedDashboard() {
+  const { user } = useAuth();
+  if (user?.role === "admin") {
+    return <AdminPage />;
+  }
+  return <Dashboard />;
+}
+
 function AuthenticatedRoutes() {
   return (
     <Layout>
       <Suspense fallback={<PageLoader />}>
         <Switch>
-          <Route path="/" component={Dashboard} />
-          <Route path="/dashboard" component={Dashboard} />
+          <Route path="/" component={RoleBasedDashboard} />
+          <Route path="/dashboard" component={RoleBasedDashboard} />
           <Route path="/interviews" component={Interviews} />
           <Route path="/interview/start" component={InterviewStart} />
           <Route path="/interview/:id/room" component={InterviewRoom} />
@@ -51,6 +60,7 @@ function AuthenticatedRoutes() {
           <Route path="/placement" component={PlacementPage} />
           <Route path="/admin" component={AdminPage} />
           <Route path="/admin/students" component={AdminStudentsPage} />
+          <Route path="/admin/assign" component={AdminAssignPage} />
           <Route path="/admin/analytics" component={AdminPage} />
           <Route path="/ai-status" component={AIStatusPage} />
           <Route path="/settings" component={Settings} />

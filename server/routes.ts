@@ -431,103 +431,65 @@ async function analyzeJobDescription(description: string, resumeSkills: string[]
 async function evaluateAnswer(answer: string, question?: string): Promise<{ score: number; feedback: string }> {
   const trimmed = (answer || '').trim();
   const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
-  const charCount = trimmed.length;
 
-  // Heuristic flags
-  const isVeryShort = wordCount < 5 || charCount < 20;
-  const isShort = wordCount < 15;
+  // Try Python AI service first
+  let aiSucceeded = false;
+  let score = 50;
+  let feedback = "Good attempt.";
 
-  // Simple relevance: count overlapping keywords between question and answer
-  let relevanceScore = 0;
-  if (question) {
-    const stopwords = new Set(["the", "a", "an", "and", "or", "but", "if", "in", "on", "at", "to", "for", "of", "is", "are", "am", "you", "your", "why", "what", "how", "who", "when", "where", "i", "me", "my"]);
-    const qTokens = question
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter(t => t && !stopwords.has(t));
-    const aTokens = trimmed
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter(Boolean);
-    const aSet = new Set(aTokens);
-    relevanceScore = qTokens.reduce((acc, t) => acc + (aSet.has(t) ? 1 : 0), 0);
-  }
-
-  // Try Python AI service first, but with a timeout so UI isn't blocked too long
-  let baseScore = 50;
-  let baseFeedback = "Good attempt.";
   try {
     const truncatedAnswerForAI = trimmed.length > 1500 ? trimmed.slice(0, 1500) : trimmed;
     const truncatedQuestionForAI = question && question.length > 500 ? question.slice(0, 500) : question;
 
     const aiResult = await withTimeout(
       pythonAI.evaluateAnswer(truncatedAnswerForAI, truncatedQuestionForAI),
-      60000, // increased timeout for reliability
+      60000,
       null,
       "Answer evaluation"
     );
 
-    if (aiResult) {
-      baseScore = aiResult.score ?? baseScore;
-      baseFeedback = aiResult.feedback || baseFeedback;
+    if (aiResult && aiResult.score !== undefined) {
+      score = aiResult.score;
+      feedback = aiResult.feedback || feedback;
+      aiSucceeded = true;
     }
   } catch (e) {
     console.error("Error calling Python AI evaluateAnswer, using heuristic fallback:", e);
   }
 
-  // Heuristic refinement layer to avoid over-scoring weak answers
-  let score = baseScore;
-  let feedback = baseFeedback ? baseFeedback + " " : "";
-
-  // Stricter penalties for short or irrelevant answers
-  if (isVeryShort) {
-    score = Math.min(score, 15); // More strict penalty
-    feedback += "Answer is too short. Please provide more detail with concrete points and examples. ";
-  } else if (isShort) {
-    score = Math.min(score, 30); // More strict penalty
-    feedback += "Answer is brief. Try to elaborate with specific reasons and examples. ";
-  }
-
-  if (relevanceScore === 0 && question) {
-    score = Math.min(score, 35); // More strict penalty
-    feedback += "Your answer doesn't clearly address the question. Focus on the main point being asked. ";
-  }
-
-  // Heuristic refinement layer - tuned to be more generous
-  // Extra credit for structure in heuristic-only scenarios
-  if (!question && !trimmed) {
-    score = 0;
-    feedback = "No answer detected. Please respond to the question.";
-  } else {
-    // Basic length reward
-    if (wordCount > 30) {
-      score = Math.min(100, score + 10);
-      // Only add "Good detail" if not already there and if score is high enough to warrant it
-      if (score > 70 && !feedback.includes("Good detail")) {
-        feedback += " Good detail provided.";
-      }
+  // Only apply heuristic scoring if AI service failed
+  if (!aiSucceeded) {
+    if (!trimmed) {
+      score = 0;
+      feedback = "No answer detected. Please respond to the question.";
+    } else if (wordCount < 5) {
+      score = 15;
+      feedback = "Answer is too short. Please provide more detail with concrete points and examples.";
+    } else if (wordCount < 15) {
+      score = 30;
+      feedback = "Answer is brief. Try to elaborate with specific reasons and examples.";
+    } else if (wordCount > 50) {
+      score = 70;
+      feedback = "Detailed response. Good work!";
+    } else if (wordCount > 20) {
+      score = 60;
+      feedback = "Good answer. Could add more detail.";
     }
 
-    const hasExample = /example|instance|situation|for instance|such as|like/i.test(trimmed);
-    const hasReasoning = /because|reason|therefore|so that|due to|as a result|since/i.test(trimmed);
-    if (hasExample) {
-      score = Math.min(100, score + 5);
-      if (!feedback.toLowerCase().includes("example")) {
-        feedback += " Good use of examples.";
-      }
-    }
-    if (hasReasoning) {
-      score = Math.min(100, score + 5);
-      if (!feedback.toLowerCase().includes("reasoning")) {
-        feedback += " Clear reasoning is shown.";
+    // Add relevance check in fallback only
+    if (question) {
+      const stopwords = new Set(["the", "a", "an", "and", "or", "but", "if", "in", "on", "at", "to", "for", "of", "is", "are", "am", "you", "your", "why", "what", "how", "who", "when", "where", "i", "me", "my"]);
+      const qTokens = question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(t => t && !stopwords.has(t));
+      const aSet = new Set(trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean));
+      const relevance = qTokens.reduce((acc, t) => acc + (aSet.has(t) ? 1 : 0), 0);
+      if (relevance === 0) {
+        score = Math.min(score, 35);
+        feedback += " Your answer doesn't clearly address the question.";
       }
     }
   }
 
   score = Math.max(0, Math.min(100, Math.round(score)));
-
   return { score, feedback: feedback.trim() || "Good attempt." };
 }
 
@@ -2203,8 +2165,12 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       res.json(optimisticQuestion);
 
       // Fire-and-forget evaluation so UI is not blocked
+      // We add a staggered delay to prevent slamming the AI service with concurrent requests
       (async () => {
         try {
+          // Stagger requests: wait 2-5 seconds per question index if many are submitted at once
+          await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 3000));
+          
           const questionText = question.question || '';
 
           let score = 50;
@@ -2292,48 +2258,56 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const jds = await storage.getJobDescriptionsByUserId(userId);
       const jdScore = jds.length > 0 ? (jds[0].matchScore || 50) : 50;
 
-      const personality = await analyzePersonality(questions);
-      const { prob30, prob60, prob90, factors } = await calculatePlacementProbability(
-        technicalScore,
-        communicationScore,
-        emotionScore,
-        voiceScore,
-        resumeScore,
-        jdScore,
-        50, // GD score
-        personality
-      );
+      // Run heavy personality and placement predictions in background
+      (async () => {
+        try {
+          const personality = await analyzePersonality(questions);
+          const { prob30, prob60, prob90, factors } = await calculatePlacementProbability(
+            technicalScore,
+            communicationScore,
+            emotionScore,
+            voiceScore,
+            resumeScore,
+            jdScore,
+            50, // GD score
+            personality
+          );
 
-      const existingPlacement = await storage.getPlacementProbabilityByUserId(userId);
-      if (existingPlacement) {
-        await storage.updatePlacementProbability(existingPlacement.id, {
-          probability30Days: prob30,
-          probability60Days: prob60,
-          probability90Days: prob90,
-          confidence: 60 + answeredQuestions.length * 5,
-          factors,
-        });
-      } else {
-        await storage.createPlacementProbability({
-          userId,
-          probability30Days: prob30,
-          probability60Days: prob60,
-          probability90Days: prob90,
-          confidence: 40 + answeredQuestions.length * 5,
-          factors,
-        });
-      }
+          const existingPlacement = await storage.getPlacementProbabilityByUserId(userId);
+          if (existingPlacement) {
+            await storage.updatePlacementProbability(existingPlacement.id, {
+              probability30Days: prob30,
+              probability60Days: prob60,
+              probability90Days: prob90,
+              confidence: 60 + answeredQuestions.length * 5,
+              factors,
+            });
+          } else {
+            await storage.createPlacementProbability({
+              userId,
+              probability30Days: prob30,
+              probability60Days: prob60,
+              probability90Days: prob90,
+              confidence: 40 + answeredQuestions.length * 5,
+              factors,
+            });
+          }
 
-      // Personality already calculated above
-      const existingPersonality = await storage.getPersonalityByUserId(userId);
-      if (existingPersonality) {
-        await storage.updatePersonalityAssessment(existingPersonality.id, personality);
-      } else {
-        await storage.createPersonalityAssessment({
-          userId,
-          ...personality,
-        });
-      }
+          // Personality already calculated above
+          const existingPersonality = await storage.getPersonalityByUserId(userId);
+          if (existingPersonality) {
+            await storage.updatePersonalityAssessment(existingPersonality.id, personality);
+          } else {
+            await storage.createPersonalityAssessment({
+              userId,
+              ...personality,
+            });
+          }
+          console.log("Background processing for placement and personality completed.");
+        } catch (bgError) {
+          console.error("Error in background placement calculation:", bgError);
+        }
+      })();
 
       res.json(interview);
     } catch (error) {

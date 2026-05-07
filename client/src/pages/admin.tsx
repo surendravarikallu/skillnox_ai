@@ -5,6 +5,9 @@ import { Badge } from "@/components/ui/badge";
 import { Skeleton } from "@/components/ui/skeleton";
 import { Progress } from "@/components/ui/progress";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
+import { GradientStatCard } from "@/components/dashboard/gradient-stat-card";
+import { BorderBeam } from "@/components/ui/border-beam";
+import { motion } from "framer-motion";
 import {
   Table,
   TableBody,
@@ -24,14 +27,17 @@ import {
   BarChart3,
   Eye,
   FileText,
-  Upload,
-  Rocket,
+  Activity,
   Pause,
-  Play
+  Play,
+  ArrowUpRight,
+  ShieldAlert,
+  Zap
 } from "lucide-react";
 import { useState } from "react";
 import { useToast } from "@/hooks/use-toast";
-import type { User, Interview } from "@shared/schema";
+import type { User } from "@shared/schema";
+import { cn } from "@/lib/utils";
 
 interface AdminStats {
   totalStudents: number;
@@ -49,12 +55,6 @@ interface SkillGap {
 
 export default function AdminPage() {
   const [searchQuery, setSearchQuery] = useState("");
-  const [importFile, setImportFile] = useState<File | null>(null);
-  const [isImporting, setIsImporting] = useState(false);
-  const [isCreatingContest, setIsCreatingContest] = useState(false);
-  const [contestBranch, setContestBranch] = useState<string>("all");
-  const [contestDifficulty, setContestDifficulty] = useState<"easy" | "medium" | "hard">("medium");
-  const [contestTypes, setContestTypes] = useState<string[]>(["technical"]);
   const { toast } = useToast();
   const queryClient = useQueryClient();
 
@@ -102,13 +102,6 @@ export default function AdminPage() {
           : "All interviews are now paused",
       });
     },
-    onError: () => {
-      toast({
-        title: "Error",
-        description: "Failed to update interview status",
-        variant: "destructive",
-      });
-    },
   });
 
   const filteredStudents =
@@ -122,331 +115,194 @@ export default function AdminPage() {
           student.department?.toLowerCase().includes(query)
         );
       })
-      .sort((a, b) => {
-        const depA = (a.department || "").toLowerCase();
-        const depB = (b.department || "").toLowerCase();
-        if (depA !== depB) return depA.localeCompare(depB);
-
-        const nameA =
-          `${a.firstName || ""} ${a.lastName || ""}`.trim() ||
-          a.email?.toLowerCase() ||
-          "";
-        const nameB =
-          `${b.firstName || ""} ${b.lastName || ""}`.trim() ||
-          b.email?.toLowerCase() ||
-          "";
-        return nameA.localeCompare(nameB);
-      }) || [];
-
-  const uniqueBranches = Array.from(
-    new Set((students || []).map(s => s.department).filter(Boolean))
-  ) as string[];
+      .sort((a, b) => (b.interviewCount || 0) - (a.interviewCount || 0)) || [];
 
   const handleExport = () => {
     const data = filteredStudents.map(s => ({
       name: `${s.firstName || ''} ${s.lastName || ''}`.trim() || 'N/A',
       email: s.email || 'N/A',
       department: s.department || 'N/A',
-      year: s.year || 'N/A',
       interviews: s.interviewCount || 0,
     }));
 
     const csv = [
-      ['Name', 'Email', 'Department', 'Year', 'Interviews'],
-      ...data.map(row => [row.name, row.email, row.department, row.year, row.interviews])
+      ['Name', 'Email', 'Department', 'Interviews'],
+      ...data.map(row => [row.name, row.email, row.department, row.interviews])
     ].map(row => row.join(',')).join('\n');
 
     const blob = new Blob([csv], { type: 'text/csv' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = 'students-report.csv';
+    a.download = `skillnox-ai-report-${new Date().toISOString().split('T')[0]}.csv`;
     a.click();
     URL.revokeObjectURL(url);
   };
 
-  const handleImport = async () => {
-    if (!importFile) return;
-    setIsImporting(true);
-    try {
-      const formData = new FormData();
-      formData.append("file", importFile);
-
-      const response = await fetch("/api/admin/students/import", {
-        method: "POST",
-        body: formData,
-        credentials: "include",
-      });
-
-      const data = await response.json();
-      if (!response.ok) {
-        throw new Error(data.message || "Failed to import students");
-      }
-
-      toast({
-        title: "Students imported",
-        description: `Created: ${data.created}, Updated: ${data.updated}, Skipped: ${data.skipped}`,
-      });
-      await queryClient.invalidateQueries({ queryKey: ["/api/admin/students"] });
-    } catch (error: any) {
-      toast({
-        title: "Import failed",
-        description: error.message || "Could not import students",
-        variant: "destructive",
-      });
-    } finally {
-      setIsImporting(false);
-    }
-  };
-
-  const handleToggleContestType = (type: string) => {
-    setContestTypes(prev =>
-      prev.includes(type) ? prev.filter(t => t !== type) : [...prev, type]
-    );
-  };
-
-  const handleCreateContest = async () => {
-    if (!students || students.length === 0) return;
-    if (contestTypes.length === 0) {
-      toast({
-        title: "Select at least one interview type",
-        description: "Choose the types of rounds to include in the contest.",
-        variant: "destructive",
-      });
-      return;
-    }
-
-    setIsCreatingContest(true);
-    try {
-      const targetStudents =
-        contestBranch === "all"
-          ? students
-          : students.filter(s => s.department === contestBranch);
-
-      const payloads = targetStudents.map((student) =>
-        fetch("/api/interviews", {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          credentials: "include",
-          body: JSON.stringify({
-            studentId: student.id,
-            types: contestTypes,
-            difficulty: contestDifficulty,
-            type: contestTypes[0],
-          }),
-        })
-      );
-
-      await Promise.all(payloads);
-
-      toast({
-        title: "Contest created",
-        description: `Interviews created for ${targetStudents.length} students.`,
-      });
-    } catch (error: any) {
-      toast({
-        title: "Contest creation failed",
-        description: error.message || "Could not create contest for students.",
-        variant: "destructive",
-      });
-    } finally {
-      setIsCreatingContest(false);
-    }
-  };
-
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="max-w-[1600px] mx-auto space-y-10 pb-12">
+      {/* Admin Header Section */}
+      <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-6">
         <div>
-          <h1 className="text-3xl font-bold" data-testid="text-page-title">Admin Dashboard</h1>
-          <p className="text-muted-foreground">
-            Overview of student performance and analytics
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest mb-4">
+            <Activity className="w-3 h-3" />
+            System Command Center
+          </div>
+          <h1 className="text-4xl font-black tracking-tight mb-2">Admin Intelligence</h1>
+          <p className="text-muted-foreground text-lg">
+            Real-time monitoring of campus performance and AI readiness.
           </p>
         </div>
-        <div className="flex gap-2">
+        
+        <div className="flex items-center gap-3">
           <Button
             variant={interviewsPaused ? "default" : "destructive"}
+            size="lg"
+            className="rounded-2xl h-14 px-6 font-bold shadow-lg"
             onClick={() => toggleInterviewsMutation.mutate()}
             disabled={toggleInterviewsMutation.isPending || loadingSettings}
           >
-            {interviewsPaused ? <Play className="w-4 h-4 mr-2" /> : <Pause className="w-4 h-4 mr-2" />}
-            {interviewsPaused ? "Resume All Interviews" : "Pause All Interviews"}
+            {interviewsPaused ? (
+              <><Play className="w-4 h-4 mr-2 fill-current" /> Resume Interviews</>
+            ) : (
+              <><Pause className="w-4 h-4 mr-2 fill-current" /> Emergency Pause</>
+            )}
           </Button>
-          <Button onClick={handleExport} data-testid="button-export">
+          <Button 
+            variant="outline" 
+            size="lg" 
+            className="rounded-2xl h-14 px-6 border-border bg-muted/50 font-bold hover:bg-muted"
+            onClick={handleExport}
+          >
             <Download className="w-4 h-4 mr-2" />
-            Export Report
+            Export Data
           </Button>
         </div>
       </div>
 
-      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
+      {/* Stats Quick Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-4">
         {loadingStats ? (
-          [...Array(6)].map((_, i) => (
-            <Skeleton key={i} className="h-24" />
-          ))
+          [...Array(6)].map((_, i) => <Skeleton key={i} className="h-32 rounded-2xl" />)
         ) : (
           <>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                    <Users className="w-5 h-5 text-blue-600 dark:text-blue-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold" data-testid="text-stat-students">
-                      {stats?.totalStudents || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Students</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                    <Brain className="w-5 h-5 text-green-600 dark:text-green-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {stats?.totalInterviews || 0}
-                    </p>
-                    <p className="text-xs text-muted-foreground">Interviews</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-purple-100 dark:bg-purple-900 flex items-center justify-center">
-                    <BarChart3 className="w-5 h-5 text-purple-600 dark:text-purple-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {Math.round(stats?.avgTechnicalScore || 0)}%
-                    </p>
-                    <p className="text-xs text-muted-foreground">Avg Technical</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-                    <Users className="w-5 h-5 text-orange-600 dark:text-orange-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {Math.round(stats?.avgHrScore || 0)}%
-                    </p>
-                    <p className="text-xs text-muted-foreground">Avg HR</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-pink-100 dark:bg-pink-900 flex items-center justify-center">
-                    <Users className="w-5 h-5 text-pink-600 dark:text-pink-300" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {Math.round(stats?.avgGdScore || 0)}%
-                    </p>
-                    <p className="text-xs text-muted-foreground">Avg GD</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
-            <Card>
-              <CardContent className="p-4">
-                <div className="flex items-center gap-3">
-                  <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
-                    <Target className="w-5 h-5 text-primary" />
-                  </div>
-                  <div>
-                    <p className="text-2xl font-bold">
-                      {Math.round(stats?.avgPlacementProb || 0)}%
-                    </p>
-                    <p className="text-xs text-muted-foreground">Avg Placement</p>
-                  </div>
-                </div>
-              </CardContent>
-            </Card>
+            <GradientStatCard
+              title="Total Students"
+              value={stats?.totalStudents || 0}
+              icon={Users}
+              gradientFrom="blue-500"
+              gradientTo="cyan-400"
+            />
+            <GradientStatCard
+              title="Interviews"
+              value={stats?.totalInterviews || 0}
+              icon={Brain}
+              gradientFrom="indigo-500"
+              gradientTo="purple-600"
+            />
+            <GradientStatCard
+              title="Avg Technical"
+              value={stats?.avgTechnicalScore || 0}
+              icon={Zap}
+              gradientFrom="orange-500"
+              gradientTo="red-600"
+            />
+            <GradientStatCard
+              title="Avg HR"
+              value={stats?.avgHrScore || 0}
+              icon={Users}
+              gradientFrom="emerald-500"
+              gradientTo="teal-600"
+            />
+            <GradientStatCard
+              title="Avg GD"
+              value={stats?.avgGdScore || 0}
+              icon={Activity}
+              gradientFrom="pink-500"
+              gradientTo="rose-600"
+            />
+            <GradientStatCard
+              title="Placement Index"
+              value={stats?.avgPlacementProb || 0}
+              icon={Target}
+              gradientFrom="cyan-500"
+              gradientTo="blue-600"
+            />
           </>
         )}
       </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader className="pb-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <CardTitle className="text-lg">Student Performance</CardTitle>
-              <div className="relative w-full md:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
+      <div className="grid lg:grid-cols-3 gap-8">
+        {/* Performance Table Bento */}
+        <Card className="lg:col-span-2 rounded-[2rem] glass-card overflow-hidden relative">
+          <CardHeader className="p-8 pb-4">
+            <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+              <div>
+                <CardTitle className="text-2xl font-black tracking-tight">Student Ranking</CardTitle>
+                <p className="text-sm text-muted-foreground">High-performance candidate tracking</p>
+              </div>
+              <div className="relative w-full md:w-80">
+                <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
                 <Input
-                  placeholder="Search students..."
+                  placeholder="Filter by name, email, or dept..."
                   value={searchQuery}
                   onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                  data-testid="input-search"
+                  className="pl-11 h-12 bg-background border-border rounded-2xl focus:ring-primary/20"
                 />
               </div>
             </div>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-0">
             {loadingStudents ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4, 5].map(i => (
-                  <Skeleton key={i} className="h-14" />
-                ))}
+              <div className="p-8 space-y-6">
+                {[1, 2, 3, 4, 5].map(i => <Skeleton key={i} className="h-16 w-full rounded-2xl" />)}
               </div>
-            ) : filteredStudents.length > 0 ? (
+            ) : (
               <div className="overflow-x-auto">
                 <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead>Student</TableHead>
-                      <TableHead>Department</TableHead>
-                      <TableHead>Year</TableHead>
-                      <TableHead className="text-right">Interviews</TableHead>
-                      <TableHead className="text-right">Actions</TableHead>
+                  <TableHeader className="bg-muted/50 border-border">
+                    <TableRow className="hover:bg-transparent">
+                      <TableHead className="pl-8 py-6 font-bold uppercase tracking-widest text-[10px]">Candidate</TableHead>
+                      <TableHead className="font-bold uppercase tracking-widest text-[10px]">Department</TableHead>
+                      <TableHead className="font-bold uppercase tracking-widest text-[10px] text-center">Interviews</TableHead>
+                      <TableHead className="font-bold uppercase tracking-widest text-[10px] text-right pr-8">Actions</TableHead>
                     </TableRow>
                   </TableHeader>
                   <TableBody>
-                    {filteredStudents.map((student) => (
-                      <TableRow key={student.id} data-testid={`row-student-${student.id}`}>
-                        <TableCell>
-                          <div className="flex items-center gap-3">
-                            <Avatar className="w-8 h-8">
-                              <AvatarImage src={student.profileImageUrl || undefined} className="object-cover" />
-                              <AvatarFallback>
-                                {student.firstName?.[0] || student.email?.[0]?.toUpperCase() || 'S'}
-                              </AvatarFallback>
-                            </Avatar>
+                    {filteredStudents.map((student, idx) => (
+                      <TableRow key={student.id} className="border-border hover:bg-muted/50 transition-colors group">
+                        <TableCell className="pl-8 py-5">
+                          <div className="flex items-center gap-4">
+                            <div className="relative">
+                              <Avatar className="w-10 h-10 border border-border">
+                                <AvatarImage src={student.profileImageUrl || undefined} />
+                                <AvatarFallback className="font-bold">{student.firstName?.[0] || 'S'}</AvatarFallback>
+                              </Avatar>
+                              {idx < 3 && (
+                                <div className="absolute -top-1 -right-1 w-4 h-4 bg-yellow-500 rounded-full flex items-center justify-center border-2 border-background">
+                                  <span className="text-[8px] font-black text-black">{idx + 1}</span>
+                                </div>
+                              )}
+                            </div>
                             <div>
-                              <p className="font-medium text-sm">
+                              <p className="font-bold text-sm group-hover:text-primary transition-colors">
                                 {`${student.firstName || ''} ${student.lastName || ''}`.trim() || 'Unknown'}
                               </p>
                               <p className="text-xs text-muted-foreground">{student.email}</p>
                             </div>
                           </div>
                         </TableCell>
-                        <TableCell>{student.department || '-'}</TableCell>
                         <TableCell>
-                          {student.year ? `Year ${student.year}` : '-'}
+                          <Badge variant="outline" className="rounded-lg border-border bg-muted/50 font-medium">
+                            {student.department || 'General'}
+                          </Badge>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Badge variant="secondary">{student.interviewCount || 0}</Badge>
+                        <TableCell className="text-center">
+                          <span className="text-sm font-black">{student.interviewCount || 0}</span>
                         </TableCell>
-                        <TableCell className="text-right">
-                          <Button variant="ghost" size="sm">
-                            <Eye className="w-4 h-4" />
+                        <TableCell className="text-right pr-8">
+                          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary hover:text-white transition-all">
+                            <ArrowUpRight className="w-4 h-4" />
                           </Button>
                         </TableCell>
                       </TableRow>
@@ -454,60 +310,82 @@ export default function AdminPage() {
                   </TableBody>
                 </Table>
               </div>
-            ) : (
-              <div className="text-center py-12">
-                <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">
-                  {searchQuery ? 'No matching students found' : 'No students registered yet'}
-                </p>
-              </div>
             )}
           </CardContent>
+          <BorderBeam size={200} duration={8} />
         </Card>
 
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <TrendingUp className="w-5 h-5" />
-              Top Skill Gaps
-            </CardTitle>
-          </CardHeader>
-          <CardContent>
-            {loadingSkillGaps ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4, 5].map(i => (
-                  <Skeleton key={i} className="h-8" />
-                ))}
-              </div>
-            ) : skillGaps && skillGaps.length > 0 ? (
-              <div className="space-y-4">
-                {skillGaps.slice(0, 10).map((gap, index) => (
-                  <div key={gap.skill}>
-                    <div className="flex items-center justify-between mb-1">
-                      <span className="text-sm">{gap.skill}</span>
-                      <span className="text-sm font-medium">{gap.count} students</span>
+        {/* Intelligence Bento Column */}
+        <div className="space-y-8">
+          {/* Skill Gaps Card */}
+          <Card className="rounded-[2rem] glass-card p-8">
+            <CardHeader className="p-0 mb-8">
+              <CardTitle className="text-xl font-black tracking-tight flex items-center gap-2">
+                <ShieldAlert className="w-5 h-5 text-orange-500" />
+                Critical Skill Gaps
+              </CardTitle>
+              <p className="text-xs text-muted-foreground">Areas requiring immediate training</p>
+            </CardHeader>
+            <CardContent className="p-0">
+              {loadingSkillGaps ? (
+                <div className="space-y-6">
+                  {[1, 2, 3, 4].map(i => <Skeleton key={i} className="h-10 w-full rounded-xl" />)}
+                </div>
+              ) : (
+                <div className="space-y-6">
+                  {skillGaps?.slice(0, 5).map((gap, idx) => (
+                    <div key={gap.skill} className="space-y-2">
+                      <div className="flex items-center justify-between">
+                        <span className="text-sm font-bold">{gap.skill}</span>
+                        <span className="text-xs font-black text-orange-500">{gap.count} Hits</span>
+                      </div>
+                      <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                        <motion.div 
+                          className="h-full bg-gradient-to-r from-orange-500 to-red-600"
+                          initial={{ width: 0 }}
+                          animate={{ width: `${(gap.count / (skillGaps[0]?.count || 1)) * 100}%` }}
+                          transition={{ duration: 1, delay: idx * 0.1 }}
+                        />
+                      </div>
                     </div>
-                    <Progress
-                      value={(gap.count / (skillGaps[0]?.count || 1)) * 100}
-                      className="h-2"
-                    />
-                  </div>
-                ))}
-              </div>
-            ) : (
-              <div className="text-center py-8">
-                <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                <p className="text-sm text-muted-foreground">
-                  No skill gap data available yet
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
+                  ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
 
-      {/* Bulk import and contest creation have been moved to dedicated flows
-          (Students & Create Interview). Keep analytics page focused on insights only. */}
+          {/* System Status Card */}
+          <Card className="rounded-[2rem] glass-card bg-gradient-to-br from-card/90 to-emerald-500/5 p-8 overflow-hidden relative">
+            <div className="absolute top-0 right-0 p-4 opacity-10">
+              <Activity className="w-16 h-16 text-emerald-500" />
+            </div>
+            <CardHeader className="p-0 mb-6">
+              <CardTitle className="text-xl font-black tracking-tight">Platform Health</CardTitle>
+            </CardHeader>
+            <CardContent className="p-0 space-y-4">
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/50 border border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="text-sm font-medium">Core AI Services</span>
+                </div>
+                <Badge className="bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/20 border-0">STABLE</Badge>
+              </div>
+              <div className="flex items-center justify-between p-4 rounded-2xl bg-muted/50 border border-border">
+                <div className="flex items-center gap-3">
+                  <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse" />
+                  <span className="text-sm font-medium">Database Sync</span>
+                </div>
+                <Badge className="bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/20 border-0">ACTIVE</Badge>
+              </div>
+              <div className="pt-4">
+                <Button className="w-full rounded-xl bg-muted hover:bg-accent text-foreground border-border font-bold">
+                  View Detailed Logs
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </div>
     </div>
   );
 }

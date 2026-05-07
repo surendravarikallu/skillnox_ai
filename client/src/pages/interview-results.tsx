@@ -107,9 +107,26 @@ export default function InterviewResults() {
     ? answeredQuestions.reduce((acc, q) => acc + (q.score || 0), 0) / answeredQuestions.length
     : 0;
 
+  const handleDownloadPDF = async () => {
+    // @ts-ignore - html2pdf.js types might be missing
+    const html2pdf = (await import('html2pdf.js')).default;
+    const element = document.getElementById('report-content');
+    if (!element) return;
+    
+    const opt = {
+      margin:       [0.5, 0.5] as [number, number],
+      filename:     `${interview?.company || interview?.type || 'interview'}_report.pdf`,
+      image:        { type: 'jpeg' as const, quality: 0.98 },
+      html2canvas:  { scale: 2, useCORS: true },
+      jsPDF:        { unit: 'in' as const, format: 'a4' as const, orientation: 'portrait' as const }
+    };
+    
+    html2pdf().set(opt).from(element).save();
+  };
+
   return (
     <div className="max-w-4xl mx-auto space-y-8">
-      <div className="flex items-center justify-between gap-4 flex-wrap">
+      <div className="flex items-center justify-between gap-4 flex-wrap" data-html2canvas-ignore="true">
         <div>
           <Link href="/dashboard">
             <Button variant="ghost" size="sm" className="mb-2" data-testid="button-back">
@@ -125,7 +142,7 @@ export default function InterviewResults() {
           )}
         </div>
         <div className="flex gap-2">
-          <Button variant="outline" data-testid="button-download">
+          <Button variant="outline" onClick={handleDownloadPDF} data-testid="button-download">
             <Download className="w-4 h-4 mr-2" />
             Download Report
           </Button>
@@ -135,6 +152,8 @@ export default function InterviewResults() {
           </Button>
         </div>
       </div>
+
+      <div id="report-content" className="space-y-8">
 
       <Card className="bg-gradient-to-br from-primary/5 to-primary/10 border-primary/20">
         <CardContent className="p-8">
@@ -305,9 +324,17 @@ export default function InterviewResults() {
                   )}
 
                   {question.feedback && (
-                    <div className="flex items-start gap-2 text-sm">
-                      <Lightbulb className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
-                      <p className="text-muted-foreground">{question.feedback}</p>
+                    <div className="space-y-2 text-sm">
+                      <div className="flex items-start gap-2">
+                        <Lightbulb className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
+                        <p className="text-muted-foreground">{question.feedback.split('\n\nHow to answer:')[0]}</p>
+                      </div>
+                      {question.feedback.includes('\n\nHow to answer:') && (
+                        <div className="bg-primary/5 border border-primary/10 p-3 rounded-lg ml-6">
+                          <p className="text-xs font-semibold text-primary mb-1">💡 How to answer:</p>
+                          <p className="text-sm text-muted-foreground">{question.feedback.split('\n\nHow to answer:')[1]?.trim()}</p>
+                        </div>
+                      )}
                     </div>
                   )}
                 </div>
@@ -317,7 +344,7 @@ export default function InterviewResults() {
         </Card>
       )}
 
-      <div className="flex justify-center gap-4">
+      <div className="flex justify-center gap-4" data-html2canvas-ignore="true">
         <Link href="/interview/start">
           <Button size="lg" data-testid="button-start-another">
             Practice Another Interview
@@ -328,6 +355,7 @@ export default function InterviewResults() {
             View All Reports
           </Button>
         </Link>
+      </div>
       </div>
     </div>
   );
