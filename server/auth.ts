@@ -219,7 +219,12 @@ export async function loginHandler(req: any, res: any) {
 
 // Logout endpoint handler
 export async function logoutHandler(req: any, res: any) {
-  res.clearCookie("token");
+  res.cookie("token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 0,
+  });
   res.json({ message: "Logged out successfully" });
 }
 

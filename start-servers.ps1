@@ -17,11 +17,11 @@ if ($pythonRunning) {
 }
 
 # Check if Node.js server is already running
-$nodeRunning = Get-NetTCPConnection -LocalPort 5000 -ErrorAction SilentlyContinue
+$nodeRunning = Get-NetTCPConnection -LocalPort 5050 -ErrorAction SilentlyContinue
 if ($nodeRunning) {
-    Write-Host "⚠ Node.js server already running on port 5000" -ForegroundColor Yellow
+    Write-Host "⚠ Node.js server already running on port 5050" -ForegroundColor Yellow
 } else {
-    Write-Host "Starting Node.js Backend (port 5000)..." -ForegroundColor Green
+    Write-Host "Starting Node.js Backend (port 5050)..." -ForegroundColor Green
     Start-Process powershell -ArgumentList "-NoExit", "-Command", "cd '$PSScriptRoot'; npm run dev" -WindowStyle Normal
     Start-Sleep -Seconds 2
 }
@@ -32,9 +32,9 @@ Write-Host "Servers Starting..." -ForegroundColor Cyan
 Write-Host "========================================" -ForegroundColor Cyan
 Write-Host ""
 Write-Host "Python AI Service: http://localhost:8000" -ForegroundColor Yellow
-Write-Host "Node.js Backend:   http://localhost:5000" -ForegroundColor Yellow
+Write-Host "Node.js Backend:   http://localhost:5050" -ForegroundColor Yellow
 Write-Host ""
-Write-Host "Open your browser to: http://localhost:5000" -ForegroundColor Green
+Write-Host "Open your browser to: http://localhost:5050" -ForegroundColor Green
 Write-Host ""
 Write-Host "Test Accounts:" -ForegroundColor Cyan
 Write-Host "  Admin:   admin@interviewai.com / admin123" -ForegroundColor White

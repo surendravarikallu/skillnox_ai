@@ -182,13 +182,17 @@ class AudioTranscriber:
             if audio_array.dtype != np.float32:
                 audio_array = audio_array.astype(np.float32)
 
-            # Use beam_size=7 for better accuracy
+            # Use beam_size=10 for better accuracy (moderate latency trade-off)
             # vad_filter helps remove silence for cleaner transcription
             segments, info = self.model.transcribe(
                 audio_array,
-                beam_size=7,
+                beam_size=10,
                 vad_filter=True,
-                vad_parameters=dict(min_silence_duration_ms=500)
+                vad_parameters=dict(
+                    min_silence_duration_ms=300,
+                    threshold=0.35,
+                    speech_pad_ms=400
+                )
             )
             transcript = " ".join([segment.text for segment in segments])
             return transcript.strip()
@@ -218,7 +222,7 @@ class LLMVoiceAnalyzer:
 
     def __init__(self):
         self.ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.ollama_model = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+        self.ollama_model = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 
     def analyze(self, acoustic_features: Dict, transcript: str = "") -> Dict:
         """Analyze voice quality from acoustic features and transcript."""

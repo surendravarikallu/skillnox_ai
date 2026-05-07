@@ -1,6 +1,6 @@
 """
 Inference service for all AI models.
-Routes NLP tasks through Qwen 3.5 LLM instead of untrained LSTM models.
+Routes NLP tasks through Qwen 3 LLM instead of untrained LSTM models.
 """
 
 import torch
@@ -40,7 +40,7 @@ class InferenceService:
         self.skill_gap_analyzer = SkillGapAnalyzer()
         self.resume_scorer = ResumeScorer()
 
-        print("✓ Inference service initialized (models will load on demand)")
+        print("[OK] Inference service initialized (models will load on demand)")
 
     @property
     def llm(self):
@@ -89,7 +89,7 @@ class InferenceService:
         gc.collect()
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
-        print("✓ Models unloaded, memory freed")
+        print("[OK] Models unloaded, memory freed")
 
     # ------------------------------------------------------------------
     # Resume parsing — now powered by LLM

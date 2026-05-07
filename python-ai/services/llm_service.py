@@ -17,7 +17,7 @@ from models.llm_models import get_llm
 app = FastAPI(title="LLM Service for Interview System")
 
 # Initialize LLM via Ollama
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 FINETUNED_MODEL = os.environ.get("OLLAMA_FINETUNED_MODEL", "")
 
 model_to_use = FINETUNED_MODEL if FINETUNED_MODEL else OLLAMA_MODEL

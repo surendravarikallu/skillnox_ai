@@ -1,5 +1,6 @@
 import { useState } from "react";
-import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useLocation } from "wouter";
+import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -16,6 +17,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { useToast } from "@/hooks/use-toast";
+import { cn } from "@/lib/utils";
 import {
   Users,
   Upload,
@@ -23,7 +25,9 @@ import {
   Download,
   Pencil,
   Trash2,
+  Brain,
 } from "lucide-react";
+import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Dialog, DialogContent, DialogFooter, DialogHeader, DialogTitle } from "@/components/ui/dialog";
 import {
   AlertDialog,
@@ -35,9 +39,17 @@ import {
   AlertDialogHeader,
   AlertDialogTitle,
 } from "@/components/ui/alert-dialog";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import type { User } from "@shared/schema";
 
 export default function AdminStudentsPage() {
+  const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const [activeTab, setActiveTab] = useState<"view" | "import">("view");
   const [selectedBranch, setSelectedBranch] = useState<string>("All");
@@ -240,209 +252,270 @@ export default function AdminStudentsPage() {
   };
 
   return (
-    <div className="space-y-6">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+    <div className="space-y-8 max-w-[1600px] mx-auto">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-2">
         <div>
-          <h1 className="text-3xl font-bold">Students</h1>
-          <p className="text-muted-foreground">
-            View and manage student accounts for Skillnox AI.
+          <h1 className="text-5xl font-black tracking-tight mb-3 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
+            Student Management
+          </h1>
+          <p className="text-muted-foreground text-lg max-w-2xl">
+            Maintain your student directory, perform bulk imports, and monitor interview readiness across all departments.
           </p>
+        </div>
+        <div className="flex items-center gap-3 bg-muted/30 p-1.5 rounded-2xl border border-border/50">
+          <div className="px-4 py-2 text-center border-r border-border/50">
+            <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mb-1">Total Students</p>
+            <p className="text-2xl font-black leading-none">{students?.length || 0}</p>
+          </div>
+          <div className="px-4 py-2 text-center">
+            <p className="text-[10px] uppercase font-black tracking-widest text-muted-foreground mb-1">Departments</p>
+            <p className="text-2xl font-black leading-none">{branchOptions.length - 1}</p>
+          </div>
         </div>
       </div>
 
-      <div className="flex gap-2 border-b border-border pb-2">
-        <Button
-          variant={activeTab === "view" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("view")}
-        >
-          View Students
-        </Button>
-        <Button
-          variant={activeTab === "import" ? "default" : "ghost"}
-          size="sm"
-          onClick={() => setActiveTab("import")}
-        >
-          Import Students
-        </Button>
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-6 mb-8">
+        <Card className="rounded-[2rem] glass-card border-primary/10 bg-primary/5">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <Users className="w-6 h-6 text-primary" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Active Directory</p>
+              <p className="text-xl font-black">All Enrolled</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-[2rem] glass-card border-border/50">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
+              <Upload className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Quick Action</p>
+              <p className="text-xl font-black">Bulk Import CSV</p>
+            </div>
+          </CardContent>
+        </Card>
+        <Card className="rounded-[2rem] glass-card border-border/50">
+          <CardContent className="p-6 flex items-center gap-4">
+            <div className="w-12 h-12 rounded-2xl bg-muted flex items-center justify-center">
+              <Brain className="w-6 h-6 text-muted-foreground" />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Workflow</p>
+              <p className="text-xl font-black">Assign Readiness</p>
+            </div>
+          </CardContent>
+        </Card>
       </div>
 
-      {activeTab === "view" && (
-        <Card>
-          <CardHeader className="pb-4">
-            <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Users className="w-4 h-4" />
-                Student Directory
-              </CardTitle>
-              <div className="relative w-full md:w-64">
-                <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
-                <Input
-                  placeholder="Search by name, email, or branch..."
-                  value={searchQuery}
-                  onChange={(e) => setSearchQuery(e.target.value)}
-                  className="pl-9"
-                />
-              </div>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            {loadingStudents ? (
-              <div className="space-y-4">
-                {[1, 2, 3, 4, 5].map((i) => (
-                  <Skeleton key={i} className="h-14" />
-                ))}
-              </div>
-            ) : groupedStudents.length > 0 ? (
-              <>
-                <div className="flex flex-wrap gap-2">
-                  {branchOptions.map((branch) => (
-                    <Button
-                      key={branch}
-                      type="button"
-                      variant={selectedBranch === branch ? "default" : "outline"}
-                      size="sm"
-                      onClick={() => setSelectedBranch(branch)}
-                    >
-                      {branch}
-                    </Button>
-                  ))}
-                </div>
-                {(selectedBranch === "All"
-                  ? groupedStudents
-                  : groupedStudents.filter((g) => g.branch === selectedBranch)
-                ).map(({ branch, students: branchStudents }) => (
-                  <div key={branch} className="border border-border rounded-lg">
-                    <div className="px-4 py-3 border-b border-border bg-muted/40 flex items-center justify-between">
-                      <div>
-                        <p className="text-sm font-semibold">{branch}</p>
-                        <p className="text-xs text-muted-foreground">
-                          {branchStudents.length} student{branchStudents.length === 1 ? "" : "s"}
-                        </p>
-                      </div>
-                    </div>
-                    <div className="overflow-x-auto">
-                      <Table>
-                        <TableHeader>
-                          <TableRow>
-                            <TableHead>Student</TableHead>
-                            <TableHead>Roll</TableHead>
-                            <TableHead>Year</TableHead>
-                            <TableHead className="text-right">Interviews</TableHead>
-                            <TableHead className="text-right">Actions</TableHead>
-                          </TableRow>
-                        </TableHeader>
-                        <TableBody>
-                          {branchStudents.map((student) => (
-                            <TableRow key={student.id}>
-                              <TableCell>
-                                <div className="flex items-center gap-3">
-                                  <Avatar className="w-8 h-8">
-                                    <AvatarImage src={student.profileImageUrl || undefined} className="object-cover" />
-                                    <AvatarFallback>
-                                      {student.firstName?.[0] || student.email?.[0]?.toUpperCase() || "S"}
-                                    </AvatarFallback>
-                                  </Avatar>
-                                  <div>
-                                    <p className="font-medium text-sm">
-                                      {`${student.firstName || ""} ${student.lastName || ""}`.trim() || "Unknown"}
-                                    </p>
-                                    <p className="text-xs text-muted-foreground">{student.email}</p>
-                                  </div>
-                                </div>
-                              </TableCell>
-                              <TableCell className="font-mono text-sm">
-                                {student.rollNumber || "-"}
-                              </TableCell>
-                              <TableCell>{student.year ? `Year ${student.year}` : "-"}</TableCell>
-                              <TableCell className="text-right">
-                                <Badge variant="secondary">{student.interviewCount || 0}</Badge>
-                              </TableCell>
-                              <TableCell className="text-right">
-                                <div className="flex justify-end gap-2">
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    onClick={() => openEditDialog(student)}
-                                    title="Edit student"
-                                  >
-                                    <Pencil className="w-4 h-4" />
-                                  </Button>
-                                  <Button
-                                    variant="ghost"
-                                    size="icon"
-                                    className="text-destructive"
-                                    onClick={() => setStudentToDelete(student)}
-                                    title="Delete student"
-                                  >
-                                    <Trash2 className="w-4 h-4" />
-                                  </Button>
-                                </div>
-                              </TableCell>
-                            </TableRow>
-                          ))}
-                        </TableBody>
-                      </Table>
-                    </div>
-                  </div>
-                ))}
-              </>
-            ) : (
-              <div className="text-center py-12">
-                <Users className="w-12 h-12 text-muted-foreground mx-auto mb-3" />
-                <p className="text-muted-foreground">
-                  {searchQuery ? "No matching students found" : "No students imported yet."}
-                </p>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      )}
+      <Tabs value={activeTab} onValueChange={(v: any) => setActiveTab(v)} className="space-y-6">
+        <TabsList className="bg-muted/50 p-1 rounded-xl h-auto">
+          <TabsTrigger value="view" className="rounded-lg px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <Users className="w-4 h-4 mr-2" />
+            View Students
+          </TabsTrigger>
+          <TabsTrigger value="import" className="rounded-lg px-6 py-2.5 data-[state=active]:bg-background data-[state=active]:shadow-sm">
+            <Upload className="w-4 h-4 mr-2" />
+            Import CSV
+          </TabsTrigger>
+        </TabsList>
 
-      {activeTab === "import" && (
-        <Card>
-          <CardHeader className="pb-2">
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Upload className="w-5 h-5" />
-              Import Students From CSV
-            </CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <p className="text-sm text-muted-foreground">
-              Use the template below to prepare your student list. Columns: <strong>Name</strong>, <strong>Roll Number</strong>, <strong>Branch</strong>, <strong>Password (optional)</strong>.
-              If Password is blank we will default to the roll number.
-            </p>
-            <div className="flex flex-wrap gap-2">
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                onClick={handleDownloadTemplate}
-              >
-                <Download className="w-4 h-4 mr-2" />
-                Download CSV Template
-              </Button>
-            </div>
-
-            <div className="space-y-2">
-              <p className="text-xs font-semibold">Upload filled template</p>
+        <TabsContent value="view">
+          <div className="flex flex-col md:flex-row md:items-center justify-between gap-6 mb-6">
+            <div className="relative w-full md:w-80">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-muted-foreground" />
               <Input
-                type="file"
-                accept=".csv"
-                onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                placeholder="Filter students..."
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                className="pl-11 h-12 bg-background border-border rounded-2xl focus:ring-primary/20"
               />
             </div>
+            <div className="flex flex-wrap items-center gap-3">
+              <Label className="text-sm font-semibold">Branch:</Label>
+              <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                <SelectTrigger className="w-[180px] h-11 rounded-xl">
+                  <SelectValue placeholder="All Branches" />
+                </SelectTrigger>
+                <SelectContent>
+                  {branchOptions.map((branch) => (
+                    <SelectItem key={branch} value={branch}>
+                      {branch}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          </div>
 
-            <Button
-              onClick={handleImport}
-              disabled={!importFile || isImporting}
-              className="w-full"
-            >
-              {isImporting ? "Importing..." : "Import Students"}
-            </Button>
-          </CardContent>
-        </Card>
-      )}
+          <Card className="rounded-[2rem] glass-card overflow-hidden border-border/50">
+            <CardContent className="p-0">
+              {loadingStudents ? (
+                <div className="p-8 space-y-6">
+                  {[1, 2, 3, 4, 5].map((i) => (
+                    <Skeleton key={i} className="h-16 w-full rounded-2xl" />
+                  ))}
+                </div>
+              ) : groupedStudents.length > 0 ? (
+                <>
+                  {groupedStudents
+                    .filter((g) => selectedBranch === "All" || g.branch === selectedBranch)
+                    .map(({ branch, students: branchStudents }) => (
+                      <div key={branch} className="border-b border-border/50 last:border-0">
+                        <div className="bg-muted/30 px-8 py-4 flex items-center justify-between">
+                          <h3 className="font-black text-sm uppercase tracking-widest text-primary">
+                            {branch}
+                          </h3>
+                          <Badge variant="secondary" className="rounded-lg font-bold">
+                            {branchStudents.length} Students
+                          </Badge>
+                        </div>
+                        <div className="overflow-x-auto">
+                          <Table>
+                            <TableHeader>
+                              <TableRow className="hover:bg-transparent border-border/50">
+                                <TableHead className="pl-8 py-4 font-bold uppercase tracking-widest text-[10px]">Student</TableHead>
+                                <TableHead className="font-bold uppercase tracking-widest text-[10px]">Roll</TableHead>
+                                <TableHead className="font-bold uppercase tracking-widest text-[10px]">Year</TableHead>
+                                <TableHead className="text-right font-bold uppercase tracking-widest text-[10px]">Interviews</TableHead>
+                                <TableHead className="text-right pr-8 font-bold uppercase tracking-widest text-[10px]">Actions</TableHead>
+                              </TableRow>
+                            </TableHeader>
+                            <TableBody>
+                              {branchStudents.map((student) => (
+                                <TableRow key={student.id} className="hover:bg-muted/50 transition-colors border-border/50">
+                                  <TableCell className="pl-8 py-4">
+                                    <div className="flex items-center gap-3">
+                                      <Avatar className="w-9 h-9 border border-border">
+                                        <AvatarImage src={student.profileImageUrl || undefined} className="object-cover" />
+                                        <AvatarFallback className="font-bold">
+                                          {student.firstName?.[0] || student.email?.[0]?.toUpperCase() || "S"}
+                                        </AvatarFallback>
+                                      </Avatar>
+                                      <div>
+                                        <p className="font-bold text-sm">
+                                          {`${student.firstName || ""} ${student.lastName || ""}`.trim() || "Unknown"}
+                                        </p>
+                                        <p className="text-xs text-muted-foreground">{student.email}</p>
+                                      </div>
+                                    </div>
+                                  </TableCell>
+                                  <TableCell className="font-mono text-xs">
+                                    {student.rollNumber || "-"}
+                                  </TableCell>
+                                  <TableCell className="text-sm font-medium">{student.year ? `Year ${student.year}` : "-"}</TableCell>
+                                  <TableCell className="text-right">
+                                    <Badge variant="outline" className="font-bold bg-muted/50">{student.interviewCount || 0}</Badge>
+                                  </TableCell>
+                                  <TableCell className="text-right pr-8">
+                                    <div className="flex justify-end gap-1">
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
+                                        onClick={() => openEditDialog(student)}
+                                        title="Edit student"
+                                      >
+                                        <Pencil className="w-4 h-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 rounded-lg hover:bg-primary/10 hover:text-primary transition-colors"
+                                        onClick={() => setLocation("/admin/assign")}
+                                        title="Assign Interview"
+                                      >
+                                        <Brain className="w-4 h-4" />
+                                      </Button>
+                                      <Button
+                                        variant="ghost"
+                                        size="icon"
+                                        className="h-8 w-8 rounded-lg hover:bg-destructive/10 hover:text-destructive transition-colors"
+                                        onClick={() => setStudentToDelete(student)}
+                                        title="Delete student"
+                                      >
+                                        <Trash2 className="w-4 h-4" />
+                                      </Button>
+                                    </div>
+                                  </TableCell>
+                                </TableRow>
+                              ))}
+                            </TableBody>
+                          </Table>
+                        </div>
+                      </div>
+                    ))}
+                </>
+              ) : (
+                <div className="text-center py-20">
+                  <Users className="w-16 h-16 text-muted-foreground/30 mx-auto mb-4" />
+                  <p className="text-muted-foreground font-medium text-lg">
+                    {searchQuery ? "No matching students found" : "No students imported yet."}
+                  </p>
+                  <Button variant="outline" onClick={() => setActiveTab("import")} className="mt-4 rounded-xl">
+                    Import Students Now
+                  </Button>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        <TabsContent value="import">
+          <Card className="rounded-[2rem] glass-card border-border/50 overflow-hidden">
+            <CardHeader className="p-8 pb-4">
+              <CardTitle className="text-2xl font-black flex items-center gap-3">
+                <Upload className="w-7 h-7 text-primary" />
+                Import Students From CSV
+              </CardTitle>
+              <p className="text-muted-foreground">Batch upload students using our standard CSV template.</p>
+            </CardHeader>
+            <CardContent className="p-8 space-y-8">
+              <div className="bg-primary/5 p-6 rounded-2xl border border-primary/10">
+                <p className="text-sm leading-relaxed mb-4">
+                  Use the template below to prepare your student list. Required columns: <strong>Name</strong>, <strong>Roll Number</strong>, <strong>Branch</strong>, <strong>Password (optional)</strong>.
+                  If Password is blank, we default to the roll number.
+                </p>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={handleDownloadTemplate}
+                  className="rounded-xl border-primary/20 hover:bg-primary/10"
+                >
+                  <Download className="w-4 h-4 mr-2" />
+                  Download CSV Template
+                </Button>
+              </div>
+
+              <div className="grid md:grid-cols-2 gap-8 items-end">
+                <div className="space-y-3">
+                  <Label className="text-sm font-bold uppercase tracking-wider text-muted-foreground">Step 1: Upload filled template</Label>
+                  <div className="relative group">
+                    <Input
+                      type="file"
+                      accept=".csv"
+                      onChange={(e) => setImportFile(e.target.files?.[0] || null)}
+                      className="h-14 rounded-2xl border-dashed border-2 border-border/50 bg-muted/10 group-hover:bg-muted/20 transition-all pt-3.5 pl-4"
+                    />
+                  </div>
+                </div>
+
+                <Button
+                  onClick={handleImport}
+                  disabled={!importFile || isImporting}
+                  size="lg"
+                  className="h-14 rounded-2xl font-black text-lg"
+                >
+                  {isImporting ? "Importing Data..." : "Process Import"}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
+      </Tabs>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
         <DialogContent>
@@ -529,5 +602,3 @@ export default function AdminStudentsPage() {
     </div>
   );
 }
-
-

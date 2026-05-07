@@ -23,8 +23,14 @@ from models.llm_models import get_llm
 
 app = FastAPI(title="AI Interview System API")
 
+from dotenv import load_dotenv
+
+# Load .env file from project root
+env_path = Path(__file__).parent.parent.parent / '.env'
+load_dotenv(dotenv_path=env_path)
+
 # Initialize LLM via Ollama (fast startup, no heavy model loading)
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 FINETUNED_MODEL = os.environ.get("OLLAMA_FINETUNED_MODEL", "")
 
 model_to_use = FINETUNED_MODEL if FINETUNED_MODEL else OLLAMA_MODEL
@@ -36,13 +42,13 @@ llm = get_llm(model_name=model_to_use)
 @app.on_event("startup")
 async def startup_event():
     """Warm up Ollama model on startup"""
-    print("🔥 Warming up Ollama LLM model...")
+    print("[WARMUP] Warming up Ollama LLM model...")
     try:
         # Generate a dummy question to ensure model is loaded in Ollama's memory
         _ = llm.generate_question("technical", "Python", "easy")
-        print("✅ Ollama LLM model ready")
+        print("[OK] Ollama LLM model ready")
     except Exception as e:
-        print(f"⚠️  Warm-up warning: {e}")
+        print(f"[WARN] Warm-up warning: {e}")
 
 
 # CORS middleware

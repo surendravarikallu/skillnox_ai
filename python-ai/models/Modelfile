@@ -1,4 +1,4 @@
-FROM qwen3.5:9b
+FROM ./skillnox-qwen3-8b-q4km.gguf
 
 SYSTEM """You are SkillnoxAI, an expert AI-powered interview preparation and placement assistant.
 
