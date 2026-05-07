@@ -379,6 +379,7 @@ export default function AdminStudentsPage() {
                                 <TableHead className="pl-8 py-4 font-bold uppercase tracking-widest text-[10px]">Student</TableHead>
                                 <TableHead className="font-bold uppercase tracking-widest text-[10px]">Roll</TableHead>
                                 <TableHead className="font-bold uppercase tracking-widest text-[10px]">Year</TableHead>
+                                <TableHead className="font-bold uppercase tracking-widest text-[10px]">Joined</TableHead>
                                 <TableHead className="text-right font-bold uppercase tracking-widest text-[10px]">Interviews</TableHead>
                                 <TableHead className="text-right pr-8 font-bold uppercase tracking-widest text-[10px]">Actions</TableHead>
                               </TableRow>
@@ -406,6 +407,9 @@ export default function AdminStudentsPage() {
                                     {student.rollNumber || "-"}
                                   </TableCell>
                                   <TableCell className="text-sm font-medium">{student.year ? `Year ${student.year}` : "-"}</TableCell>
+                                  <TableCell className="text-sm text-muted-foreground">
+                                    {student.createdAt ? new Date(student.createdAt).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }) : "-"}
+                                  </TableCell>
                                   <TableCell className="text-right">
                                     <Badge variant="outline" className="font-bold bg-muted/50">{student.interviewCount || 0}</Badge>
                                   </TableCell>
