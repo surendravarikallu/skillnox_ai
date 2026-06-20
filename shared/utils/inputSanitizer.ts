@@ -10,8 +10,11 @@ export function sanitizeInput(input: string, config: SanitizerConfig = {}): stri
   if (config.stripHTML !== false) {
     cleaned = cleaned.replace(/<[^>]*>/g, '');
   }
+  if (config.stripSQL) {
+    cleaned = cleaned.replace(/(UNION|SELECT|INSERT|DELETE|UPDATE|DROP|--)/gi, '');
+  }
   if (config.maxLength) {
     cleaned = cleaned.substring(0, config.maxLength);
   }
-  return cleaned;
+  return cleaned.trim();
 }
