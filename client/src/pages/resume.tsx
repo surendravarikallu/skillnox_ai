@@ -193,6 +193,141 @@ export default function ResumePage() {
             <BorderBeam size={400} duration={15} />
           </Card>
 
+          {/* HackerRank ATS Report Card */}
+          {hasResume && parsedData?.hiringAgentEvaluation && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.1 }}
+            >
+              <Card className="rounded-[2.5rem] glass-card overflow-hidden relative p-8 space-y-8 border-primary/20">
+                <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-transparent opacity-50" />
+                <div className="relative z-10 space-y-6">
+                  <div className="flex items-center justify-between">
+                    <div>
+                      <h3 className="text-xl font-black tracking-tight flex items-center gap-3">
+                        <Sparkles className="w-5 h-5 text-primary animate-pulse" />
+                        HackerRank ATS Score breakdown
+                      </h3>
+                      <p className="text-xs text-muted-foreground mt-1 uppercase tracking-widest font-black opacity-60">Objective Candidate Scoring</p>
+                    </div>
+                    <Badge className="bg-primary/10 border border-primary/30 text-primary text-[10px] font-black uppercase tracking-wider px-3 py-1">ATS Standard v1.2</Badge>
+                  </div>
+
+                  {/* Category Progress Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {[
+                      {
+                        name: "Open Source",
+                        key: "open_source",
+                        data: parsedData.hiringAgentEvaluation.scores?.open_source,
+                        color: "from-blue-500 to-indigo-500",
+                        icon: Code
+                      },
+                      {
+                        name: "Self Projects",
+                        key: "self_projects",
+                        data: parsedData.hiringAgentEvaluation.scores?.self_projects,
+                        color: "from-purple-500 to-pink-500",
+                        icon: Target
+                      },
+                      {
+                        name: "Production Experience",
+                        key: "production",
+                        data: parsedData.hiringAgentEvaluation.scores?.production,
+                        color: "from-emerald-500 to-teal-500",
+                        icon: Briefcase
+                      },
+                      {
+                        name: "Technical Skills",
+                        key: "technical_skills",
+                        data: parsedData.hiringAgentEvaluation.scores?.technical_skills,
+                        color: "from-amber-500 to-yellow-500",
+                        icon: GraduationCap
+                      }
+                    ].map((cat) => {
+                      if (!cat.data) return null;
+                      const pct = Math.round((cat.data.score / cat.data.max) * 100);
+                      const Icon = cat.icon;
+                      return (
+                        <div key={cat.key} className="p-5 rounded-3xl bg-muted/30 border border-border/40 hover:border-primary/20 transition-all flex flex-col justify-between space-y-4">
+                          <div className="flex items-center justify-between">
+                            <div className="flex items-center gap-3">
+                              <div className="w-8 h-8 rounded-xl bg-primary/5 flex items-center justify-center">
+                                <Icon className="w-4 h-4 text-primary" />
+                              </div>
+                              <span className="font-bold text-sm text-foreground/90">{cat.name}</span>
+                            </div>
+                            <span className="text-xs font-black tracking-widest text-primary bg-primary/5 px-2.5 py-1 rounded-lg">
+                              {cat.data.score}/{cat.data.max}
+                            </span>
+                          </div>
+
+                          <div className="space-y-1">
+                            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
+                              <motion.div
+                                initial={{ width: 0 }}
+                                animate={{ width: `${pct}%` }}
+                                transition={{ duration: 1, ease: "easeOut" }}
+                                className={cn("h-full rounded-full bg-gradient-to-r", cat.color)}
+                              />
+                            </div>
+                            <div className="flex justify-between text-[10px] text-muted-foreground font-medium">
+                              <span>Min Base: 0</span>
+                              <span>Max: {cat.data.max}</span>
+                            </div>
+                          </div>
+
+                          <p className="text-xs text-muted-foreground/80 leading-relaxed italic bg-muted/20 p-3 rounded-2xl border border-border/20">
+                            &ldquo;{cat.data.evidence}&rdquo;
+                          </p>
+                        </div>
+                      );
+                    })}
+                  </div>
+
+                  {/* Bonus & Deductions Card Row */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
+                    {/* Bonus Card */}
+                    <div className="p-5 rounded-3xl bg-emerald-500/5 border border-emerald-500/20 space-y-3 relative overflow-hidden group">
+                      <div className="absolute top-2 right-2 w-10 h-10 text-emerald-500/10 transition-transform group-hover:scale-110">
+                        <CheckCircle className="w-full h-full" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <CheckCircle className="w-5 h-5 text-emerald-500" />
+                        <span className="font-black uppercase tracking-wider text-[11px] text-emerald-600 dark:text-emerald-400">Bonus Signals</span>
+                      </div>
+                      <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
+                        +{parsedData.hiringAgentEvaluation.bonus_points?.total || 0} Points
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {parsedData.hiringAgentEvaluation.bonus_points?.breakdown || "No bonus points applied."}
+                      </p>
+                    </div>
+
+                    {/* Deductions Card */}
+                    <div className="p-5 rounded-3xl bg-rose-500/5 border border-rose-500/20 space-y-3 relative overflow-hidden group">
+                      <div className="absolute top-2 right-2 w-10 h-10 text-rose-500/10 transition-transform group-hover:scale-110">
+                        <AlertCircle className="w-full h-full" />
+                      </div>
+                      <div className="flex items-center gap-2">
+                        <AlertCircle className="w-5 h-5 text-rose-500" />
+                        <span className="font-black uppercase tracking-wider text-[11px] text-rose-600 dark:text-rose-400">Deduction Signal</span>
+                      </div>
+                      <p className="text-2xl font-black text-rose-600 dark:text-rose-400">
+                        -{parsedData.hiringAgentEvaluation.deductions?.total || 0} Points
+                      </p>
+                      <p className="text-xs text-muted-foreground leading-relaxed">
+                        {parsedData.hiringAgentEvaluation.deductions?.reasons || "No deductions applied."}
+                      </p>
+                    </div>
+                  </div>
+                </div>
+                <BorderBeam size={600} duration={20} />
+              </Card>
+            </motion.div>
+          )}
+
           {/* Detailed Decomposition */}
           <div className="grid md:grid-cols-2 gap-8">
              <Card className="rounded-[2rem] glass-card p-8 space-y-6">

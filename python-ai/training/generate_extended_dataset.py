@@ -196,6 +196,18 @@ TECHNICAL_QUESTIONS = {
         ("Explain the factory pattern.", "medium"),
         ("What is polymorphism? Give a real-world example.", "easy"),
     ],
+    "trending": [
+        ("Explain how Retrieval Augmented Generation (RAG) works and its core advantages.", "medium"),
+        ("What are vector databases and why are they preferred for storing embeddings?", "medium"),
+        ("Describe the self-attention mechanism in Transformer architectures.", "hard"),
+        ("What is the difference between full fine-tuning and LoRA/QLoRA for LLMs?", "hard"),
+        ("Explain the concept of Zero Trust security architecture in cloud microservices.", "hard"),
+        ("What are Kubernetes service meshes like Istio, and what problems do they solve?", "hard"),
+        ("How do you design a payment gateway to ensure idempotency and prevent double-spending?", "hard"),
+        ("What is platform engineering and how does it optimize developer workflows?", "medium"),
+        ("Explain the difference between Server-Side Rendering (SSR) and React Server Components.", "medium"),
+        ("What is WebAssembly (WASM) and how does it enhance client-side web application performance?", "medium"),
+    ],
 }
 
 HR_QUESTIONS = [

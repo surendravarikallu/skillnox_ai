@@ -19,6 +19,7 @@ except ImportError as e:
     sys.exit(1)
 
 client = TestClient(app)
+client.headers.update({"X-API-Key": os.environ.get("AI_SERVICE_API_KEY", "sk-skillnox-internal-2026")})
 
 print("[START] Starting FastAPI Endpoint Validation Tests")
 print("=" * 60)
