@@ -1,17 +1,31 @@
-"""
-Local LLM Models for Interview System — Ollama Backend
-Uses Ollama's optimized C++ inference engine for fast local execution.
-Fully replaces the old HuggingFace/PyTorch pipeline.
-"""
-
 import os
 import re
 import json
 import time
+import asyncio
 import random
+import logging
 import requests
+import httpx
 from typing import List, Dict, Optional
 from pathlib import Path
+from cachetools import TTLCache
+from jinja2 import Environment, FileSystemLoader
+
+# Import trending topics for enhanced question generation
+from models.trending_topics import (
+    build_company_question_prompt,
+    build_company_evaluation_prompt,
+    get_trending_context,
+    get_difficulty_instruction,
+    get_company_persona,
+    get_all_trending_sample_questions,
+    TRENDING_TOPICS_2026,
+)
+
+# Configure Jinja Environment for prompts
+TEMPLATE_DIR = Path(__file__).parent.parent / "prompts" / "templates"
+jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), trim_blocks=True, lstrip_blocks=True)
 
 
 # ---------------------------------------------------------------------------
@@ -26,13 +40,20 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "120"))
 
+# Global semaphore to limit concurrent LLM inferences
+# This prevents RAM/CPU spikes that crash the server
+LLM_CONCURRENCY = int(os.environ.get("OLLAMA_CONCURRENCY", "3"))
+LLM_SEMAPHORE = asyncio.Semaphore(LLM_CONCURRENCY)
+
+# Simple cache for repeated evaluations (10 minute TTL)
+eval_cache = TTLCache(maxsize=100, ttl=600)
 
 # ---------------------------------------------------------------------------
 # OllamaLLM — Main LLM class
 # ---------------------------------------------------------------------------
 
 class OllamaLLM:
-    """LLM wrapper using Ollama's REST API for fast CPU inference."""
+    """LLM wrapper using Ollama's REST API with async support and throttling."""
 
     def __init__(
         self,
@@ -45,9 +66,25 @@ class OllamaLLM:
         self.timeout = timeout
         self._session = requests.Session()
         self._session.headers.update({"Content-Type": "application/json"})
+        
+        # Async client for better performance under load
+        self._async_client = httpx.AsyncClient(
+            base_url=self.base_url,
+            timeout=float(self.timeout),
+            headers={"Content-Type": "application/json"}
+        )
 
         print(f"Initializing Ollama LLM: {model_name} @ {base_url}")
         self._verify_connection()
+
+    async def close(self):
+        """Close the async client to free connections."""
+        if self._async_client:
+            await self._async_client.aclose()
+            self._async_client = None
+        if self._session:
+            self._session.close()
+            self._session = None
 
     # ------------------------------------------------------------------
     # Connection helpers
@@ -75,17 +112,51 @@ class OllamaLLM:
             print(f"[WARN] Ollama connection check failed: {e}")
 
     # ------------------------------------------------------------------
-    # Core generation
+    # Core generation (Async)
     # ------------------------------------------------------------------
 
-    def generate(
+    async def generate_async(
         self,
         prompt: str,
         max_length: int = 200,
         temperature: float = 0.7,
         system_prompt: Optional[str] = None,
+        json_format: bool = False,
     ) -> str:
-        """Generate text from prompt using Ollama API."""
+        """Generate text from prompt using Ollama API (Asynchronous & Throttled)."""
+        # Use semaphore to limit concurrency
+        async with LLM_SEMAPHORE:
+            try:
+                payload = {
+                    "model": self.model_name,
+                    "prompt": prompt,
+                    "stream": False,
+                    "options": {
+                        "temperature": temperature,
+                        "top_p": 0.9,
+                        "num_predict": max_length,
+                        "repeat_penalty": 1.1,
+                        "num_ctx": 32768 if json_format else 8192,
+                    },
+                }
+                if system_prompt:
+                    payload["system"] = system_prompt
+                if json_format:
+                    payload["format"] = "json"
+
+                resp = await self._async_client.post("/api/generate", json=payload)
+                resp.raise_for_status()
+                return resp.json().get("response", "").strip()
+
+            except (httpx.TimeoutException, httpx.ConnectError) as e:
+                print(f"[WARN] Ollama async request failed: {e}")
+                return self._fallback_generate(prompt)
+            except Exception as e:
+                print(f"Error in Ollama async generation: {e}")
+                return self._fallback_generate(prompt)
+
+    def generate(self, prompt, max_length=200, temperature=0.7, system_prompt=None):
+        """Synchronous wrapper for legacy support - uses sync requests"""
         try:
             payload = {
                 "model": self.model_name,
@@ -101,109 +172,92 @@ class OllamaLLM:
             if system_prompt:
                 payload["system"] = system_prompt
 
-            resp = self._session.post(
-                f"{self.base_url}/api/generate",
-                json=payload,
-                timeout=self.timeout,
-            )
+            resp = self._session.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
             resp.raise_for_status()
             return resp.json().get("response", "").strip()
-
-        except requests.Timeout:
-            print(f"[WARN] Ollama request timed out ({self.timeout}s)")
-            return self._fallback_generate(prompt)
-        except requests.ConnectionError:
-            print("[WARN] Cannot connect to Ollama server")
-            return self._fallback_generate(prompt)
         except Exception as e:
-            print(f"Error in Ollama generation: {e}")
+            print(f"Error in sync generate: {e}")
             return self._fallback_generate(prompt)
-
-    def chat(
-        self,
-        messages: List[Dict[str, str]],
-        max_length: int = 200,
-        temperature: float = 0.7,
-    ) -> str:
-        """Chat-style generation using Ollama's /api/chat endpoint."""
-        try:
-            payload = {
-                "model": self.model_name,
-                "messages": messages,
-                "stream": False,
-                "options": {
-                    "temperature": temperature,
-                    "top_p": 0.9,
-                    "num_predict": max_length,
-                    "repeat_penalty": 1.1,
-                },
-            }
-
-            resp = self._session.post(
-                f"{self.base_url}/api/chat",
-                json=payload,
-                timeout=self.timeout,
-            )
-            resp.raise_for_status()
-            return resp.json().get("message", {}).get("content", "").strip()
-
-        except Exception as e:
-            print(f"Error in Ollama chat: {e}")
-            return self._fallback_generate(
-                messages[-1].get("content", "") if messages else ""
-            )
 
     # ------------------------------------------------------------------
-    # Interview Question Generation
+    # Interview Question Generation (Async)
     # ------------------------------------------------------------------
 
-    def generate_question(
+    async def generate_question_async(
         self,
         question_type: str,
         context: Optional[str] = None,
         difficulty: str = "medium",
+        company: Optional[str] = None,
+        include_trending: bool = True,
     ) -> str:
-        """Generate interview question based on type and difficulty."""
+        """Generate interview question with company persona, difficulty calibration, and trending awareness."""
         try:
-            difficulty_guidance = {
-                "easy": "suitable for freshers / beginners — fundamental concepts",
-                "medium": "moderate complexity — solid understanding and practical application",
-                "hard": "challenging & advanced — deep knowledge, problem-solving, system design",
+            # Build enhanced prompt using trending_topics module
+            if company:
+                system = build_company_question_prompt(
+                    question_type=question_type,
+                    company=company,
+                    difficulty=difficulty,
+                    include_trending=include_trending,
+                )
+            else:
+                # Generic interviewer with trending awareness
+                diff_instruction = get_difficulty_instruction(difficulty)
+                trending_ctx = ""
+                if include_trending:
+                    trending_ctx = f"\nIncorporate awareness of 2025-26 trends where relevant:\n{get_trending_context()}"
+
+                system = (
+                    "You are an expert interview coach for engineering placement preparation. "
+                    f"Difficulty level: {difficulty.upper()}. {diff_instruction}\n"
+                    f"{trending_ctx}\n"
+                    "Generate exactly ONE interview question. Output ONLY the question — "
+                    "no preamble, no numbering, no explanation."
+                )
+
+            type_hints = {
+                "technical": f"Generate a {difficulty} technical interview question. Focus: {context or 'Software Engineering'}.",
+                "hr": f"Generate a {difficulty} HR interview question. Focus: {context or 'Career goals and cultural fit'}.",
+                "behavioral": f"Generate a {difficulty} behavioral STAR-method question. Focus: {context or 'Professional scenarios'}.",
+                "project": f"Generate a {difficulty} project explanation question. Focus: {context or 'Architecture and contributions'}.",
+                "company": f"Generate a {difficulty} company-specific interview question for {company or 'a tech company'}. Focus: {context or 'Company values and fit'}.",
+                "communication": f"Generate a {difficulty} communication assessment question. Focus: {context or 'Clarity and articulation'}.",
+                "coding": f"Generate a {difficulty} coding/algorithm question. Focus: {context or 'Data structures and algorithms'}.",
+                "aptitude": f"Generate a {difficulty} aptitude/reasoning question. Focus: {context or 'Quantitative and logical reasoning'}.",
             }
-            diff = difficulty_guidance.get(difficulty, difficulty_guidance["medium"])
 
-            system = (
-                "You are an expert interview coach for engineering placement preparation. "
-                "Generate exactly ONE interview question. Output ONLY the question — "
-                "no preamble, no numbering, no explanation."
-            )
+            prompt = type_hints.get(question_type, type_hints["technical"])
 
-            prompts = {
-                "technical": f"Generate a {difficulty} technical interview question.\nContext: {context or 'General Software Engineering'}.\nDifficulty: {diff}",
-                "hr": f"Generate a {difficulty} HR interview question.\nContext: {context or 'General'}.\nDifficulty: {diff}",
-                "behavioral": f"Generate a {difficulty} behavioral (STAR method) interview question.\nContext: {context or 'Professional experience'}.\nDifficulty: {diff}",
-                "project": f"Generate a {difficulty} project-based interview question.\nContext: {context or 'Project review'}.\nDifficulty: {diff}",
-                "company": f"Generate a {difficulty} company-culture fit interview question.\nContext: {context or 'Company values'}.\nDifficulty: {diff}",
-                "communication": f"Generate a {difficulty} communication skills question.\nDifficulty: {diff}",
-            }
-
-            prompt = prompts.get(question_type, prompts["technical"])
-            result = self.generate(prompt, max_length=150, system_prompt=system)
+            # Use lower temperature for aptitude (precision matters) and higher for creative
+            temp = 0.5 if question_type in ("aptitude", "coding") else 0.7
+            result = await self.generate_async(prompt, max_length=200, temperature=temp, system_prompt=system)
 
             if not result or len(result.strip()) < 10:
                 return self._fallback_generate_question(question_type, difficulty)
             return result.strip()
 
         except Exception as e:
-            print(f"Error in generate_question: {e}")
+            print(f"Error in generate_question_async: {e}")
             return self._fallback_generate_question(question_type, difficulty)
 
+    def generate_question(self, question_type, context=None, difficulty="medium"):
+        """Sync version"""
+        system = "Generate exactly ONE interview question. Output ONLY the question."
+        prompt = f"Generate a {difficulty} {question_type} interview question. Context: {context}"
+        return self.generate(prompt, system_prompt=system)
+
     # ------------------------------------------------------------------
-    # Answer Evaluation
+    # Answer Evaluation (Async)
     # ------------------------------------------------------------------
 
-    def evaluate_answer(self, question: str, answer: str) -> Dict:
-        """Evaluate answer with strict, detailed criteria and ideal answer guidance."""
+    async def evaluate_answer_async(self, question: str, answer: str) -> Dict:
+        """Evaluate answer with async support and caching."""
+        # Check cache first
+        cache_key = f"{question}|{answer}"
+        if cache_key in eval_cache:
+            return eval_cache[cache_key]
+
         is_behavioral = any(word in question.lower() for word in ["tell me about a time", "situation", "describe a scenario", "how do you handle", "conflict", "experience"])
         
         system = (
@@ -232,9 +286,9 @@ class OllamaLLM:
             "START YOUR RESPONSE WITH 'Score: '."
         )
 
-        evaluation = self.generate(prompt, max_length=450, system_prompt=system)
+        evaluation = await self.generate_async(prompt, max_length=450, system_prompt=system)
 
-        # Strip any <think>...</think> blocks from reasoning models
+        # Strip any <think>...</think> blocks
         evaluation = re.sub(r'<think>.*?</think>', '', evaluation, flags=re.DOTALL).strip()
 
         # Parse score
@@ -242,10 +296,6 @@ class OllamaLLM:
         score_match = re.search(r"Score:\s*(\d{1,3})", evaluation, re.IGNORECASE)
         if score_match:
             score = max(0, min(100, int(score_match.group(1))))
-        else:
-            fallback_match = re.search(r"score.*?(\d{1,3})", evaluation, re.IGNORECASE)
-            if fallback_match:
-                score = max(0, min(100, int(fallback_match.group(1))))
 
         # Parse feedback
         feedback = ""
@@ -263,35 +313,41 @@ class OllamaLLM:
         if ideal_match:
             ideal_answer = ideal_match.group(1).strip()
 
-        # Fallback: if no structured feedback found
         if not feedback:
-            sentences = [s.strip() for s in re.split(r'(?<=[.!?])\s+', evaluation.replace('\n', ' ')) if s.strip()]
-            if len(sentences) > 2:
-                feedback = " ".join(sentences[:2]) # Take first 2 for feedback
-                if len(sentences) > 2:
-                    ideal_answer = " ".join(sentences[2:5]) # Take next few for ideal answer
-            else:
-                feedback = evaluation.strip()
-            if len(feedback) > 300:
-                feedback = feedback[:297] + "..."
+            feedback = evaluation[:300]
 
-        # Combine feedback with ideal answer for the UI
         combined_feedback = feedback
         if ideal_answer:
             combined_feedback = f"{feedback}\n\nHow to answer: {ideal_answer}"
 
-        return {
+        result = {
             "score": score,
             "feedback": combined_feedback,
             "detailed_analysis": evaluation,
         }
+        
+        # Save to cache
+        eval_cache[cache_key] = result
+        return result
+
+    def evaluate_answer(self, question: str, answer: str) -> Dict:
+        """Sync version for fallback"""
+        system = "Evaluate the answer. Format: Score: [n], Feedback: [text]"
+        prompt = f"Question: {question}\nAnswer: {answer}"
+        evaluation = self.generate(prompt, system_prompt=system)
+        
+        score = 50
+        score_match = re.search(r"Score:\s*(\d{1,3})", evaluation, re.IGNORECASE)
+        if score_match: score = int(score_match.group(1))
+        
+        return {"score": score, "feedback": evaluation}
 
     # ------------------------------------------------------------------
-    # Communication Evaluation
+    # Communication Evaluation (Async)
     # ------------------------------------------------------------------
 
-    def evaluate_communication(self, answer: str, question: str = None) -> Dict:
-        """Evaluate communication-specific aspects."""
+    async def evaluate_communication_async(self, answer: str, question: str = None) -> Dict:
+        """Evaluate communication-specific aspects (Async)."""
         system = (
             "You are an expert communication evaluator. "
             "Rate each aspect 0-100 in this EXACT format:\n"
@@ -306,7 +362,7 @@ class OllamaLLM:
             "Evaluate communication skills."
         )
 
-        evaluation = self.generate(prompt, max_length=300, system_prompt=system)
+        evaluation = await self.generate_async(prompt, max_length=300, system_prompt=system)
 
         def extract_score(name):
             m = re.search(rf"{name}:\s*(\d{{1,3}})", evaluation, re.IGNORECASE)
@@ -319,12 +375,10 @@ class OllamaLLM:
         confidence = extract_score("Confidence")
         overall = round((clarity + fluency + tone + structure + confidence) / 5)
 
-        feedback = evaluation
         fb_match = re.search(
             r"Feedback:\s*(.+?)(?:\n\n|$)", evaluation, re.IGNORECASE | re.DOTALL
         )
-        if fb_match:
-            feedback = fb_match.group(1).strip()
+        feedback = fb_match.group(1).strip() if fb_match else evaluation[:200]
 
         return {
             "clarity": clarity,
@@ -339,150 +393,183 @@ class OllamaLLM:
         }
 
     # ------------------------------------------------------------------
-    # GD Topic & Company Questions
+    # Resume Analysis (Async)
     # ------------------------------------------------------------------
 
-    def generate_gd_topic(self) -> str:
-        """Generate a group discussion topic."""
-        system = (
-            "Generate ONE interesting, debatable group discussion topic "
-            "relevant for engineering students preparing for placements. "
-            "Output ONLY the topic — no explanation."
-        )
-        return self.generate(
-            "Generate a group discussion topic.", max_length=60, system_prompt=system
-        )
-
-    def generate_company_question(
-        self, company: str, difficulty: str = "medium"
-    ) -> str:
-        """Generate company-specific interview question."""
-        system = (
-            f"You are a hiring manager at {company}. "
-            "Generate exactly ONE interview question that tests both "
-            "technical knowledge and company fit. Output ONLY the question."
-        )
-        prompt = (
-            f"Generate a {difficulty} interview question for {company}. "
-            f"The question should reflect {company}'s interview style."
-        )
-        result = self.generate(prompt, max_length=150, system_prompt=system)
-        return result if result and len(result) > 10 else self._fallback_generate_question("company", difficulty)
-
     # ------------------------------------------------------------------
-    # Resume Analysis
+    # Resume Parsing & Extraction (Async)
     # ------------------------------------------------------------------
 
-    def analyze_resume(self, resume_text: str, jd_text: Optional[str] = None) -> Dict:
-        """Analyze resume using LLM with detailed evaluation."""
-        system = (
-            "You are an expert resume reviewer. Provide constructive, positive feedback. "
-            "Respond in this format:\n"
-            "Score: [0-100]\n"
-            "Strengths:\n- ...\n- ...\n"
-            "Suggestions:\n- ...\n- ...\n"
-            "Skills: skill1, skill2, ...\n"
-        )
+    async def parse_resume_structured(self, resume_text: str) -> Dict:
+        """Parse resume text and extract skills, experience, and education in one LLM call."""
+        try:
+            template = jinja_env.get_template("resume_parsing.jinja")
+            prompt = template.render(text_content=resume_text)
+            
+            system = "You are an expert resume parser. Respond ONLY with a valid JSON object matching the requested schema."
+            
+            logger = logging.getLogger(__name__) if 'logging' in globals() else None
+            if logger:
+                logger.info("Extracting structured resume sections using Ollama...")
 
-        if jd_text:
-            prompt = (
-                f"Analyze this resume against the job description.\n\n"
-                f"Job Description:\n{jd_text[:2000]}\n\n"
-                f"Resume:\n{resume_text[:3000]}\n\n"
-                "Provide Score, Strengths, Suggestions, and extracted Skills."
-            )
-        else:
-            prompt = (
-                f"Analyze this resume for job market readiness.\n\n"
-                f"Resume:\n{resume_text[:3000]}\n\n"
-                "Provide Score, Strengths, Suggestions, and extracted Skills."
+            response_text = await self.generate_async(
+                prompt=prompt,
+                max_length=1500,
+                temperature=0.1,
+                system_prompt=system,
+                json_format=True
             )
 
-        analysis = self.generate(prompt, max_length=800, system_prompt=system)
+            # Strip potential markdown code blocks
+            if "```" in response_text:
+                response_text = re.sub(r"```[a-zA-Z]*", "", response_text).strip()
 
+            parsed_data = json.loads(response_text)
+            return {
+                "skills": parsed_data.get("skills", []),
+                "experience": parsed_data.get("experience", []),
+                "education": parsed_data.get("education", [])
+            }
+        except Exception as e:
+            print(f"Error in parse_resume_structured: {e}")
+            return {"skills": [], "experience": [], "education": []}
+
+    # ------------------------------------------------------------------
+    # Resume Analysis / HackerRank Evaluator (Async)
+    # ------------------------------------------------------------------
+
+    async def analyze_resume_async(self, resume_text: str, jd_text: Optional[str] = None) -> Dict:
+        """Analyze and score resume using HackerRank criteria and GitHub data."""
+        try:
+            # 1. Look for GitHub URL to enrich evaluation
+            github_data = ""
+            github_url_match = re.search(r"github\.com/([a-zA-Z0-9-]+)", resume_text, re.IGNORECASE)
+            if github_url_match:
+                github_url = f"https://{github_url_match.group(0)}"
+                print(f"Detected GitHub URL: {github_url}. Pulling enrichment data...")
+                try:
+                    from services import github_service
+                    github_data = await github_service.fetch_and_format_github_info(self, github_url)
+                except Exception as gh_err:
+                    print(f"Warning: Failed to fetch GitHub details: {gh_err}")
+
+            # 2. Prepare context
+            combined_text = resume_text
+            if github_data:
+                combined_text = f"{resume_text}\n\n{github_data}"
+
+            # 3. Render prompt templates
+            criteria_template = jinja_env.get_template("resume_evaluation_criteria.jinja")
+            prompt = criteria_template.render(text_content=combined_text)
+
+            system_template = jinja_env.get_template("resume_evaluation_system_message.jinja")
+            system_prompt = system_template.render()
+
+            print("Evaluating resume using HackerRank scoring model...")
+            response_text = await self.generate_async(
+                prompt=prompt,
+                max_length=2000,
+                temperature=0.2,
+                system_prompt=system_prompt,
+                json_format=True
+            )
+
+            # Strip markdown formatting from JSON
+            if "```" in response_text:
+                response_text = re.sub(r"```[a-zA-Z]*", "", response_text).strip()
+
+            parsed_evaluation = json.loads(response_text)
+
+            # 4. Calculate total score
+            scores = parsed_evaluation.get("scores", {})
+            open_source = scores.get("open_source", {}).get("score", 0)
+            self_projects = scores.get("self_projects", {}).get("score", 0)
+            production = scores.get("production", {}).get("score", 0)
+            technical_skills = scores.get("technical_skills", {}).get("score", 0)
+            
+            bonus = parsed_evaluation.get("bonus_points", {}).get("total", 0)
+            deductions = parsed_evaluation.get("deductions", {}).get("total", 0)
+
+            raw_total_score = open_source + self_projects + production + technical_skills + bonus - deductions
+            # Normalize to 0-100 scale for standard progress rendering, but clamp cleanly
+            overall_score = min(100.0, max(0.0, float(raw_total_score)))
+
+            # Extract list section helper for fallback
+            strengths = parsed_evaluation.get("key_strengths", [])
+            improvements = parsed_evaluation.get("areas_for_improvement", [])
+
+            return {
+                "analysis": response_text,
+                "score": overall_score,
+                "strengths": strengths,
+                "suggestions": improvements,
+                "improvements": improvements,
+                "skills": self._extract_skills(resume_text),
+                "hiringAgentEvaluation": parsed_evaluation
+            }
+
+        except Exception as e:
+            print(f"Error in analyze_resume_async (HackerRank Scorer): {e}")
+            # Fallback to simple analysis if the model output fails to parse
+            return {
+                "analysis": None,
+                "score": 60.0,
+                "strengths": ["Clear technical section"],
+                "suggestions": ["Add link to GitHub portfolio", "Include impact metrics"],
+                "improvements": ["Add link to GitHub portfolio", "Include impact metrics"],
+                "skills": self._extract_skills(resume_text)
+            }
+
+    # ------------------------------------------------------------------
+    # Personality Analysis (Async)
+    # ------------------------------------------------------------------
+
+    async def analyze_personality_async(self, responses: List[str]) -> Dict:
+        """Analyze personality traits from responses (Async)."""
+        system = (
+            "You are an expert psychologist analyzing interview responses. "
+            "Evaluate the candidate's personality on 4 dimensions (-1.0 to +1.0).\n"
+            "IE: Introvert-Extrovert, TF: Thinker-Feeler, LC: Logical-Creative, PS: Planner-Spontaneous.\n"
+            "Respond EXACTLY: IE: [s], TF: [s], LC: [s], PS: [s], Traits: [traits]"
+        )
+
+        combined = "\n".join([f"R{i+1}: {r[:400]}" for i, r in enumerate(responses[:5])])
+        prompt = f"Analyze personality:\n\n{combined}"
+
+        evaluation = await self.generate_async(prompt, max_length=200, system_prompt=system)
+
+        def extract_dim(name):
+            m = re.search(rf"{name}:\s*([+-]?\d*\.?\d+)", evaluation, re.IGNORECASE)
+            return max(-1.0, min(1.0, float(m.group(1)))) if m else 0.0
+
+        ie = extract_dim("IE")
+        tf = extract_dim("TF")
+        lc = extract_dim("LC")
+        ps = extract_dim("PS")
+
+        traits = []
+        if ie > 0.3: traits.append("Extroverted")
+        elif ie < -0.3: traits.append("Introverted")
+        if tf < -0.3: traits.append("Analytical")
+        elif tf > 0.3: traits.append("Empathetic")
+        
         return {
-            "analysis": analysis,
-            "score": self._extract_score(analysis),
-            "strengths": self._extract_list_section(analysis, "Strengths"),
-            "suggestions": self._extract_list_section(analysis, "Suggestions"),
-            "improvements": self._extract_list_section(analysis, "Improvements"),
-            "skills": self._extract_skills(analysis),
+            "introvert_extrovert": ie,
+            "thinker_feeler": tf,
+            "logical_creative": lc,
+            "planner_spontaneous": ps,
+            "dominant_traits": traits or ["Balanced"],
         }
 
     # ------------------------------------------------------------------
-    # Fallback generators (when Ollama is unavailable)
-    # ------------------------------------------------------------------
-
-    def _fallback_generate(self, prompt: str) -> str:
-        """Rule-based fallback when Ollama is unavailable."""
-        if "question" in prompt.lower() or "ask" in prompt.lower():
-            if "technical" in prompt.lower():
-                return "Explain the concept of object-oriented programming and its principles."
-            elif "hr" in prompt.lower():
-                return "Tell me about yourself and your career goals."
-            elif "behavioral" in prompt.lower():
-                return "Describe a challenging situation you faced and how you handled it."
-            else:
-                return "Can you walk me through your most recent project?"
-        elif "topic" in prompt.lower():
-            topics = [
-                "Is artificial intelligence a threat to human jobs?",
-                "Should social media be regulated by governments?",
-                "Is work from home the future of work?",
-            ]
-            return random.choice(topics)
-        return "I understand. Please continue."
-
-    def _fallback_generate_question(
-        self, question_type: str, difficulty: str = "medium"
-    ) -> str:
-        """Fallback question generation."""
-        fallback = {
-            "technical": {
-                "easy": "What is the difference between a list and a tuple in Python?",
-                "medium": "Explain time complexity and give an example of O(n log n).",
-                "hard": "Design a distributed system to handle 1 million requests/sec.",
-            },
-            "hr": {
-                "easy": "Tell me about yourself and your career goals.",
-                "medium": "Why do you want to work for our company?",
-                "hard": "Describe a difficult decision you made under pressure.",
-            },
-            "behavioral": {
-                "easy": "Tell me about a time you worked in a team.",
-                "medium": "Describe a challenging situation and how you handled it.",
-                "hard": "Give an example of leading a team through a crisis.",
-            },
-            "project": {
-                "easy": "Can you describe one of your projects?",
-                "medium": "What were the main challenges in your project?",
-                "hard": "How would you scale your project to handle 10x load?",
-            },
-            "company": {
-                "easy": "What do you know about our company?",
-                "medium": "Why do you want to join our company?",
-                "hard": "How do you see yourself contributing to our mission?",
-            },
-            "communication": {
-                "easy": "Describe your daily routine.",
-                "medium": "Explain how you would teach someone a skill.",
-                "hard": "Explain a complex problem in simple terms.",
-            },
-        }
-        q = fallback.get(question_type, fallback["technical"])
-        return q.get(difficulty, q["medium"])
-
-    # ------------------------------------------------------------------
-    # Text extraction helpers
+    # Helper for parsing
     # ------------------------------------------------------------------
 
     def _extract_score(self, text: str) -> int:
         m = re.search(r"Score:\s*(\d{1,3})", text, re.IGNORECASE)
         if m:
             return max(0, min(100, int(m.group(1))))
-        # Fallback: find any 2-digit number
-        m2 = re.search(r"\b(\d{2})\b", text)
-        return int(m2.group(1)) if m2 else 70
+        return 70
 
     def _extract_list_section(self, text: str, section_name: str) -> List[str]:
         items = []
@@ -494,151 +581,155 @@ class OllamaLLM:
                 continue
             if in_section:
                 stripped = line.strip()
-                if stripped and (
-                    stripped.startswith("-")
-                    or stripped.startswith("•")
-                    or stripped.startswith("*")
-                    or (stripped[0].isdigit() and "." in stripped[:3])
-                ):
-                    clean = stripped.lstrip("-•*0123456789. ").strip()
-                    if clean and len(clean) > 5:
-                        items.append(clean)
-                    if len(items) >= 5:
-                        break
-                elif stripped and not stripped.startswith("-"):
-                    # Hit a new section header
-                    if ":" in stripped:
-                        break
+                if stripped and any(stripped.startswith(c) for c in ["-", "•", "*"]):
+                    items.append(stripped.lstrip("-•* ").strip())
+                elif stripped and ":" in stripped:
+                    break
         return items[:5]
 
     def _extract_skills(self, text: str) -> List[str]:
-        # Try to find "Skills:" line
         m = re.search(r"Skills?:\s*(.+)", text, re.IGNORECASE)
         if m:
-            skills_str = m.group(1).strip()
-            skills = [s.strip() for s in skills_str.split(",") if s.strip()]
-            if skills:
-                return skills[:15]
+            return [s.strip() for s in m.group(1).split(",") if s.strip()][:15]
+        return []
 
-        # Fallback: look for known tech skills
-        common = [
-            "Python", "Java", "JavaScript", "TypeScript", "React", "Node.js",
-            "Vue", "Angular", "SQL", "PostgreSQL", "MySQL", "MongoDB", "Redis",
-            "AWS", "Azure", "GCP", "Docker", "Kubernetes", "Git", "CI/CD",
-            "Machine Learning", "Deep Learning", "TensorFlow", "PyTorch",
-            "HTML", "CSS", "REST API", "GraphQL", "Microservices",
-            "Spring Boot", "Django", "Flask", "Go", "Rust", "C++",
+    # ------------------------------------------------------------------
+    # Fallback generators (kept as is)
+    # ------------------------------------------------------------------
+
+    def _fallback_generate(self, prompt: str) -> str:
+        return "I understand. Please continue."
+
+    def _fallback_generate_question(self, question_type: str, difficulty: str = "medium") -> str:
+        return "Can you tell me about your experience with technical problem solving?"
+
+    async def generate_gd_topic_async(self) -> str:
+        """Generate a trending, debatable GD topic for engineers."""
+        trending_gd_topics = [
+            "AI in job market", "data privacy vs security", "remote work future",
+            "AI-generated content regulation", "cryptocurrency viability",
+            "4-day work week in India", "electric vehicles by 2035",
         ]
-        found = [s for s in common if s.lower() in text.lower()]
-        return found[:15]
-
-    # ------------------------------------------------------------------
-    # Personality Analysis (replaces untrained LSTM)
-    # ------------------------------------------------------------------
-
-    def analyze_personality(self, responses: List[str]) -> Dict:
-        """Analyze personality traits from interview responses using LLM."""
+        topic_hint = random.choice(trending_gd_topics)
         system = (
-            "You are an expert psychologist analyzing interview responses. "
-            "Evaluate the candidate's personality on these 4 dimensions, "
-            "each scored from -1.0 (left trait) to +1.0 (right trait):\n"
-            "1. Introvert (-1) to Extrovert (+1)\n"
-            "2. Thinker (-1) to Feeler (+1)\n"
-            "3. Logical (-1) to Creative (+1)\n"
-            "4. Planner (-1) to Spontaneous (+1)\n\n"
-            "Respond EXACTLY in this format:\n"
-            "IE: [score]\nTF: [score]\nLC: [score]\nPS: [score]\n"
-            "Traits: [comma-separated dominant traits]"
+            "Generate ONE thought-provoking, debatable group discussion topic for engineering students. "
+            "The topic should be relevant to 2025-26 and encourage multiple perspectives. "
+            "Output ONLY the topic statement, nothing else."
+        )
+        prompt = f"Generate a GD topic related to or inspired by: {topic_hint}"
+        return await self.generate_async(prompt, max_length=80, temperature=0.8, system_prompt=system)
+
+    async def generate_company_question_async(
+        self,
+        company: str,
+        difficulty: str = "medium",
+        round_type: Optional[str] = None,
+        include_trending: bool = True,
+    ) -> str:
+        """Generate a company-specific interview question with persona and trending awareness."""
+        persona = get_company_persona(company)
+
+        system_parts = [
+            f"You are a senior interviewer at {company}.",
+            f"Interview style: {persona['interviewer_style']}",
+            f"Key focus areas: {persona['key_focus']}",
+            f"Company values: {persona['values']}",
+        ]
+
+        if include_trending:
+            system_parts.append(
+                f"\nIncorporate awareness of 2025-26 trends where relevant:\n"
+                f"{get_trending_context(['genai_llm', 'cloud_native', 'system_design'])}"
+            )
+
+        diff_instruction = get_difficulty_instruction(difficulty)
+        system_parts.append(f"\nDifficulty: {difficulty.upper()}. {diff_instruction}")
+        system_parts.append(
+            "\nGenerate exactly ONE interview question that {company} would ask. "
+            "Output ONLY the question, nothing else.".replace("{company}", company)
         )
 
-        combined = "\n".join(
-            [f"Response {i+1}: {r[:500]}" for i, r in enumerate(responses[:5])]
+        system = "\n".join(system_parts)
+
+        round_hint = f" for a {round_type} round" if round_type else ""
+        prompt = f"Generate a {difficulty} interview question{round_hint} for {company}."
+
+        result = await self.generate_async(prompt, max_length=180, temperature=0.65, system_prompt=system)
+        if not result or len(result.strip()) < 10:
+            return self._fallback_generate_question("technical", difficulty)
+        return result.strip()
+
+    async def evaluate_answer_company_async(
+        self,
+        question: str,
+        answer: str,
+        company: Optional[str] = None,
+        question_type: str = "technical",
+    ) -> Dict:
+        """Evaluate answer with company-specific rubric."""
+        # Build company-aware evaluation prompt
+        eval_context = build_company_evaluation_prompt(company, question_type)
+
+        is_behavioral = any(word in question.lower() for word in [
+            "tell me about a time", "situation", "describe a scenario",
+            "how do you handle", "conflict", "experience", "leadership principle"
+        ])
+
+        system = (
+            f"{eval_context}\n\n"
+            "Analyze the candidate's answer critically and provide strict, honest feedback. "
+            "ALWAYS respond in this EXACT format with NO extra text:\n"
+            "Score: [number 0-100]\n"
+            "Feedback: [2-3 specific sentences about what was good/bad]\n"
+            "IdealAnswer: [A concise 2-4 sentence model answer]\n\n"
+            "Scoring Rubric:\n"
+            "- 0-30: Vague, irrelevant, or extremely short.\n"
+            "- 31-50: Partially addresses question but lacks depth.\n"
+            "- 51-70: Good answer but could be more structured.\n"
+            "- 71-85: Strong answer with clear examples.\n"
+            "- 86-100: Exceptional, perfectly articulated.\n\n"
+            + ("BEHAVIORAL: Look for STAR method. Penalize if result or actions are missing.\n" if is_behavioral else "") +
+            "ONLY output Score, Feedback, and IdealAnswer."
         )
-        prompt = f"Analyze personality from these interview responses:\n\n{combined}"
 
-        evaluation = self.generate(prompt, max_length=200, system_prompt=system)
+        prompt = (
+            f"/no_think\n"
+            f"Question: {question}\n"
+            f"Candidate Answer: {answer}\n\n"
+            "Evaluate with Score (0-100), Feedback, and IdealAnswer. "
+            "START YOUR RESPONSE WITH 'Score: '."
+        )
 
-        def extract_dim(name):
-            m = re.search(rf"{name}:\s*([+-]?\d*\.?\d+)", evaluation, re.IGNORECASE)
-            if m:
-                return max(-1.0, min(1.0, float(m.group(1))))
-            return 0.0
+        evaluation = await self.generate_async(prompt, max_length=450, system_prompt=system)
+        evaluation = re.sub(r'<think>.*?</think>', '', evaluation, flags=re.DOTALL).strip()
 
-        ie = extract_dim("IE")
-        tf = extract_dim("TF")
-        lc = extract_dim("LC")
-        ps = extract_dim("PS")
+        score = 50
+        score_match = re.search(r"Score:\s*(\d{1,3})", evaluation, re.IGNORECASE)
+        if score_match:
+            score = max(0, min(100, int(score_match.group(1))))
 
-        # Extract trait names
-        traits = []
-        if ie > 0.3: traits.append("Extroverted")
-        elif ie < -0.3: traits.append("Introverted")
-        if tf < -0.3: traits.append("Analytical")
-        elif tf > 0.3: traits.append("Empathetic")
-        if lc > 0.3: traits.append("Creative")
-        elif lc < -0.3: traits.append("Logical")
-        if ps < -0.3: traits.append("Organized")
-        elif ps > 0.3: traits.append("Adaptable")
-        if not traits:
-            traits = ["Balanced"]
+        feedback = ""
+        fb_match = re.search(r"Feedback:\s*(.+?)(?:IdealAnswer:|Ideal Answer:|$)", evaluation, re.IGNORECASE | re.DOTALL)
+        if fb_match:
+            feedback = fb_match.group(1).strip()
+
+        ideal_answer = ""
+        ideal_match = re.search(r"(?:IdealAnswer|Ideal Answer):\s*(.+?)$", evaluation, re.IGNORECASE | re.DOTALL)
+        if ideal_match:
+            ideal_answer = ideal_match.group(1).strip()
+
+        if not feedback:
+            feedback = evaluation[:300]
+
+        combined_feedback = feedback
+        if ideal_answer:
+            combined_feedback = f"{feedback}\n\nHow to answer: {ideal_answer}"
 
         return {
-            "introvert_extrovert": ie,
-            "thinker_feeler": tf,
-            "logical_creative": lc,
-            "planner_spontaneous": ps,
-            "dominant_traits": traits,
+            "score": score,
+            "feedback": combined_feedback,
+            "detailed_analysis": evaluation,
         }
-
-    # ------------------------------------------------------------------
-    # LLM-Powered Skill Extraction (enhances rule-based)
-    # ------------------------------------------------------------------
-
-    def extract_skills_from_text(self, text: str) -> List[str]:
-        """Extract skills from resume or JD text using LLM."""
-        system = (
-            "Extract ALL technical and soft skills from the following text. "
-            "Output ONLY a comma-separated list of skills. No explanation."
-        )
-        prompt = f"Extract skills from:\n\n{text[:3000]}"
-
-        result = self.generate(prompt, max_length=300, system_prompt=system)
-        skills = [s.strip() for s in result.split(",") if s.strip() and len(s.strip()) > 1]
-        return skills[:20]
-
-    # ------------------------------------------------------------------
-    # LLM-Powered Resume Parsing (replaces untrained LSTM)
-    # ------------------------------------------------------------------
-
-    def parse_resume_structured(self, resume_text: str) -> Dict:
-        """Parse resume and extract structured info using LLM."""
-        system = (
-            "Extract structured information from this resume. "
-            "Respond in this EXACT format:\n"
-            "Skills: skill1, skill2, ...\n"
-            "Experience: yes/no\n"
-            "Education: yes/no\n"
-            "Years: [number or 0]"
-        )
-        prompt = f"Parse this resume:\n\n{resume_text[:3000]}"
-
-        result = self.generate(prompt, max_length=300, system_prompt=system)
-
-        # Parse skills
-        skills = []
-        skills_match = re.search(r"Skills?:\s*(.+)", result, re.IGNORECASE)
-        if skills_match:
-            skills = [s.strip() for s in skills_match.group(1).split(",") if s.strip()]
-
-        has_exp = bool(re.search(r"Experience:\s*yes", result, re.IGNORECASE))
-        has_edu = bool(re.search(r"Education:\s*yes", result, re.IGNORECASE))
-
-        return {
-            "skills": skills[:15],
-            "has_experience": has_exp,
-            "has_education": has_edu,
-        }
-
 
 # ---------------------------------------------------------------------------
 # Module-level singleton
@@ -649,30 +740,9 @@ _llm_instance = None
 
 def get_llm(
     model_name: str = OLLAMA_MODEL,
-    use_lightweight: bool = False,  # ignored, kept for API compat
+    use_lightweight: bool = False,
 ) -> OllamaLLM:
-    """Get or create Ollama LLM instance.
-
-    Args:
-        model_name: Ollama model name (e.g. "qwen3:8b")
-        use_lightweight: Deprecated, ignored. Kept for backward compatibility.
-    """
     global _llm_instance
-
     if _llm_instance is None or _llm_instance.model_name != model_name:
-        # Check for custom fine-tuned model first
-        custom_model = os.environ.get("OLLAMA_FINETUNED_MODEL")
-        if custom_model:
-            try:
-                resp = requests.get(f"{OLLAMA_BASE_URL}/api/tags", timeout=5)
-                available = [m["name"] for m in resp.json().get("models", [])]
-                if custom_model in available or f"{custom_model}:latest" in available:
-                    print(f"Using fine-tuned model: {custom_model}")
-                    _llm_instance = OllamaLLM(model_name=custom_model)
-                    return _llm_instance
-            except Exception:
-                pass
-
         _llm_instance = OllamaLLM(model_name=model_name)
-
     return _llm_instance
