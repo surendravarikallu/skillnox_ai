@@ -73,13 +73,36 @@ const interviewTypes = [
 ];
 
 const companyData = [
-  { id: 'TCS', name: 'TCS', description: 'Tata Consultancy Services', pattern: 'MCQ + Technical + HR' },
-  { id: 'Infosys', name: 'Infosys', description: 'Infosys Limited', pattern: 'Aptitude + Coding + HR' },
-  { id: 'Wipro', name: 'Wipro', description: 'Wipro Limited', pattern: 'Technical + Coding + HR' },
-  { id: 'Accenture', name: 'Accenture', description: 'Accenture PLC', pattern: 'Cognitive + Technical + HR' },
-  { id: 'Cognizant', name: 'Cognizant', description: 'Cognizant Technology', pattern: 'Aptitude + Technical + HR' },
-  { id: 'Capgemini', name: 'Capgemini', description: 'Capgemini SE', pattern: 'English + Technical + HR' },
-  { id: 'Amazon', name: 'Amazon', description: 'Amazon (Basic)', pattern: 'Leadership + Coding + System Design' }
+  // Indian IT Services
+  { id: 'TCS', name: 'TCS', description: 'Tata Consultancy Services', pattern: 'Aptitude → Technical → HR', category: 'Indian IT Services' },
+  { id: 'Infosys', name: 'Infosys', description: 'Infosys Limited', pattern: 'Aptitude → Technical + Coding → HR', category: 'Indian IT Services' },
+  { id: 'Wipro', name: 'Wipro', description: 'Wipro Limited', pattern: 'Aptitude → Technical → HR', category: 'Indian IT Services' },
+  { id: 'Accenture', name: 'Accenture', description: 'Accenture India', pattern: 'Cognitive → Technical → HR', category: 'Indian IT Services' },
+  { id: 'Cognizant', name: 'Cognizant', description: 'Cognizant Technology', pattern: 'Aptitude → Technical → HR', category: 'Indian IT Services' },
+  { id: 'Capgemini', name: 'Capgemini', description: 'Capgemini SE', pattern: 'Game-based → Technical → HR', category: 'Indian IT Services' },
+  { id: 'HCL', name: 'HCL', description: 'HCL Technologies', pattern: 'Aptitude → Technical → HR', category: 'Indian IT Services' },
+  { id: 'Tech Mahindra', name: 'Tech Mahindra', description: 'Tech Mahindra Limited', pattern: 'Aptitude → Technical → HR', category: 'Indian IT Services' },
+  { id: 'L&T Infotech', name: 'L&T Infotech', description: 'LTIMindtree', pattern: 'Aptitude → Technical → HR', category: 'Indian IT Services' },
+  { id: 'Mindtree', name: 'Mindtree', description: 'Mindtree (LTIMindtree)', pattern: 'Aptitude → Technical → HR', category: 'Indian IT Services' },
+  { id: 'Zoho', name: 'Zoho', description: 'Zoho Corporation', pattern: 'Coding 1 → Coding 2 → Technical → HR', category: 'Indian IT Services' },
+  
+  // Global Tech
+  { id: 'Google', name: 'Google', description: 'Google LLC', pattern: 'Coding 1 → Coding 2 → System Design → Googleyness', category: 'Global Tech' },
+  { id: 'Microsoft', name: 'Microsoft', description: 'Microsoft Corporation', pattern: 'Online Assessment → Technical → Growth Mindset', category: 'Global Tech' },
+  { id: 'Amazon', name: 'Amazon', description: 'Amazon.com Inc.', pattern: 'Coding → System Design → Leadership Principles', category: 'Global Tech' },
+  { id: 'Meta', name: 'Meta', description: 'Meta Platforms Inc.', pattern: 'Coding 1 → System Design → Behavioral', category: 'Global Tech' },
+  { id: 'IBM', name: 'IBM', description: 'IBM Corporation', pattern: 'Aptitude → Technical → HR', category: 'Global Tech' },
+  
+  // Indian Startups
+  { id: 'Flipkart', name: 'Flipkart', description: 'Flipkart Internet', pattern: 'Online Coding → System Design → Cultural Fit', category: 'Indian Startups' },
+  { id: 'Paytm', name: 'Paytm', description: 'Paytm Payments', pattern: 'Coding → Technical → HR', category: 'Indian Startups' },
+  { id: 'Razorpay', name: 'Razorpay', description: 'Razorpay Software', pattern: 'Coding → System Design → Cultural Fit', category: 'Indian Startups' },
+  { id: 'Freshworks', name: 'Freshworks', description: 'Freshworks Inc.', pattern: 'Coding → Technical + Design → HR', category: 'Indian Startups' },
+  { id: 'CRED', name: 'CRED', description: 'Dreamplug Technologies', pattern: 'Coding → System Design → Craft & Culture', category: 'Indian Startups' },
+  
+  // BFSI
+  { id: 'Goldman Sachs', name: 'Goldman Sachs', description: 'Goldman Sachs Group', pattern: 'HackerRank → Technical Deep Dive → Behavioral', category: 'BFSI' },
+  { id: 'Deloitte', name: 'Deloitte', description: 'Deloitte Touche Tohmatsu', pattern: 'Aptitude → Technical → Case Study → HR', category: 'BFSI' },
 ];
 
 export default function InterviewStart() {
@@ -95,6 +118,8 @@ export default function InterviewStart() {
   const [selectedBranch, setSelectedBranch] = useState<string | null>(null);
   const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
   const [customSearch, setCustomSearch] = useState<string>("");
+  const [selectedMode, setSelectedMode] = useState<'full' | 'combined'>('combined');
+  const [trendingEnabled, setTrendingEnabled] = useState<boolean>(true);
 
   // Redirect if not admin
   if (user && user.role !== 'admin') {
@@ -125,9 +150,10 @@ export default function InterviewStart() {
           studentId,
           types: selectedTypes,
           difficulty: selectedDifficulty,
-          // Keep backward compatibility - use first type as primary
           type: selectedTypes[0],
           company: selectedTypes.includes('company') ? selectedCompany : undefined,
+          simulationMode: selectedMode,
+          trendingEnabled: trendingEnabled,
         })
       );
       const responses = await Promise.all(payloads);
@@ -415,47 +441,73 @@ export default function InterviewStart() {
 
       {step === 1 && (
         <div className="space-y-6">
-          {/* Difficulty Selection */}
-          <Card>
-            <CardHeader>
-              <CardTitle>Select Difficulty Level</CardTitle>
-              <CardDescription>Choose the difficulty level for the interview questions</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <div className="grid grid-cols-3 gap-4">
-                {(['easy', 'medium', 'hard'] as const).map((level) => (
-                  <Card
-                    key={level}
-                    className={`cursor-pointer hover-elevate transition-all ${selectedDifficulty === level ? 'ring-2 ring-primary' : ''
-                      }`}
-                    onClick={() => setSelectedDifficulty(level)}
-                  >
-                    <CardContent className="p-4 text-center">
-                      <h3 className="font-semibold capitalize">{level}</h3>
-                      <p className="text-xs text-muted-foreground mt-1">
-                        {level === 'easy' && 'Beginner-friendly questions'}
-                        {level === 'medium' && 'Moderate complexity questions'}
-                        {level === 'hard' && 'Advanced and challenging questions'}
-                      </p>
-                    </CardContent>
-                  </Card>
-                ))}
-              </div>
-            </CardContent>
-          </Card>
+          {/* Difficulty & Trending Selection */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Select Difficulty Level</CardTitle>
+                <CardDescription>Choose the target complexity for the interview questions</CardDescription>
+              </CardHeader>
+              <CardContent>
+                <div className="grid grid-cols-3 gap-2">
+                  {(['easy', 'medium', 'hard'] as const).map((level) => (
+                    <Card
+                      key={level}
+                      className={`cursor-pointer hover-elevate transition-all border ${selectedDifficulty === level ? 'border-primary ring-1 ring-primary' : 'border-border'
+                        }`}
+                      onClick={() => setSelectedDifficulty(level)}
+                    >
+                      <CardContent className="p-3 text-center">
+                        <h4 className="font-semibold capitalize text-sm">{level}</h4>
+                        <p className="text-[10px] text-muted-foreground mt-1">
+                          {level === 'easy' && 'Foundational'}
+                          {level === 'medium' && 'Intermediate'}
+                          {level === 'hard' && 'Advanced'}
+                        </p>
+                      </CardContent>
+                    </Card>
+                  ))}
+                </div>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Trending Questions (2025-26)</CardTitle>
+                <CardDescription>Inject modern technology topics into the interview session</CardDescription>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">GenAI, RAG & Cloud-Native</p>
+                  <p className="text-[10px] text-muted-foreground max-w-[280px]">
+                    Includes Transformer architecture, vector DBs, Kubernetes service mesh, and modern system design.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={trendingEnabled ? "default" : "outline"}
+                  onClick={() => setTrendingEnabled(prev => !prev)}
+                  size="sm"
+                  className="rounded-xl px-4"
+                >
+                  {trendingEnabled ? "Enabled" : "Disabled"}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
 
           {/* Interview Types Selection */}
           <Card>
             <CardHeader>
               <CardTitle>Select Interview Types</CardTitle>
-              <CardDescription>You can select multiple types. 10 questions will be generated across selected types.</CardDescription>
+              <CardDescription>Select one or more interview types to distribute the session questions.</CardDescription>
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 gap-4">
                 {interviewTypes.map((type) => (
                   <Card
                     key={type.id}
-                    className={`cursor-pointer hover-elevate transition-all ${selectedTypes.includes(type.id) ? 'ring-2 ring-primary' : ''
+                    className={`cursor-pointer hover-elevate transition-all ${selectedTypes.includes(type.id) ? 'ring-2 ring-primary border-primary' : ''
                       }`}
                     onClick={() => handleTypeToggle(type.id)}
                     data-testid={`card-type-${type.id}`}
@@ -485,7 +537,7 @@ export default function InterviewStart() {
                 ))}
 
                 <Card
-                  className={`cursor-pointer hover-elevate transition-all ${selectedTypes.includes('company') ? 'ring-2 ring-primary' : ''
+                  className={`cursor-pointer hover-elevate transition-all ${selectedTypes.includes('company') ? 'ring-2 ring-primary border-primary' : ''
                     }`}
                   onClick={() => handleTypeToggle('company')}
                   data-testid="card-type-company"
@@ -503,12 +555,12 @@ export default function InterviewStart() {
                               <Check className="w-5 h-5 text-primary" />
                             )}
                             <Badge variant="outline" className="text-xs px-2 py-0.5">
-                              5-10 min
+                              15-45 min
                             </Badge>
                           </div>
                         </div>
                         <p className="text-sm text-muted-foreground mt-1">
-                          Practice interviews for TCS, Infosys, Wipro, Amazon & more
+                          Practice interviews for TCS, Infosys, Zoho, Google, Amazon, Razorpay & more
                         </p>
                       </div>
                     </div>
@@ -521,61 +573,127 @@ export default function InterviewStart() {
       )}
 
       {step === 2 && selectedTypes.includes('company') && (
-        <div className="space-y-6">
-          <Button
-            variant="ghost"
-            onClick={() => { setStep(1); setSelectedCompany(null); }}
-            className="mb-4"
-            data-testid="button-back"
-          >
-            Back to interview types
-          </Button>
+        <div className="space-y-8">
+          <div className="flex items-center justify-between">
+            <Button
+              variant="ghost"
+              onClick={() => { setStep(1); setSelectedCompany(null); }}
+              className="rounded-xl border border-border"
+              data-testid="button-back"
+            >
+              Back to interview types
+            </Button>
+          </div>
 
-          <div className="grid md:grid-cols-2 gap-4">
-            {companyData.map((company) => (
-              <Card
-                key={company.id}
-                className={`cursor-pointer hover-elevate transition-all ${selectedCompany === company.id ? 'ring-2 ring-primary' : ''
-                  }`}
-                onClick={() => setSelectedCompany(company.id)}
-                data-testid={`card-company-${company.id.toLowerCase()}`}
-              >
-                <CardContent className="p-6">
-                  <div className="flex items-center gap-4">
-                    <div className="w-12 h-12 rounded-lg bg-primary/10 flex items-center justify-center">
-                      <Briefcase className="w-6 h-6 text-primary" />
-                    </div>
-                    <div className="flex-1">
-                      <h3 className="font-semibold">{company.name}</h3>
-                      <p className="text-xs text-muted-foreground">{company.description}</p>
-                      <Badge variant="secondary" className="mt-2 text-[11px] px-2 py-0.5">
-                        {company.pattern}
-                      </Badge>
-                    </div>
-                    {selectedCompany === company.id && (
-                      <Check className="w-5 h-5 text-primary" />
-                    )}
+          {/* Simulation Mode Configuration */}
+          <div className="grid md:grid-cols-2 gap-6">
+            <Card>
+              <CardHeader>
+                <CardTitle>Simulation Mode</CardTitle>
+                <CardDescription>Choose how the company interview is conducted</CardDescription>
+              </CardHeader>
+              <CardContent className="grid grid-cols-2 gap-3">
+                <Card
+                  className={`cursor-pointer p-4 text-center border transition-all ${selectedMode === 'combined' ? 'border-primary ring-1 ring-primary' : 'border-border'}`}
+                  onClick={() => setSelectedMode('combined')}
+                >
+                  <h4 className="font-semibold text-sm">Combined Session</h4>
+                  <p className="text-[10px] text-muted-foreground mt-1">Single round of 10 mixed questions</p>
+                </Card>
+                <Card
+                  className={`cursor-pointer p-4 text-center border transition-all ${selectedMode === 'full' ? 'border-primary ring-1 ring-primary' : 'border-border'}`}
+                  onClick={() => setSelectedMode('full')}
+                >
+                  <h4 className="font-semibold text-sm">Full Multi-Round</h4>
+                  <p className="text-[10px] text-muted-foreground mt-1">Independent rounds with gating criteria</p>
+                </Card>
+              </CardContent>
+            </Card>
+
+            <Card>
+              <CardHeader>
+                <CardTitle>Trending Questions (2025-26)</CardTitle>
+                <CardDescription>Inject new industry placement trends into this session</CardDescription>
+              </CardHeader>
+              <CardContent className="flex items-center justify-between py-6">
+                <div className="space-y-1">
+                  <p className="text-xs font-semibold">Latest Campus Patterns</p>
+                  <p className="text-[10px] text-muted-foreground max-w-[280px]">
+                    Includes GenAI integration, cloud design, and high-frequency algorithms.
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant={trendingEnabled ? "default" : "outline"}
+                  onClick={() => setTrendingEnabled(prev => !prev)}
+                  size="sm"
+                  className="rounded-xl px-4"
+                >
+                  {trendingEnabled ? "Enabled" : "Disabled"}
+                </Button>
+              </CardContent>
+            </Card>
+          </div>
+
+          {/* Grouped Companies List */}
+          <div className="space-y-8">
+            {['Indian IT Services', 'Global Tech', 'Indian Startups', 'BFSI'].map((categoryName) => {
+              const categoryCompanies = companyData.filter(c => c.category === categoryName);
+              return (
+                <div key={categoryName} className="space-y-4">
+                  <h2 className="text-lg font-bold tracking-tight border-b pb-2 text-muted-foreground uppercase text-xs tracking-wider">{categoryName}</h2>
+                  <div className="grid sm:grid-cols-2 md:grid-cols-3 gap-4">
+                    {categoryCompanies.map((company) => (
+                      <Card
+                        key={company.id}
+                        className={`cursor-pointer hover-elevate transition-all border ${selectedCompany === company.id ? 'ring-2 ring-primary border-primary' : 'border-border'
+                          }`}
+                        onClick={() => setSelectedCompany(company.id)}
+                        data-testid={`card-company-${company.id.toLowerCase()}`}
+                      >
+                        <CardContent className="p-4">
+                          <div className="flex items-start gap-3">
+                            <div className="w-10 h-10 rounded-lg bg-primary/5 flex items-center justify-center border border-primary/10 mt-0.5">
+                              <Briefcase className="w-5 h-5 text-primary" />
+                            </div>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-sm truncate">{company.name}</h3>
+                              <p className="text-[10px] text-muted-foreground truncate">{company.description}</p>
+                              <div className="mt-2">
+                                <Badge variant="secondary" className="text-[9px] px-1.5 py-0.5 leading-none">
+                                  {company.pattern}
+                                </Badge>
+                              </div>
+                            </div>
+                            {selectedCompany === company.id && (
+                              <Check className="w-4 h-4 text-primary shrink-0 mt-1" />
+                            )}
+                          </div>
+                        </CardContent>
+                      </Card>
+                    ))}
                   </div>
-                </CardContent>
-              </Card>
-            ))}
+                </div>
+              );
+            })}
           </div>
         </div>
       )}
 
       {selectedTypes.length > 0 && (!selectedTypes.includes('company') || selectedCompany) && (
-        <div className="flex justify-center pt-4">
+        <div className="flex justify-center pt-8">
           <Button
             size="lg"
             onClick={handleStartInterview}
             disabled={startInterviewMutation.isPending || !selectedStudentId || selectedTypes.length === 0}
+            className="rounded-2xl px-12 h-16 text-lg font-black shadow-xl"
             data-testid="button-start-interview"
           >
             {startInterviewMutation.isPending ? (
               'Creating...'
             ) : (
               <>
-                Create Interview ({selectedTypes.length} type{selectedTypes.length > 1 ? 's' : ''}, {selectedDifficulty}) - 10 Questions
+                Create {selectedMode === 'full' && selectedTypes.includes('company') ? 'Multi-Round' : ''} Interview ({selectedDifficulty})
                 <ArrowRight className="w-5 h-5 ml-2" />
               </>
             )}

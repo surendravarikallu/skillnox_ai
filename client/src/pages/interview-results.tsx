@@ -1,10 +1,13 @@
 import { useParams, Link } from "wouter";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useMutation } from "@tanstack/react-query";
+import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
+import { useToast } from "@/hooks/use-toast";
+import { apiRequest, queryClient } from "@/lib/queryClient";
 import {
   Brain,
   Users,
@@ -17,7 +20,8 @@ import {
   ArrowLeft,
   Download,
   Share2,
-  Lightbulb
+  Lightbulb,
+  Zap
 } from "lucide-react";
 import type { Interview, InterviewQuestion } from "@shared/schema";
 
@@ -64,6 +68,21 @@ function ScoreCircle({ score, label, color }: { score: number | null; label: str
 
 export default function InterviewResults() {
   const { id } = useParams<{ id: string }>();
+  const { toast } = useToast();
+
+  const shareMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', `/api/interviews/${id}/share`);
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/interviews', id] });
+      toast({
+        title: data.isShared ? "Report Shared" : "Report Set to Private",
+        description: data.message || "Updated your share settings successfully.",
+      });
+    },
+  });
 
   const { data: interview, isLoading: loadingInterview } = useQuery<Interview>({
     queryKey: ['/api/interviews', id],
@@ -146,12 +165,61 @@ export default function InterviewResults() {
             <Download className="w-4 h-4 mr-2" />
             Download Report
           </Button>
-          <Button variant="outline" data-testid="button-share">
+          <Button 
+            variant="outline" 
+            data-testid="button-share"
+            onClick={() => shareMutation.mutate()}
+            disabled={shareMutation.isPending}
+          >
             <Share2 className="w-4 h-4 mr-2" />
-            Share
+            {shareMutation.isPending ? "Sharing..." : "Share"}
           </Button>
         </div>
       </div>
+
+      {/* Portfolio Sharing Center */}
+      <Card className="border border-primary/20 bg-primary/5 p-6 rounded-2xl" data-html2canvas-ignore="true">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-6">
+          <div className="space-y-1">
+            <h3 className="font-bold text-base flex items-center gap-2">
+              <Share2 className="w-5 h-5 text-primary" />
+              Recruiter Sharing Portfolio
+            </h3>
+            <p className="text-xs text-muted-foreground max-w-lg">
+              Enable public portfolio access to generate a verified recruiter link. This lets potential employers view your score cards, communication analytics, and completed interview transcripts (student personal emails and video/voice logs are masked for privacy).
+            </p>
+          </div>
+          <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
+            <Button
+              variant={(interview as any).isShared ? "destructive" : "default"}
+              onClick={() => shareMutation.mutate()}
+              disabled={shareMutation.isPending}
+              className="rounded-xl font-bold"
+            >
+              {shareMutation.isPending ? "Updating..." : (interview as any).isShared ? "Revoke Access" : "Make Report Public"}
+            </Button>
+          </div>
+        </div>
+
+        {(interview as any).isShared && (interview as any).shareToken && (
+          <div className="mt-4 p-3 bg-card border rounded-xl flex items-center gap-3 flex-wrap">
+            <div className="flex-1 text-xs font-mono select-all truncate">
+              {window.location.origin}/shared/report/{(interview as any).shareToken}
+            </div>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => {
+                navigator.clipboard.writeText(`${window.location.origin}/shared/report/${(interview as any).shareToken}`);
+                toast({ title: "Copied!", description: "Recruiter share link copied to clipboard." });
+              }}
+              className="rounded-lg h-8 text-[11px]"
+            >
+              Copy Link
+            </Button>
+          </div>
+        )}
+      </Card>
 
       <div id="report-content" className="space-y-8">
 
@@ -199,6 +267,41 @@ export default function InterviewResults() {
           </div>
         </CardContent>
       </Card>
+
+      {/* Round-by-Round Results for Full Simulation */}
+      {(interview as any).simulationMode === 'full' && (interview as any).roundResults && Array.isArray((interview as any).roundResults) && (
+        <Card className="border border-border">
+          <CardHeader>
+            <CardTitle className="text-lg flex items-center gap-2">
+              <Brain className="w-5 h-5 text-primary" />
+              Round-by-Round Simulation Breakdown
+            </CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <div className="relative border-l border-border pl-6 space-y-6">
+              {(interview.roundResults as any[]).map((result, idx) => (
+                <div key={idx} className="relative">
+                  <span className={`absolute -left-[32px] top-1 w-4.5 h-4.5 rounded-full border-2 border-background flex items-center justify-center ${
+                    result.passed ? 'bg-emerald-500 text-white' : 'bg-destructive text-white'
+                  }`}>
+                    {result.passed ? "✓" : "✗"}
+                  </span>
+                  <div>
+                    <div className="flex items-center gap-2 flex-wrap">
+                      <h4 className="font-bold text-sm">{result.name}</h4>
+                      <Badge variant={result.passed ? "default" : "destructive"} className={result.passed ? "bg-emerald-500 hover:bg-emerald-500/90 text-[10px] py-0 px-2 font-bold" : "text-[10px] py-0 px-2 font-bold"}>
+                        {result.passed ? "Passed" : "Terminated"}
+                      </Badge>
+                      <span className="text-xs font-semibold text-muted-foreground ml-auto">{Math.round(result.score)}% Score</span>
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-1 leading-relaxed">{result.feedback}</p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      )}
 
       <div className="grid md:grid-cols-2 gap-6">
         <Card>
@@ -306,12 +409,17 @@ export default function InterviewResults() {
                       </Badge>
                       <p className="font-medium">{question.question}</p>
                     </div>
-                    {question.score !== null && (
+                    {question.score !== null ? (
                       <Badge 
                         variant={question.score >= 70 ? "default" : "secondary"}
                         className={question.score >= 70 ? "bg-green-500" : ""}
                       >
                         {Math.round(question.score)}%
+                      </Badge>
+                    ) : (
+                      <Badge variant="secondary" className="animate-pulse flex items-center gap-1.5">
+                        <Brain className="w-3 h-3" />
+                        Analyzing...
                       </Badge>
                     )}
                   </div>
@@ -323,7 +431,7 @@ export default function InterviewResults() {
                     </div>
                   )}
 
-                  {question.feedback && (
+                  {question.feedback ? (
                     <div className="space-y-2 text-sm">
                       <div className="flex items-start gap-2">
                         <Lightbulb className="w-4 h-4 text-yellow-500 shrink-0 mt-0.5" />
@@ -335,6 +443,11 @@ export default function InterviewResults() {
                           <p className="text-sm text-muted-foreground">{question.feedback.split('\n\nHow to answer:')[1]?.trim()}</p>
                         </div>
                       )}
+                    </div>
+                  ) : (
+                    <div className="flex items-center gap-3 text-sm text-muted-foreground italic bg-muted/20 p-3 rounded-lg">
+                      <Zap className="w-4 h-4 animate-pulse text-primary" />
+                      Our AI is currently analyzing your response for deep insights. This usually takes a few moments...
                     </div>
                   )}
                 </div>

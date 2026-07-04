@@ -57,6 +57,8 @@ export default function InterviewRoom() {
   const [streamVersion, setStreamVersion] = useState(0);
   const [isTransitioning, setIsTransitioning] = useState(false);
 
+  const [showRoundSummary, setShowRoundSummary] = useState(false);
+
   const { transcript, isListening, connectionState, startListening, stopListening, clearTranscript, hardResetTranscript } = useVoiceToText();
   const { isSpeaking: isAISpeaking, speak: speakText, stop: stopSpeaking } = useTextToSpeech();
 
@@ -96,6 +98,36 @@ export default function InterviewRoom() {
     },
   });
 
+  const nextRoundMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', `/api/interviews/${id}/next-round`);
+      return await response.json();
+    },
+    onSuccess: (data) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/interviews', id] });
+      queryClient.invalidateQueries({ queryKey: ['/api/interviews', id, 'questions'] });
+      
+      if (data.completed || !data.passed) {
+        navigate(`/interview/${id}/results`);
+      } else if (data.advanced) {
+        setShowRoundSummary(false);
+        setCurrentQuestionIndex(0);
+        setTimeElapsed(0);
+        toast({
+          title: "Next Round Started",
+          description: data.message || "Moved to the next round.",
+        });
+      }
+    },
+    onError: (error: any) => {
+      toast({
+        title: "Advancement Failed",
+        description: error?.message || "Please wait a moment for the AI to complete scoring.",
+        variant: "destructive"
+      });
+    }
+  });
+
   const submitAnswerMutation = useMutation({
     mutationFn: async (data: { questionId: string; answer: string }) => {
       const response = await apiRequest('POST', `/api/interviews/${id}/answer`, data);
@@ -110,10 +142,13 @@ export default function InterviewRoom() {
         setCurrentQuestionIndex(prev => prev + 1);
         setTimeout(() => {
           setIsTransitioning(false);
-          if (micEnabled) startListening();
         }, 800);
       } else if (isLastQuestion) {
-        handleComplete();
+        if (interview?.simulationMode === 'full') {
+          setShowRoundSummary(true);
+        } else {
+          handleComplete();
+        }
       }
     },
   });
@@ -144,6 +179,7 @@ export default function InterviewRoom() {
         setStreamVersion(prev => prev + 1);
         if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (error) {
+        console.error("Camera error:", error);
         setCameraEnabled(false);
         setMicEnabled(false);
       }
@@ -160,13 +196,17 @@ export default function InterviewRoom() {
 
   const toggleCamera = useCallback(() => {
     setCameraEnabled(prev => !prev);
-    if (streamRef.current) streamRef.current.getVideoTracks().forEach(t => t.enabled = !cameraEnabled);
-  }, [cameraEnabled]);
+  }, []);
 
   const toggleMic = useCallback(() => {
-    setMicEnabled(prev => !prev);
-    if (streamRef.current) streamRef.current.getAudioTracks().forEach(t => t.enabled = !micEnabled);
-  }, [micEnabled]);
+    const nextState = !micEnabled;
+    setMicEnabled(nextState);
+    if (nextState) {
+      startListening();
+    } else {
+      stopListening();
+    }
+  }, [micEnabled, startListening, stopListening]);
 
   const handleSubmitAnswer = () => {
     if (!questions) return;
@@ -188,9 +228,22 @@ export default function InterviewRoom() {
   useEffect(() => {
     if (currentQuestion?.question && !loadingQuestions && !hasSpokenCurrentQuestion && interview?.status === 'in_progress') {
       setHasSpokenCurrentQuestion(true);
-      speakText(currentQuestion.question).catch(console.error);
+      
+      // Stop listening while AI speaks
+      stopListening(); 
+      
+      speakText(currentQuestion.question)
+        .then(() => {
+          if (micEnabled) {
+            startListening();
+          }
+        })
+        .catch(err => {
+          console.error("Speech error:", err);
+          if (micEnabled) startListening();
+        });
     }
-  }, [currentQuestion?.question, loadingQuestions, hasSpokenCurrentQuestion, interview?.status, speakText]);
+  }, [currentQuestion?.question, loadingQuestions, hasSpokenCurrentQuestion, interview?.status, speakText, startListening, stopListening, micEnabled]);
 
   useEffect(() => { setHasSpokenCurrentQuestion(false); }, [currentQuestionIndex]);
 
@@ -209,7 +262,17 @@ export default function InterviewRoom() {
               <h1 className="text-4xl md:text-5xl font-black tracking-tight mb-4 capitalize">{interview.type} Session</h1>
               <p className="text-xl text-muted-foreground max-w-lg mx-auto">Your AI interviewer is ready. Prepare your microphone and camera for a professional experience.</p>
             </div>
-            <Button size="lg" className="rounded-2xl px-12 h-16 text-lg font-black bg-primary hover:bg-primary/90 shadow-xl shadow-primary/30" onClick={() => startInterviewMutation.mutate()} disabled={startInterviewMutation.isPending}>
+            <Button 
+              size="lg" 
+              className="rounded-2xl px-12 h-16 text-lg font-black bg-primary hover:bg-primary/90 shadow-xl shadow-primary/30" 
+              onClick={() => {
+                startInterviewMutation.mutate();
+                if (micEnabled) {
+                  setTimeout(() => startListening(), 2000);
+                }
+              }} 
+              disabled={startInterviewMutation.isPending}
+            >
               {startInterviewMutation.isPending ? "Initializing..." : "Begin Session"}
               <ArrowRight className="w-6 h-6 ml-2" />
             </Button>
@@ -220,9 +283,86 @@ export default function InterviewRoom() {
     );
   }
 
+  // Round summary evaluation calculations
+  const activeRoundType = currentQuestion?.round;
+  const roundName = (interview as any)?.activeRoundName || "Round";
+  const roundPassingScore = (interview as any)?.activeRoundPassingScore || 50;
+
+  const roundQuestions = questions?.filter(q => q.round === activeRoundType) || [];
+  const scoredQuestions = roundQuestions.filter(q => q.score !== null && q.score !== undefined);
+  const isEvaluatingRound = scoredQuestions.length < roundQuestions.length;
+
+  const roundAvgScore = roundQuestions.length > 0
+    ? roundQuestions.reduce((sum, q) => sum + (q.score || 0), 0) / roundQuestions.length
+    : 0;
+
+  const passedRound = roundAvgScore >= roundPassingScore;
+
+  if (showRoundSummary) {
+    return (
+      <div className="max-w-4xl mx-auto flex items-center justify-center min-h-[70vh]">
+        <Card className="relative overflow-hidden rounded-[2.5rem] glass-card p-12 text-center w-full max-w-2xl border-primary/20 shadow-2xl">
+          <div className="relative z-10 space-y-8">
+            <div className="w-20 h-20 mx-auto bg-gradient-to-br from-primary to-purple-600 rounded-2xl flex items-center justify-center shadow-2xl shadow-primary/20 rotate-3">
+              <Brain className="w-10 h-10 text-white" />
+            </div>
+            <div>
+              <Badge className="bg-primary/10 text-primary border-primary/20 mb-3 px-4 py-1 font-black uppercase tracking-widest">Round Completed</Badge>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-2">{roundName} Complete</h1>
+              <p className="text-muted-foreground text-sm max-w-md mx-auto">AI is evaluating your responses for this round. Please do not close the window.</p>
+            </div>
+
+            {isEvaluatingRound ? (
+              <div className="space-y-4 py-4">
+                <div className="flex items-center justify-center gap-3 text-primary font-bold animate-pulse text-sm">
+                  <Activity className="w-5 h-5 animate-spin" />
+                  Generating detailed AI placement evaluation...
+                </div>
+                <Progress value={Math.round((scoredQuestions.length / roundQuestions.length) * 100)} className="h-1.5 max-w-sm mx-auto" />
+                <p className="text-xs text-muted-foreground">{scoredQuestions.length} of {roundQuestions.length} responses evaluated</p>
+              </div>
+            ) : (
+              <div className="space-y-6">
+                <div className="max-w-xs mx-auto border border-border bg-card/50 p-6 rounded-2xl">
+                  <p className="text-xs uppercase font-black tracking-widest text-muted-foreground mb-1">Your Round Score</p>
+                  <p className={`text-5xl font-black ${passedRound ? 'text-emerald-500' : 'text-destructive'}`}>{roundAvgScore.toFixed(0)}%</p>
+                  <p className="text-[10px] text-muted-foreground mt-2 uppercase font-semibold">
+                    Required Passing Score: {roundPassingScore}%
+                  </p>
+                </div>
+
+                {passedRound ? (
+                  <div className="bg-emerald-500/10 border border-emerald-500/20 text-emerald-600 dark:text-emerald-400 p-4 rounded-xl text-sm max-w-md mx-auto">
+                    <strong>Passed!</strong> You meet the qualification criteria to advance to the next round of this placement simulation.
+                  </div>
+                ) : (
+                  <div className="bg-destructive/10 border border-destructive/20 text-destructive p-4 rounded-xl text-sm max-w-md mx-auto">
+                    <strong>Placement Failed.</strong> You did not achieve the required passing score for this round. The interview will be terminated.
+                  </div>
+                )}
+
+                <div className="flex gap-4 justify-center">
+                  <Button
+                    size="lg"
+                    className={`rounded-2xl px-12 h-16 text-lg font-black shadow-xl ${passedRound ? 'bg-primary hover:bg-primary/90' : 'bg-destructive hover:bg-destructive/90'}`}
+                    onClick={() => nextRoundMutation.mutate()}
+                    disabled={nextRoundMutation.isPending}
+                  >
+                    {nextRoundMutation.isPending ? "Processing..." : passedRound ? "Proceed to Next Round" : "View Feedback & Exit"}
+                    <ArrowRight className="w-5 h-5 ml-2" />
+                  </Button>
+                </div>
+              </div>
+            )}
+          </div>
+          <BorderBeam size={400} duration={10} />
+        </Card>
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 h-full flex flex-col">
-      {/* Immersive Header */}
       <header className="flex flex-col md:flex-row items-center justify-between gap-6 px-4">
         <div className="flex items-center gap-6">
           <div className="w-14 h-14 rounded-2xl bg-muted border border-border flex items-center justify-center shadow-inner">
@@ -230,7 +370,7 @@ export default function InterviewRoom() {
           </div>
           <div>
             <h1 className="text-2xl font-black tracking-tight flex items-center gap-3">
-              {interview?.type} Session
+              {interview?.company ? `${interview.company} - ${roundName}` : `${interview?.type} Session`}
               <Badge variant="outline" className="border-primary/20 text-primary bg-primary/5 uppercase font-black text-[10px] tracking-widest">{interview?.company || 'Standard'}</Badge>
             </h1>
             <div className="flex items-center gap-4 mt-1 text-[10px] font-black uppercase tracking-[0.2em] text-muted-foreground/60">
@@ -256,56 +396,93 @@ export default function InterviewRoom() {
         </Button>
       </header>
 
-      {/* Main Workspace */}
       <div className="grid lg:grid-cols-12 gap-8 flex-1">
-        {/* Left: AI & User Feed */}
         <div className="lg:col-span-5 space-y-8">
-          {/* AI Presence */}
-          <Card className="rounded-[2.5rem] glass-card overflow-hidden relative group">
-            <div className="p-12 flex flex-col items-center justify-center text-center space-y-8 min-h-[400px]">
-              <NeonPulse active={isAISpeaking || isListening} color={isAISpeaking ? "#6366f1" : isListening ? "#10b981" : "#475569"} size={180} />
-              <div className="space-y-2">
-                <h3 className="text-xl font-black tracking-tight">{isAISpeaking ? "AI is Speaking..." : isListening ? "Listening to You..." : "AI Observer"}</h3>
-                <p className="text-sm text-muted-foreground max-w-xs">{isAISpeaking ? "Analyzing your profile to form the next inquiry." : isListening ? "Speak naturally. Our AI is capturing your professional intent." : "Ready for your response."}</p>
-              </div>
+          <Card className="rounded-[2.5rem] glass-card overflow-hidden relative group h-[550px] shadow-2xl border-primary/10">
+            <div className="absolute inset-0 z-0 bg-muted">
+              {cameraEnabled ? (
+                <video 
+                  ref={videoRef} 
+                  autoPlay 
+                  playsInline 
+                  muted 
+                  className="w-full h-full object-cover scale-x-[-1] transition-transform duration-700 group-hover:scale-105" 
+                />
+              ) : (
+                <div className="w-full h-full flex flex-col items-center justify-center bg-muted/80 backdrop-blur-md">
+                  <CameraOff className="w-12 h-12 text-muted-foreground/20 animate-pulse" />
+                  <p className="text-xs font-black uppercase tracking-widest text-muted-foreground/40 mt-4">Camera Standby</p>
+                </div>
+              )}
+              <div className="absolute inset-0 bg-gradient-to-t from-black/80 via-black/20 to-transparent opacity-60" />
             </div>
-            <BorderBeam size={300} />
+
+            <div className="absolute inset-0 z-10 p-12 flex flex-col items-center justify-center text-center space-y-6">
+              <NeonPulse 
+                active={isAISpeaking || isListening} 
+                color={isAISpeaking ? "#6366f1" : isListening ? "#10b981" : "#ffffff"} 
+                size={isAISpeaking || isListening ? 260 : 180} 
+                className="transition-all duration-500 drop-shadow-[0_0_30px_rgba(var(--primary),0.3)]"
+              />
+              
+              <motion.div 
+                initial={{ opacity: 0, y: 20 }}
+                animate={{ opacity: 1, y: 0 }}
+                className="space-y-2"
+              >
+                <h3 className="text-3xl font-black tracking-tight text-white drop-shadow-md">
+                  {isAISpeaking ? "AI Interviewer" : isListening ? "Listening..." : "Observer"}
+                </h3>
+                <p className="text-sm font-medium text-white/70 max-w-xs mx-auto leading-relaxed drop-shadow-sm">
+                  {isAISpeaking ? "Analyzing your professional profile..." : isListening ? "Speak clearly into the microphone." : "Proceed with your response."}
+                </p>
+              </motion.div>
+            </div>
+
+            <div className="absolute bottom-8 left-1/2 -translate-x-1/2 flex items-center gap-3 z-30">
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                className={cn(
+                  "w-12 h-12 rounded-2xl transition-all duration-300",
+                  cameraEnabled ? "bg-white/10 text-white hover:bg-white/20" : "bg-destructive/20 text-destructive"
+                )}
+                onClick={toggleCamera}
+              >
+                {cameraEnabled ? <Camera className="w-5 h-5" /> : <CameraOff className="w-5 h-5" />}
+              </Button>
+              <Button 
+                size="icon" 
+                variant="ghost" 
+                className={cn(
+                  "w-12 h-12 rounded-2xl transition-all duration-300",
+                  micEnabled ? "bg-white/10 text-white hover:bg-white/20" : "bg-destructive/20 text-destructive"
+                )}
+                onClick={toggleMic}
+              >
+                {micEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
+              </Button>
+            </div>
+            
+            <BorderBeam size={600} duration={10} className="opacity-40" />
           </Card>
 
-          {/* User Preview */}
-          <Card className="rounded-[2rem] glass-card overflow-hidden relative group aspect-video">
-            {cameraEnabled ? (
-              <video ref={videoRef} autoPlay playsInline muted className="w-full h-full object-cover scale-x-[-1]" />
-            ) : (
-              <div className="w-full h-full flex flex-col items-center justify-center bg-muted">
-                <CameraOff className="w-12 h-12 text-muted-foreground opacity-20" />
-                <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground mt-4">Optical Input Disabled</p>
-              </div>
-            )}
-            
-            <div className="absolute inset-x-0 bottom-0 p-6 bg-gradient-to-t from-black/80 to-transparent flex items-center justify-between">
-              <div className="flex gap-2">
-                <Button size="icon" variant={cameraEnabled ? "secondary" : "destructive"} className="rounded-xl w-12 h-12" onClick={toggleCamera}>
-                  {cameraEnabled ? <Camera className="w-5 h-5" /> : <CameraOff className="w-5 h-5" />}
-                </Button>
-                <Button size="icon" variant={micEnabled ? "secondary" : "destructive"} className="rounded-xl w-12 h-12" onClick={toggleMic}>
-                  {micEnabled ? <Mic className="w-5 h-5" /> : <MicOff className="w-5 h-5" />}
-                </Button>
-              </div>
-              
-              <div className="flex items-center gap-3">
-                <div className="flex gap-1">
-                  {[1, 2, 3].map(i => <div key={i} className={cn("w-1 h-3 rounded-full bg-primary", isListening && "animate-bounce")} style={{ animationDelay: `${i * 100}ms` }} />)}
+          <Card className="rounded-[2rem] glass-card p-6 border-border/50 bg-primary/5">
+             <div className="flex items-center justify-between">
+                <div className="flex items-center gap-3">
+                   <div className={cn("w-3 h-3 rounded-full animate-pulse", isListening ? "bg-emerald-500" : "bg-muted-foreground/30")} />
+                   <span className="text-xs font-black uppercase tracking-widest">{isListening ? "Voice Active" : "Voice Standby"}</span>
                 </div>
-                <span className="text-[10px] font-black uppercase tracking-widest text-white/60">Live Analytics</span>
-              </div>
-            </div>
+                <div className="flex gap-1.5">
+                   {[1, 2, 3, 4, 5].map(i => (
+                     <div key={i} className={cn("w-1 h-4 rounded-full bg-primary/30", isListening && "animate-bounce")} style={{ animationDelay: `${i * 100}ms` }} />
+                   ))}
+                </div>
+             </div>
           </Card>
         </div>
 
-        {/* Right: Interaction Console */}
         <div className="lg:col-span-7 flex flex-col space-y-6">
-          {/* Question Card */}
           <Card className="rounded-[2rem] glass-card overflow-hidden">
             <div className="p-8 space-y-6">
               <div className="flex items-center gap-3 text-primary">
@@ -332,7 +509,6 @@ export default function InterviewRoom() {
             </div>
           </Card>
 
-          {/* Response Terminal */}
           <Card className="flex-1 rounded-[2rem] glass-card overflow-hidden flex flex-col relative group">
             <div className="p-8 pb-4 flex items-center justify-between border-b border-border">
               <div className="flex items-center gap-3 text-emerald-500">
