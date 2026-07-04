@@ -6,5 +6,6 @@ echo "Make sure you have trained the models first with: python train_all_models.
 echo ""
 
 cd "$(dirname "$0")"
+export OLLAMA_FINETUNED_MODEL=skillnox-qwen:9b
 python services/api_service.py
 

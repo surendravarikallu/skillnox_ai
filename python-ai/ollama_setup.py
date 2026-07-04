@@ -10,7 +10,7 @@ import json
 import subprocess
 
 # Default configuration
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 DEFAULT_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
 
 

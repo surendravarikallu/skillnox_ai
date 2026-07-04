@@ -104,8 +104,7 @@ export async function registerHandler(req: any, res: any) {
     const body = registerSchema.parse(req.body);
     
     // Check if user already exists
-    const existingUsers = await storage.getAllUsers();
-    const existingUser = existingUsers.find(u => u.email === body.email);
+    const existingUser = await storage.getUserByEmail(body.email);
     
     if (existingUser) {
       return res.status(400).json({ message: "User with this email already exists" });
@@ -219,7 +218,12 @@ export async function loginHandler(req: any, res: any) {
 
 // Logout endpoint handler
 export async function logoutHandler(req: any, res: any) {
-  res.clearCookie("token");
+  res.cookie("token", "", {
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+    sameSite: "lax",
+    maxAge: 0,
+  });
   res.json({ message: "Logged out successfully" });
 }
 

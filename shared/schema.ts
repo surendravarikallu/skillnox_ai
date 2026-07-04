@@ -21,6 +21,8 @@ export const interviewStatusEnum = pgEnum('interview_status', ['pending', 'in_pr
 export const difficultyEnum = pgEnum('difficulty', ['easy', 'medium', 'hard']);
 export const genderEnum = pgEnum('gender', ['male', 'female']);
 export const personalityDimensionEnum = pgEnum('personality_dimension', ['introvert', 'extrovert', 'thinker', 'feeler', 'logical', 'creative', 'planner', 'spontaneous']);
+export const interviewRoundEnum = pgEnum('interview_round', ['aptitude', 'technical', 'hr', 'behavioral', 'coding', 'managerial', 'gd']);
+export const simulationModeEnum = pgEnum('simulation_mode', ['full', 'combined']);
 
 // Session storage table (kept for compatibility, but not used with JWT auth)
 export const sessions = pgTable(
@@ -50,7 +52,9 @@ export const users = pgTable("users", {
   interviewCount: integer("interview_count").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_users_roll_number").on(table.rollNumber),
+]);
 
 // Resume table
 export const resumes = pgTable("resumes", {
@@ -64,7 +68,9 @@ export const resumes = pgTable("resumes", {
   education: jsonb("education"),
   overallScore: real("overall_score"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_resumes_user_id").on(table.userId),
+]);
 
 // Job Description table
 export const jobDescriptions = pgTable("job_descriptions", {
@@ -80,7 +86,9 @@ export const jobDescriptions = pgTable("job_descriptions", {
   // so the frontend can show JD-based recommendations
   parsedData: jsonb("parsed_data"),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_job_descriptions_user_id").on(table.userId),
+]);
 
 // Interview table
 export const interviews = pgTable("interviews", {
@@ -92,6 +100,10 @@ export const interviews = pgTable("interviews", {
   status: interviewStatusEnum("status").default('pending').notNull(),
   company: varchar("company"),
   avatarGender: genderEnum("avatar_gender"),
+  simulationMode: varchar("simulation_mode"), // 'full' or 'combined'
+  currentRound: integer("current_round").default(0), // 0-indexed round in multi-round sim
+  roundResults: jsonb("round_results"), // Per-round scores: [{round, score, passed, feedback}]
+  trendingEnabled: boolean("trending_enabled").default(false), // Whether trending questions were used
   questions: jsonb("questions"),
   responses: jsonb("responses"),
   technicalScore: real("technical_score"),
@@ -104,21 +116,30 @@ export const interviews = pgTable("interviews", {
   duration: integer("duration"),
   startedAt: timestamp("started_at"),
   completedAt: timestamp("completed_at"),
+  shareToken: varchar("share_token"),
+  isShared: boolean("is_shared").default(false),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_interviews_user_id").on(table.userId),
+  index("idx_interviews_status").on(table.status),
+  index("idx_interviews_created_at").on(table.createdAt),
+]);
 
 // Interview Questions table
 export const interviewQuestions = pgTable("interview_questions", {
   id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
   interviewId: varchar("interview_id").notNull().references(() => interviews.id, { onDelete: 'cascade' }),
   question: text("question").notNull(),
+  round: varchar("round"), // e.g. 'aptitude', 'technical', 'hr', etc.
   expectedAnswer: text("expected_answer"),
   userAnswer: text("user_answer"),
   score: real("score"),
   feedback: text("feedback"),
   orderIndex: integer("order_index").notNull(),
   createdAt: timestamp("created_at").defaultNow(),
-});
+}, (table) => [
+  index("idx_interview_questions_interview_id").on(table.interviewId),
+]);
 
 // Personality Assessment table
 export const personalityAssessments = pgTable("personality_assessments", {
@@ -204,6 +225,19 @@ export const dailyAnalytics = pgTable("daily_analytics", {
   peakHour: integer("peak_hour"), // 0-23
   totalUsers: integer("total_users").default(0).notNull(),
   aiServiceUptime: real("ai_service_uptime"), // percentage
+  createdAt: timestamp("created_at").defaultNow(),
+});
+
+// Scheduled Campaigns table (for admin placement scheduling campaigns)
+export const scheduledCampaigns = pgTable("scheduled_campaigns", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  title: varchar("title").notNull(),
+  company: varchar("company"),
+  difficulty: varchar("difficulty").notNull(),
+  simulationMode: varchar("simulation_mode").notNull(),
+  branch: varchar("branch"),
+  scheduledAt: timestamp("scheduled_at").notNull(),
+  status: varchar("status").default("pending").notNull(), // 'pending', 'active', 'completed'
   createdAt: timestamp("created_at").defaultNow(),
 });
 
@@ -337,6 +371,11 @@ export const insertDailyAnalyticsSchema = createInsertSchema(dailyAnalytics).omi
   createdAt: true,
 });
 
+export const insertScheduledCampaignSchema = createInsertSchema(scheduledCampaigns).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -372,15 +411,46 @@ export type InsertInterviewSlot = z.infer<typeof insertInterviewSlotSchema>;
 export type DailyAnalytics = typeof dailyAnalytics.$inferSelect;
 export type InsertDailyAnalytics = z.infer<typeof insertDailyAnalyticsSchema>;
 
+export type ScheduledCampaign = typeof scheduledCampaigns.$inferSelect;
+export type InsertScheduledCampaign = z.infer<typeof insertScheduledCampaignSchema>;
+
 // Company types for interview simulator
 export const COMPANIES = [
+  // Indian IT Services
   'TCS',
   'Infosys',
   'Wipro',
   'Accenture',
   'Cognizant',
   'Capgemini',
+  'HCL',
+  'Tech Mahindra',
+  'L&T Infotech',
+  'Mindtree',
+  'Zoho',
+  // Global Tech
+  'Google',
+  'Microsoft',
   'Amazon',
+  'Meta',
+  'IBM',
+  // Indian Startups
+  'Flipkart',
+  'Paytm',
+  'Razorpay',
+  'Freshworks',
+  'CRED',
+  // BFSI
+  'Goldman Sachs',
+  'Deloitte',
 ] as const;
 
 export type Company = typeof COMPANIES[number];
+
+// Company categories for filtering
+export const COMPANY_CATEGORIES = {
+  'Indian IT Services': ['TCS', 'Infosys', 'Wipro', 'Accenture', 'Cognizant', 'Capgemini', 'HCL', 'Tech Mahindra', 'L&T Infotech', 'Mindtree', 'Zoho'],
+  'Global Tech': ['Google', 'Microsoft', 'Amazon', 'Meta', 'IBM'],
+  'Indian Startups': ['Flipkart', 'Paytm', 'Razorpay', 'Freshworks', 'CRED'],
+  'BFSI': ['Goldman Sachs', 'Deloitte'],
+} as const;

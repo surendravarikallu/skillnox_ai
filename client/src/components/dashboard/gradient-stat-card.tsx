@@ -52,10 +52,9 @@ export function GradientStatCard({
 
             {/* Glassmorphic overlay */}
             <div
-                className="relative bg-white/60 dark:bg-slate-800/60 backdrop-blur-xl border-2 p-6 h-full"
+                className="relative glass-card border-2 p-6 h-full"
                 style={{
                     borderColor: fromColor + '40',
-                    boxShadow: `0 8px 32px 0 rgba(31, 38, 135, 0.15)`
                 }}
             >
                 <div className="flex items-start justify-between gap-4">
@@ -71,7 +70,7 @@ export function GradientStatCard({
 
                     {/* Value and trend */}
                     <div className="text-right flex-1">
-                        <p className="text-sm text-slate-700 dark:text-slate-300 mb-1 font-semibold">{title}</p>
+                        <p className="text-sm text-muted-foreground mb-1 font-semibold">{title}</p>
                         <motion.p
                             initial={{ opacity: 0, scale: 0.5 }}
                             animate={{ opacity: 1, scale: 1 }}

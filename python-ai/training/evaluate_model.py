@@ -14,7 +14,7 @@ from typing import Dict, List
 sys.path.append(str(Path(__file__).parent.parent))
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3.5:9b")
+DEFAULT_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 
 
 def benchmark_speed(model_name: str, num_runs: int = 5) -> Dict:

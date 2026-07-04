@@ -18,5 +18,5 @@ tiktoken>=0.5.0
 faster-whisper>=1.0.0
 ffmpeg-python>=0.2.0
 # Emotion Detection — Pretrained HSEmotion
-hsemotion>=0.4
+hsemotion>=0.3.0
 opencv-python-headless>=4.8.0

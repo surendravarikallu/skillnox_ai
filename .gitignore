@@ -57,3 +57,8 @@ huggingface/
 # Database
 *.db
 *.sqlite
+
+*.gguf
+*.pdf
+build_output*
+llm_test_output.txt

@@ -6,6 +6,7 @@ echo Make sure you have trained the models first with: python train_all_models.p
 echo.
 
 cd /d "%~dp0"
+set OLLAMA_FINETUNED_MODEL=skillnox-qwen:9b
 python services\api_service.py
 pause
 

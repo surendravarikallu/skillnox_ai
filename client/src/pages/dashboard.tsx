@@ -6,37 +6,33 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Skeleton } from "@/components/ui/skeleton";
-import { GlassCard } from "@/components/ui/glass-card";
 import { GradientStatCard } from "@/components/dashboard/gradient-stat-card";
-import { DashboardGrid } from "@/components/dashboard/dashboard-grid";
-import { TimelineList, type TimelineItem } from "@/components/dashboard/timeline-list";
+import { TimelineList } from "@/components/dashboard/timeline-list";
 import { ProgressRing } from "@/components/ui/progress-ring";
+import { BorderBeam } from "@/components/ui/border-beam";
+import { motion } from "framer-motion";
 import {
   Brain,
   FileText,
   Users,
-  Briefcase,
   Target,
-  TrendingUp,
-  Calendar,
-  Clock,
   ArrowRight,
   Play,
   Plus,
-  ChevronRight,
-  Sparkles
+  Sparkles,
+  Zap,
+  TrendingUp,
+  Award
 } from "lucide-react";
-import type { Interview, Resume, PlacementProbability, PersonalityAssessment } from "@shared/schema";
-
-// ScoreCard component removed and replaced with GradientStatCard
-
-// InterviewCard component removed and replaced with TimelineList
+import type { Interview, Resume, PlacementProbability } from "@shared/schema";
+import { cn } from "@/lib/utils";
 
 export default function Dashboard() {
   const { user } = useAuth();
 
   const { data: interviews, isLoading: loadingInterviews } = useQuery<Interview[]>({
     queryKey: ["/api/interviews"],
+    select: (data: any) => Array.isArray(data) ? data : (data?.interviews || []),
   });
 
   const { data: resume, isLoading: loadingResume } = useQuery<Resume>({
@@ -45,10 +41,6 @@ export default function Dashboard() {
 
   const { data: placement, isLoading: loadingPlacement } = useQuery<PlacementProbability>({
     queryKey: ["/api/placement-probability"],
-  });
-
-  const { data: personality, isLoading: loadingPersonality } = useQuery<PersonalityAssessment>({
-    queryKey: ["/api/personality"],
   });
 
   const recentInterviews = interviews?.slice(0, 5) || [];
@@ -68,94 +60,119 @@ export default function Dashboard() {
     : null;
 
   return (
-    <div className="space-y-8">
-      <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-        <div className="flex items-center gap-4">
-          <Avatar className="w-16 h-16">
-            <AvatarImage src={user?.profileImageUrl || undefined} className="object-cover" />
-            <AvatarFallback className="text-xl">
-              {user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || 'U'}
-            </AvatarFallback>
-          </Avatar>
-          <div>
-            <h1 className="text-2xl font-bold" data-testid="text-welcome">
-              Welcome back, {user?.firstName || 'Student'}!
-            </h1>
-            <p className="text-muted-foreground">
-              {completedInterviews.length} interviews completed
-            </p>
-          </div>
-        </div>
-        <div className="flex gap-3 flex-wrap">
-          <Link href="/resume">
-            <Button variant="outline" data-testid="button-upload-resume">
-              <FileText className="w-4 h-4 mr-2" />
-              {resume ? 'View Resume' : 'Upload Resume'}
-            </Button>
-          </Link>
-          {user?.role === 'admin' && (
-            <Link href="/interview/start">
-              <Button data-testid="button-start-interview">
-                <Play className="w-4 h-4 mr-2" />
-                Create Interview for Student
-              </Button>
-            </Link>
-          )}
-        </div>
-      </div>
+    <div className="max-w-[1600px] mx-auto space-y-10 pb-12">
+      {/* Hero Welcome Section */}
+      <section className="relative group">
+        <div className="absolute inset-0 bg-gradient-to-r from-primary/20 via-purple-500/10 to-transparent rounded-[2rem] blur-3xl opacity-50 group-hover:opacity-70 transition-opacity" />
+        <Card className="relative overflow-hidden rounded-[2rem] glass-card p-8 md:p-12">
+          <div className="flex flex-col md:flex-row items-center gap-8 relative z-10">
+            <div className="relative">
+              <Avatar className="w-24 h-24 md:w-32 md:h-32 border-4 border-primary/20 shadow-xl">
+                <AvatarImage src={user?.profileImageUrl || undefined} className="object-cover" />
+                <AvatarFallback className="text-3xl font-black bg-primary/10 text-primary">
+                  {user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || 'U'}
+                </AvatarFallback>
+              </Avatar>
+              <div className="absolute -bottom-2 -right-2 w-10 h-10 bg-emerald-500 border-4 border-background rounded-full flex items-center justify-center shadow-lg">
+                <Zap className="w-5 h-5 text-white fill-white" />
+              </div>
+            </div>
+            
+            <div className="text-center md:text-left flex-1">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-xs font-bold uppercase tracking-widest mb-4">
+                <Sparkles className="w-3 h-3" />
+                AI Analysis Active
+              </div>
+              <h1 className="text-3xl md:text-5xl font-black tracking-tight mb-3">
+                Welcome back, {user?.firstName || 'Innovator'}!
+              </h1>
+              <p className="text-lg text-muted-foreground max-w-xl">
+                You&apos;ve completed <span className="text-foreground font-bold">{completedInterviews.length}</span> interview sessions. 
+                Your current technical score is trending <span className="text-emerald-500 font-bold">upwards</span>.
+              </p>
+            </div>
 
-      <DashboardGrid columns={4} stagger>
+            <div className="flex flex-col gap-3 shrink-0">
+              <Link href="/interview/start">
+                <Button size="lg" className="rounded-2xl px-8 h-14 bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 font-bold group">
+                  Start Live Session
+                  <Play className="w-4 h-4 ml-2 fill-white group-hover:scale-125 transition-transform" />
+                </Button>
+              </Link>
+              <Link href="/resume">
+                <Button variant="outline" size="lg" className="rounded-2xl px-8 h-14 border-border hover:bg-accent font-bold">
+                  Review Resume
+                  <FileText className="w-4 h-4 ml-2" />
+                </Button>
+              </Link>
+            </div>
+          </div>
+          <BorderBeam size={350} duration={15} />
+        </Card>
+      </section>
+
+      {/* Core Stats Grid */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
         <GradientStatCard
-          title="Technical Score"
+          title="Technical Proficiency"
           value={avgTechnical}
           icon={Brain}
           gradientFrom="indigo-500"
           gradientTo="blue-600"
+          className="shadow-xl"
         />
         <GradientStatCard
-          title="Communication"
+          title="Communication Mastery"
           value={avgHr}
           icon={Users}
-          gradientFrom="green-500"
-          gradientTo="emerald-600"
+          gradientFrom="emerald-500"
+          gradientTo="teal-600"
+          className="shadow-xl"
         />
         <GradientStatCard
-          title="Emotion Score"
+          title="Emotional Quotient"
           value={avgEmotion}
-          icon={Sparkles}
+          icon={Award}
           gradientFrom="purple-500"
           gradientTo="pink-600"
+          className="shadow-xl"
         />
         <GradientStatCard
-          title="Voice Score"
+          title="Voice Confidence"
           value={avgVoice}
           icon={Target}
           gradientFrom="cyan-400"
           gradientTo="blue-500"
+          className="shadow-xl"
         />
-      </DashboardGrid>
+      </div>
 
-      <div className="grid lg:grid-cols-3 gap-6">
-        <Card className="lg:col-span-2">
-          <CardHeader className="flex flex-row items-center justify-between gap-4 pb-2">
-            <CardTitle className="text-lg">Recent Interviews</CardTitle>
+      {/* Detailed Insights Bento */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8">
+        {/* Recent Activity Card */}
+        <Card className="lg:col-span-2 rounded-[2rem] glass-card overflow-hidden">
+          <CardHeader className="flex flex-row items-center justify-between p-8 pb-4">
+            <div>
+              <CardTitle className="text-2xl font-black tracking-tight">Recent Sessions</CardTitle>
+              <p className="text-sm text-muted-foreground">Your history of AI evaluations</p>
+            </div>
             <Link href="/interviews">
-              <Button variant="ghost" size="sm" data-testid="button-view-all-interviews">
-                View All <ArrowRight className="w-4 h-4 ml-1" />
+              <Button variant="ghost" size="sm" className="rounded-full hover:bg-accent text-xs font-bold uppercase tracking-widest">
+                View History <ArrowRight className="w-4 h-4 ml-1" />
               </Button>
             </Link>
           </CardHeader>
-          <CardContent>
+          <CardContent className="p-8 pt-0">
             {loadingInterviews ? (
-              <div className="space-y-4">
+              <div className="space-y-6">
                 {[1, 2, 3].map(i => (
-                  <div key={i} className="flex items-center gap-4 p-4">
-                    <Skeleton className="w-10 h-10 rounded-full" />
+                  <div key={i} className="flex items-center gap-4">
+                    <Skeleton className="w-12 h-12 rounded-2xl" />
                     <div className="flex-1 space-y-2">
-                      <Skeleton className="h-4 w-1/3" />
-                      <Skeleton className="h-3 w-1/4" />
+                      <Skeleton className="h-5 w-1/3" />
+                      <Skeleton className="h-4 w-1/4" />
                     </div>
-                    <Skeleton className="h-6 w-16" />
+                    <Skeleton className="h-8 w-20 rounded-full" />
                   </div>
                 ))}
               </div>
@@ -165,8 +182,8 @@ export default function Dashboard() {
                   id: interview.id!.toString(),
                   title: `${interview.type} Interview`,
                   badge: interview.company || undefined,
-                  date: new Date(interview.createdAt!).toLocaleDateString(),
-                  duration: interview.duration ? `${Math.round(interview.duration / 60)} min` : undefined,
+                  date: new Date(interview.createdAt!).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
+                  duration: interview.duration ? `${Math.round(interview.duration / 60)}m` : undefined,
                   score: interview.overallScore ?? undefined,
                   status: interview.status,
                   onClick: () => {
@@ -178,183 +195,131 @@ export default function Dashboard() {
                 }))}
               />
             ) : (
-              <div className="text-center py-12">
-                <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                  <Brain className="w-8 h-8 text-muted-foreground" />
+              <div className="text-center py-16">
+                <div className="w-20 h-20 bg-primary/10 rounded-[2rem] flex items-center justify-center mx-auto mb-6">
+                  <Brain className="w-10 h-10 text-primary" />
                 </div>
-                <h3 className="font-medium mb-2">No interviews yet</h3>
-                <p className="text-sm text-muted-foreground mb-4">
-                  {user?.role === 'admin'
-                    ? 'Create an interview for a student to get started'
-                    : 'Wait for an admin to assign you an interview'}
-                </p>
-                {user?.role === 'admin' && (
-                  <Link href="/interview/start">
-                    <Button data-testid="button-start-first-interview">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Create Interview for Student
-                    </Button>
-                  </Link>
-                )}
+                <h3 className="text-xl font-bold mb-2">No Sessions Yet</h3>
+                <p className="text-muted-foreground mb-8">Ready to test your skills with our AI agents?</p>
+                <Link href="/interview/start">
+                  <Button className="rounded-full px-8 font-bold">Start Your First Session</Button>
+                </Link>
               </div>
             )}
           </CardContent>
         </Card>
 
-        <div className="space-y-6">
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Placement Probability</CardTitle>
+        {/* Predictive Analytics & Resume Bento Column */}
+        <div className="space-y-8">
+          {/* Placement Probability Card */}
+          <Card className="rounded-[2rem] glass-card bg-gradient-to-br from-card/90 to-primary/5 p-8 overflow-hidden relative group">
+            <div className="absolute top-0 right-0 p-4 opacity-10 group-hover:opacity-20 transition-opacity">
+              <TrendingUp className="w-24 h-24" />
+            </div>
+            <CardHeader className="p-0 mb-8">
+              <CardTitle className="text-xl font-black tracking-tight flex items-center gap-2">
+                <Target className="w-5 h-5 text-primary" />
+                Placement Probability
+              </CardTitle>
             </CardHeader>
-            <CardContent>
+            <CardContent className="p-0">
               {loadingPlacement ? (
-                <div className="space-y-4">
-                  {[1, 2, 3].map(i => (
-                    <div key={i}>
-                      <Skeleton className="h-4 w-20 mb-2" />
-                      <Skeleton className="h-2 w-full" />
-                    </div>
-                  ))}
+                <div className="flex justify-around py-4">
+                  <Skeleton className="w-16 h-16 rounded-full" />
+                  <Skeleton className="w-16 h-16 rounded-full" />
+                  <Skeleton className="w-16 h-16 rounded-full" />
                 </div>
               ) : placement ? (
-                <div className="grid grid-cols-3 gap-4">
-                  <div className="flex flex-col items-center">
-                    <ProgressRing
-                      value={placement.probability30Days || 0}
-                      size={80}
-                      strokeWidth={6}
-                    />
-                    <span className="text-sm text-muted-foreground mt-2" data-testid="text-prob-30">30 Days</span>
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <ProgressRing
-                      value={placement.probability60Days || 0}
-                      size={80}
-                      strokeWidth={6}
-                    />
-                    <span className="text-sm text-muted-foreground mt-2" data-testid="text-prob-60">60 Days</span>
-                  </div>
-                  <div className="flex flex-col items-center">
-                    <ProgressRing
-                      value={placement.probability90Days || 0}
-                      size={80}
-                      strokeWidth={6}
-                    />
-                    <span className="text-sm text-muted-foreground mt-2" data-testid="text-prob-90">90 Days</span>
-                  </div>
+                <div className="flex items-center justify-between gap-4">
+                  {[
+                    { val: placement.probability30Days, label: "30D" },
+                    { val: placement.probability60Days, label: "60D" },
+                    { val: placement.probability90Days, label: "90D" }
+                  ].map((p, idx) => (
+                    <motion.div 
+                      key={p.label} 
+                      initial={{ scale: 0.8, opacity: 0 }}
+                      animate={{ scale: 1, opacity: 1 }}
+                      transition={{ delay: idx * 0.1 }}
+                      className="flex flex-col items-center gap-3"
+                    >
+                      <ProgressRing
+                        value={p.val || 0}
+                        size={80}
+                        strokeWidth={8}
+                        className="text-primary drop-shadow-[0_0_8px_rgba(var(--primary),0.4)]"
+                      />
+                      <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground">{p.label}</span>
+                    </motion.div>
+                  ))}
                 </div>
               ) : (
-                <div className="text-center py-6">
-                  <Target className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground">
-                    Complete interviews to see predictions
-                  </p>
+                <div className="text-center py-10 opacity-60">
+                  <p className="text-sm">Complete 3+ sessions for predictive insights.</p>
                 </div>
               )}
             </CardContent>
           </Card>
 
-          <Card>
-            <CardHeader className="pb-2">
-              <CardTitle className="text-lg">Resume Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {loadingResume ? (
-                <div className="space-y-3">
-                  <Skeleton className="h-4 w-full" />
-                  <Skeleton className="h-4 w-2/3" />
-                </div>
-              ) : resume ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                      <FileText className="w-5 h-5 text-green-600 dark:text-green-300" />
-                    </div>
-                    <div>
-                      <p className="font-medium text-sm">{resume.fileName}</p>
-                      <p className="text-xs text-muted-foreground">
-                        Uploaded {new Date(resume.createdAt!).toLocaleDateString()}
-                      </p>
-                    </div>
+          {/* Resume Analysis Card */}
+          <Card className="rounded-[2rem] glass-card p-1 overflow-hidden">
+            <div className="p-7">
+              <CardHeader className="p-0 mb-6">
+                <CardTitle className="text-xl font-black tracking-tight flex items-center gap-2">
+                  <FileText className="w-5 h-5 text-primary" />
+                  Resume Portfolio
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="p-0">
+                {loadingResume ? (
+                  <div className="space-y-4">
+                    <Skeleton className="h-12 w-full rounded-xl" />
+                    <Skeleton className="h-10 w-full rounded-xl" />
                   </div>
-                  {resume.overallScore !== null && (
-                    <div className="flex items-center justify-between p-3 bg-muted/50 rounded-lg">
-                      <span className="text-sm">Resume Score</span>
-                      <span className="font-bold text-lg" data-testid="text-resume-score">
-                        {Math.round(resume.overallScore)}%
-                      </span>
+                ) : resume ? (
+                  <div className="space-y-6">
+                    <div className="flex items-center gap-4 p-4 rounded-2xl bg-muted/50 border border-border">
+                      <div className="w-12 h-12 rounded-xl bg-primary/10 flex items-center justify-center">
+                        <FileText className="w-6 h-6 text-primary" />
+                      </div>
+                      <div className="flex-1 min-w-0">
+                        <p className="font-bold text-sm truncate">{resume.fileName}</p>
+                        <p className="text-[10px] text-muted-foreground uppercase tracking-widest">Master Resume</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-xl font-black text-primary">{Math.round(resume.overallScore || 0)}%</span>
+                      </div>
                     </div>
-                  )}
-                  <Link href="/resume">
-                    <Button variant="outline" className="w-full" data-testid="button-view-resume">
-                      View Details
-                    </Button>
-                  </Link>
-                </div>
-              ) : (
-                <div className="text-center py-6">
-                  <FileText className="w-10 h-10 text-muted-foreground mx-auto mb-3" />
-                  <p className="text-sm text-muted-foreground mb-4">
-                    Upload your resume for AI analysis
-                  </p>
-                  <Link href="/resume">
-                    <Button variant="outline" className="w-full" data-testid="button-upload-resume-card">
-                      <Plus className="w-4 h-4 mr-2" />
-                      Upload Resume
-                    </Button>
-                  </Link>
-                </div>
-              )}
-            </CardContent>
+                    <Link href="/resume">
+                      <Button className="w-full rounded-xl h-12 font-bold bg-muted hover:bg-accent text-foreground border border-border">
+                        Optimize Content
+                      </Button>
+                    </Link>
+                  </div>
+                ) : (
+                  <div className="text-center py-8">
+                    <div className="w-16 h-16 bg-muted/50 rounded-2xl flex items-center justify-center mx-auto mb-4 border border-dashed border-border">
+                      <Plus className="w-6 h-6 text-muted-foreground" />
+                    </div>
+                    <p className="text-sm text-muted-foreground mb-6">No resume found on file.</p>
+                    <Link href="/resume">
+                      <Button className="w-full rounded-xl h-12 font-bold">Upload & Score</Button>
+                    </Link>
+                  </div>
+                )}
+              </CardContent>
+            </div>
+            <div className="h-1.5 w-full bg-primary/20">
+              <motion.div 
+                className="h-full bg-primary" 
+                initial={{ width: 0 }}
+                animate={{ width: `${resume?.overallScore || 0}%` }}
+                transition={{ duration: 1.5, ease: "circOut" }}
+              />
+            </div>
           </Card>
         </div>
       </div>
-
-      {user?.role === 'admin' && (
-        <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
-          <Link href="/interview/start?type=technical" className="block">
-            <Card className="hover-elevate cursor-pointer h-full">
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
-                  <Brain className="w-6 h-6 text-blue-600 dark:text-blue-300" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Technical Interview</h3>
-                  <p className="text-sm text-muted-foreground">Create for student</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href="/interview/start?type=hr" className="block">
-            <Card className="hover-elevate cursor-pointer h-full">
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-green-100 dark:bg-green-900 flex items-center justify-center">
-                  <Users className="w-6 h-6 text-green-600 dark:text-green-300" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">HR Interview</h3>
-                  <p className="text-sm text-muted-foreground">Create for student</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-
-          <Link href="/interview/start?type=company" className="block">
-            <Card className="hover-elevate cursor-pointer h-full">
-              <CardContent className="p-6 flex items-center gap-4">
-                <div className="w-12 h-12 rounded-lg bg-orange-100 dark:bg-orange-900 flex items-center justify-center">
-                  <Briefcase className="w-6 h-6 text-orange-600 dark:text-orange-300" />
-                </div>
-                <div>
-                  <h3 className="font-semibold">Company Simulator</h3>
-                  <p className="text-sm text-muted-foreground">Create for student</p>
-                </div>
-              </CardContent>
-            </Card>
-          </Link>
-        </div>
-      )}
     </div>
   );
 }

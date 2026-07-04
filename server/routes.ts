@@ -14,6 +14,24 @@ import {
   type User
 } from "@shared/schema";
 import * as pythonAI from "./pythonAI";
+import { evaluationQueue } from "./evaluation-queue";
+import { evaluateAnswer, withTimeout } from "./evaluate";
+import {
+  buildQuestionSet,
+  getCompanyQuestions,
+  getRandomFromPool,
+  getQuestionsByRound,
+  ALL_QUESTIONS,
+  COMPANY_QUESTION_BANK,
+  type InterviewRound
+} from "./company-questions";
+import {
+  INTERVIEW_PATTERNS,
+  getInterviewPattern,
+  getCombinedModeDistribution,
+  type CompanyInterviewPattern,
+  type InterviewRoundConfig
+} from "./interview-patterns";
 
 import mammoth from "mammoth";
 
@@ -44,6 +62,16 @@ const PDF_CONTENT_WARNING_LENGTH = 15000;
 const MAX_AI_CONTENT_LENGTH = 6000;
 const MAX_PARSE_CONTENT_LENGTH = 8000;
 const RAW_RESUME_STORE_LENGTH = 4000;
+
+// ─── Constants ────────────────────────────────────────
+const TOTAL_QUESTIONS_PER_INTERVIEW = 10;
+const MAX_LLM_QUESTIONS_PER_TYPE = 1;
+const LLM_QUESTION_TIMEOUT_MS = 5000;
+const GD_TOPIC_TIMEOUT_MS = 5000;
+const INTERVIEW_GENERATION_TIMEOUT_MS = 10000;
+const EVALUATION_TIMEOUT_MS = 60000;
+const DEFAULT_EMOTION_SCORE = 60;
+const DEFAULT_VOICE_SCORE = 55;
 
 type ResumeFeatures = {
   links: string[];
@@ -117,39 +145,7 @@ function sanitizeText(input: string): string {
     .trim();
 }
 
-async function withTimeout<T>(promise: Promise<T>, ms: number, fallback: T, label?: string): Promise<T> {
-  return await new Promise((resolve) => {
-    let settled = false;
-    const timer = setTimeout(() => {
-      if (!settled) {
-        settled = true;
-        if (label) {
-          console.warn(`${label} timed out after ${ms}ms`);
-        }
-        resolve(fallback);
-      }
-    }, ms);
-
-    promise
-      .then((value) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          resolve(value);
-        }
-      })
-      .catch((error) => {
-        if (!settled) {
-          settled = true;
-          clearTimeout(timer);
-          if (label) {
-            console.error(`${label} failed:`, error);
-          }
-          resolve(fallback);
-        }
-      });
-  });
-}
+// withTimeout is now imported from "./evaluate"
 
 const technicalQuestions = [
   "Explain the concept of Object-Oriented Programming and its four main principles.",
@@ -428,108 +424,7 @@ async function analyzeJobDescription(description: string, resumeSkills: string[]
   return { requiredSkills, matchScore, skillGaps };
 }
 
-async function evaluateAnswer(answer: string, question?: string): Promise<{ score: number; feedback: string }> {
-  const trimmed = (answer || '').trim();
-  const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
-  const charCount = trimmed.length;
-
-  // Heuristic flags
-  const isVeryShort = wordCount < 5 || charCount < 20;
-  const isShort = wordCount < 15;
-
-  // Simple relevance: count overlapping keywords between question and answer
-  let relevanceScore = 0;
-  if (question) {
-    const stopwords = new Set(["the", "a", "an", "and", "or", "but", "if", "in", "on", "at", "to", "for", "of", "is", "are", "am", "you", "your", "why", "what", "how", "who", "when", "where", "i", "me", "my"]);
-    const qTokens = question
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter(t => t && !stopwords.has(t));
-    const aTokens = trimmed
-      .toLowerCase()
-      .replace(/[^a-z0-9\s]/g, " ")
-      .split(/\s+/)
-      .filter(Boolean);
-    const aSet = new Set(aTokens);
-    relevanceScore = qTokens.reduce((acc, t) => acc + (aSet.has(t) ? 1 : 0), 0);
-  }
-
-  // Try Python AI service first, but with a timeout so UI isn't blocked too long
-  let baseScore = 50;
-  let baseFeedback = "Good attempt.";
-  try {
-    const truncatedAnswerForAI = trimmed.length > 1500 ? trimmed.slice(0, 1500) : trimmed;
-    const truncatedQuestionForAI = question && question.length > 500 ? question.slice(0, 500) : question;
-
-    const aiResult = await withTimeout(
-      pythonAI.evaluateAnswer(truncatedAnswerForAI, truncatedQuestionForAI),
-      60000, // increased timeout for reliability
-      null,
-      "Answer evaluation"
-    );
-
-    if (aiResult) {
-      baseScore = aiResult.score ?? baseScore;
-      baseFeedback = aiResult.feedback || baseFeedback;
-    }
-  } catch (e) {
-    console.error("Error calling Python AI evaluateAnswer, using heuristic fallback:", e);
-  }
-
-  // Heuristic refinement layer to avoid over-scoring weak answers
-  let score = baseScore;
-  let feedback = baseFeedback ? baseFeedback + " " : "";
-
-  // Stricter penalties for short or irrelevant answers
-  if (isVeryShort) {
-    score = Math.min(score, 15); // More strict penalty
-    feedback += "Answer is too short. Please provide more detail with concrete points and examples. ";
-  } else if (isShort) {
-    score = Math.min(score, 30); // More strict penalty
-    feedback += "Answer is brief. Try to elaborate with specific reasons and examples. ";
-  }
-
-  if (relevanceScore === 0 && question) {
-    score = Math.min(score, 35); // More strict penalty
-    feedback += "Your answer doesn't clearly address the question. Focus on the main point being asked. ";
-  }
-
-  // Heuristic refinement layer - tuned to be more generous
-  // Extra credit for structure in heuristic-only scenarios
-  if (!question && !trimmed) {
-    score = 0;
-    feedback = "No answer detected. Please respond to the question.";
-  } else {
-    // Basic length reward
-    if (wordCount > 30) {
-      score = Math.min(100, score + 10);
-      // Only add "Good detail" if not already there and if score is high enough to warrant it
-      if (score > 70 && !feedback.includes("Good detail")) {
-        feedback += " Good detail provided.";
-      }
-    }
-
-    const hasExample = /example|instance|situation|for instance|such as|like/i.test(trimmed);
-    const hasReasoning = /because|reason|therefore|so that|due to|as a result|since/i.test(trimmed);
-    if (hasExample) {
-      score = Math.min(100, score + 5);
-      if (!feedback.toLowerCase().includes("example")) {
-        feedback += " Good use of examples.";
-      }
-    }
-    if (hasReasoning) {
-      score = Math.min(100, score + 5);
-      if (!feedback.toLowerCase().includes("reasoning")) {
-        feedback += " Clear reasoning is shown.";
-      }
-    }
-  }
-
-  score = Math.max(0, Math.min(100, Math.round(score)));
-
-  return { score, feedback: feedback.trim() || "Good attempt." };
-}
+// evaluateAnswer is now imported from "./evaluate"
 
 async function calculatePlacementProbability(
   technicalScore: number,
@@ -1334,7 +1229,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
             connected: true,
             python_service: {
               status: data.status || 'running',
-              llm_status: 'loaded', // Assume loaded since service is running and test passes
+              llm_status: 'loaded',
+              evaluationQueueLength: evaluationQueue.getQueueLength(),
               service: 'AI Interview System API',
               version: '1.0.0'
             },
@@ -1364,7 +1260,30 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       message: "Self-registration is disabled. Please contact your administrator.",
     });
   });
-  app.post('/api/auth/login', loginHandler);
+  // Simple rate limiter for auth endpoints
+  const loginAttempts = new Map<string, { count: number; resetAt: number }>();
+  const LOGIN_RATE_LIMIT = 5; // max attempts
+  const LOGIN_RATE_WINDOW = 15 * 60 * 1000; // 15 minutes
+
+  function checkLoginRateLimit(ip: string): boolean {
+    const now = Date.now();
+    const entry = loginAttempts.get(ip);
+    if (!entry || now > entry.resetAt) {
+      loginAttempts.set(ip, { count: 1, resetAt: now + LOGIN_RATE_WINDOW });
+      return true;
+    }
+    if (entry.count >= LOGIN_RATE_LIMIT) return false;
+    entry.count++;
+    return true;
+  }
+
+  app.post('/api/auth/login', (req, res, next) => {
+    const ip = req.ip || req.socket.remoteAddress || 'unknown';
+    if (!checkLoginRateLimit(ip)) {
+      return res.status(429).json({ message: "Too many login attempts. Try again later." });
+    }
+    next();
+  }, loginHandler);
   app.post('/api/auth/logout', logoutHandler);
 
   // User profile management endpoints
@@ -1532,6 +1451,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       let strengths: string[] = [];
       let improvements: string[] = [];
       let aiSkills: string[] = [];
+      let hiringAgentEvaluation: any = null;
 
       if (aiAnalysis) {
         overallScore = aiAnalysis.score || overallScore;
@@ -1539,6 +1459,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         strengths = aiAnalysis.strengths || [];
         improvements = aiAnalysis.improvements || [];
         aiSkills = aiAnalysis.skills || [];
+        hiringAgentEvaluation = aiAnalysis.hiringAgentEvaluation || null;
         console.log(`AI Analysis: Score=${overallScore}, Suggestions=${suggestions.length}, Skills=${aiSkills.length}`);
       } else {
         console.log("AI analysis unavailable, falling back to fast scoring");
@@ -1632,6 +1553,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         parsedData: {
           raw: sanitizedFullText.substring(0, RAW_RESUME_STORE_LENGTH),
           aiAnalysis: aiAnalysis?.analysis || null,
+          hiringAgentEvaluation: hiringAgentEvaluation,
           suggestions: suggestions.length > 0 ? suggestions : [],
           strengths: strengths.length > 0 ? strengths : [],
           improvements: improvements.length > 0 ? improvements : [],
@@ -1822,7 +1744,34 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       if (!interview) {
         return res.status(404).json({ message: "Interview not found" });
       }
-      res.json(interview);
+
+      // Attach active round details if full simulation
+      let activeRoundName = "";
+      let activeRoundPassingScore = 50;
+      let activeRoundType = "";
+      let totalRounds = 1;
+
+      if (interview.company && interview.simulationMode === 'full') {
+        const pattern = getInterviewPattern(interview.company);
+        if (pattern) {
+          totalRounds = pattern.rounds.length;
+          const currentRoundIdx = interview.currentRound || 0;
+          const activeRoundConfig = pattern.rounds[currentRoundIdx];
+          if (activeRoundConfig) {
+            activeRoundName = activeRoundConfig.name;
+            activeRoundPassingScore = activeRoundConfig.passingScore;
+            activeRoundType = activeRoundConfig.type;
+          }
+        }
+      }
+
+      res.json({
+        ...interview,
+        activeRoundName,
+        activeRoundPassingScore,
+        activeRoundType,
+        totalRounds
+      });
     } catch (error) {
       console.error("Error fetching interview:", error);
       res.status(500).json({ message: "Failed to fetch interview" });
@@ -1832,8 +1781,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   // Admin-only: Create interview for a student
   app.post('/api/interviews', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
-      // Admin creates interview for a specific student
-      const { studentId, type, types, difficulty, company } = req.body;
+      const { studentId, type, types, difficulty, company, simulationMode, trendingEnabled } = req.body;
       const userId = studentId; // Use the student's ID, not admin's ID
 
       if (!userId) {
@@ -1846,15 +1794,17 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         return res.status(400).json({ message: "Invalid student ID" });
       }
 
+      const difficultyLevel: 'easy' | 'medium' | 'hard' = difficulty || 'medium';
+      const simMode: 'full' | 'combined' = simulationMode || 'combined';
+      const isTrending = !!trendingEnabled;
+
       // Support both old (single type) and new (multiple types) format
       const interviewTypes: string[] = types && Array.isArray(types) && types.length > 0
         ? types
-        : (type ? [type] : ['technical']); // Fallback to technical if nothing provided
-
-      const difficultyLevel: 'easy' | 'medium' | 'hard' = difficulty || 'medium';
+        : (type ? [type] : ['technical']);
 
       // Validate types
-      const validTypes = ['technical', 'hr', 'behavioral', 'project', 'gd', 'company', 'communication'];
+      const validTypes = ['technical', 'hr', 'behavioral', 'project', 'gd', 'company', 'communication', 'aptitude', 'coding', 'managerial'];
       const filteredTypes = interviewTypes.filter(t => validTypes.includes(t));
       if (filteredTypes.length === 0) {
         return res.status(400).json({ message: "At least one valid interview type is required" });
@@ -1870,179 +1820,147 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const pythonHealth = await fetch(`${process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8000'}/health`).catch(() => null);
       const useLLM = pythonHealth && pythonHealth.ok;
 
-      if (useLLM) {
-        console.log(`Python AI service is available, generating 10 LLM questions for types: ${filteredTypes.join(', ')}, difficulty: ${difficultyLevel}`);
-      } else {
-        console.log("Python AI service not available, using static questions");
+      console.log(`Creating interview for student: ${student.firstName} (Branch: ${studentBranch}), Mode: ${simMode}, Company: ${company || 'None'}, LLM available: ${useLLM}`);
+
+      interface GeneratedQuestionInfo {
+        text: string;
+        round: string;
       }
 
-      // Generate 10 questions distributed across selected types
-      const totalQuestions = 10;
-      const questionsPerType = Math.floor(totalQuestions / filteredTypes.length);
-      const remainder = totalQuestions % filteredTypes.length;
+      const generatedQuestions: GeneratedQuestionInfo[] = [];
 
-      // Optimize: Use more static questions, fewer LLM calls for speed
-      // Generate only 1-2 LLM questions per type, rest from static pool
-      const maxLLMQuestionsPerType = 1; // Reduced for faster generation
-
-      // Helper function to get static questions for a type
-      const getStaticPool = (questionType: string, options?: { preferCAndDb?: boolean }): string[] => {
-        switch (questionType) {
-          case 'technical':
-            if (options?.preferCAndDb) {
-              return [
-                ...technicalCLanguageQuestions,
-                ...technicalDatabaseQuestions,
-                ...technicalQuestions,
-              ];
-            }
-            return [
-              ...technicalQuestions,
-              ...technicalPythonQuestions,
-              ...technicalCLanguageQuestions,
-              ...technicalDatabaseQuestions,
-            ];
-          case 'hr':
-            return hrQuestions;
-          case 'behavioral':
-            return behavioralQuestions;
-          case 'project':
-            return projectQuestions;
-          case 'gd':
-            return gdTopics;
-          case 'communication':
-            return communicationQuestions;
-          case 'company':
-            return company && companyQuestions[company] ? companyQuestions[company] : technicalQuestions;
-          default:
-            return technicalQuestions;
-        }
-      };
-
-      // Generate all questions in parallel for better performance with timeout
-      const questionPromises = filteredTypes.map(async (questionType, index) => {
-        const count = questionsPerType + (index < remainder ? 1 : 0);
-        const questions: string[] = [];
-        const preferCAndDbForType = questionType === 'technical' && preferTechnicalCAndDb;
-
-        try {
-          if (questionType === 'gd') {
-            // GD only needs 1 topic
-            if (count > 0) {
+      // Determine round structure
+      if (company) {
+        const pattern = getInterviewPattern(company);
+        if (pattern) {
+          if (simMode === 'full') {
+            // Full simulation mode: Generate questions for all rounds in the pattern
+            for (const round of pattern.rounds) {
+              const count = round.questionCount;
+              console.log(`Generating ${count} questions for round: ${round.name} (${round.type})`);
+              const roundQs = buildQuestionSet(company, round.type, count, difficultyLevel, isTrending ? 0.5 : 0.2);
+              
+              // Optionally replace some questions with fresh LLM-generated questions
               if (useLLM) {
-                // Add timeout for LLM calls (5 seconds)
-                const gdTopic = await Promise.race([
-                  pythonAI.generateGDTopic().catch(() => null),
-                  new Promise<null>((resolve) => setTimeout(() => resolve(null), 5000))
-                ]);
-                questions.push(gdTopic || getRandomQuestions(gdTopics, 1)[0]);
-              } else {
-                questions.push(...getRandomQuestions(gdTopics, 1));
+                for (let i = 0; i < Math.min(2, roundQs.length); i++) {
+                  try {
+                    const freshQ = await Promise.race([
+                      pythonAI.generateQuestion(round.type, company, undefined, difficultyLevel, round.type, isTrending),
+                      new Promise<null>((resolve) => setTimeout(() => resolve(null), LLM_QUESTION_TIMEOUT_MS))
+                    ]);
+                    if (freshQ) {
+                      roundQs[i] = freshQ;
+                    }
+                  } catch (e) {
+                    console.error("LLM question generation failed:", e);
+                  }
+                }
               }
+
+              generatedQuestions.push(...roundQs.map(qText => ({ text: qText, round: round.type })));
             }
           } else {
-            // For other types, generate a few LLM questions and fill rest with static
-            const staticPool = getStaticPool(questionType, { preferCAndDb: preferCAndDbForType });
-            const llmCount = useLLM ? Math.min(maxLLMQuestionsPerType, Math.max(1, Math.floor(count / 2))) : 0;
-            const staticCount = count - llmCount;
-
-            // Generate LLM questions in parallel with timeout (8 seconds per question)
-            const llmPromises = useLLM ? Array(llmCount).fill(0).map(() => {
-              const contextHint = preferCAndDbForType
-                ? "Focus on C programming fundamentals and database design concepts. Avoid Python unless necessary."
-                : undefined;
-              const questionPromise = questionType === 'company' && company
-                ? pythonAI.generateQuestion('company', company, contextHint, difficultyLevel)
-                : pythonAI.generateQuestion(questionType, undefined, contextHint, difficultyLevel);
-
-              return Promise.race([
-                questionPromise.catch(() => null),
-                new Promise<null>((resolve) => setTimeout(() => resolve(null), 8000))
-              ]);
-            }) : [];
-
-            const llmResults = await Promise.all(llmPromises);
-            const validLLMQuestions = llmResults.filter((q): q is string => typeof q === 'string' && q.trim() !== '');
-
-            // Fill rest with static questions
-            const staticQuestions = getRandomQuestions(staticPool, staticCount + (llmCount - validLLMQuestions.length));
-
-            questions.push(...validLLMQuestions, ...staticQuestions);
-          }
-        } catch (error) {
-          console.error(`Error generating questions for type ${questionType}:`, error);
-          // Fallback to static questions
-          const staticPool = getStaticPool(questionType, { preferCAndDb: preferCAndDbForType });
-          if (questionType === 'gd') {
-            questions.push(...getRandomQuestions(staticPool, 1));
-          } else {
-            questions.push(...getRandomQuestions(staticPool, count));
-          }
-        }
-
-        return questions;
-      });
-
-      // Wait for all question types to generate in parallel (with overall timeout)
-      const questionArrays = await Promise.race([
-        Promise.all(questionPromises),
-        new Promise<string[][]>((resolve) => {
-          setTimeout(() => {
-            // If timeout, use all static questions
-            console.log("Question generation timeout, using static questions");
-            resolve(filteredTypes.map((questionType, index) => {
-              const count = questionsPerType + (index < remainder ? 1 : 0);
-              const staticPool = getStaticPool(questionType);
-              if (questionType === 'gd') {
-                return getRandomQuestions(staticPool, 1);
+            // Combined mode: generate a single session of 10 questions distributed across the company's rounds
+            const distribution = getCombinedModeDistribution(pattern, TOTAL_QUESTIONS_PER_INTERVIEW);
+            for (const item of distribution) {
+              const roundQs = buildQuestionSet(company, item.type, item.count, difficultyLevel, isTrending ? 0.5 : 0.2);
+              
+              if (useLLM && roundQs.length > 0) {
+                try {
+                  const freshQ = await Promise.race([
+                    pythonAI.generateQuestion(item.type, company, undefined, difficultyLevel, item.type, isTrending),
+                    new Promise<null>((resolve) => setTimeout(() => resolve(null), LLM_QUESTION_TIMEOUT_MS))
+                  ]);
+                  if (freshQ) {
+                    roundQs[0] = freshQ;
+                  }
+                } catch (e) {
+                  console.error("LLM question generation failed:", e);
+                }
               }
-              return getRandomQuestions(staticPool, count);
-            }));
-          }, 15000); // 15 second overall timeout
-        })
-      ]);
-      let allQuestions = questionArrays.flat();
+              generatedQuestions.push(...roundQs.map(qText => ({ text: qText, round: item.type })));
+            }
+          }
+        } else {
+          // Company specified but no pattern: treat as standard company type
+          const count = TOTAL_QUESTIONS_PER_INTERVIEW;
+          const roundQs = buildQuestionSet(company, 'company', count, difficultyLevel, isTrending ? 0.5 : 0.2);
+          generatedQuestions.push(...roundQs.map(qText => ({ text: qText, round: 'company' })));
+        }
+      } else {
+        // Standard (non-company) interview: distribute 10 questions across selected types
+        const countPerType = Math.floor(TOTAL_QUESTIONS_PER_INTERVIEW / filteredTypes.length);
+        const remainder = TOTAL_QUESTIONS_PER_INTERVIEW % filteredTypes.length;
 
-      // Ensure the first question in any interview is a friendly greeting + intro question
-      if (allQuestions.length > 0) {
-        const studentName =
-          [student.firstName, student.lastName].filter(Boolean).join(" ") ||
-          student.rollNumber ||
-          "Student";
-        allQuestions[0] = `Hi ${studentName} and welcome to Skillnox AI, so here is your first question, tell me about yourself.`;
+        for (let i = 0; i < filteredTypes.length; i++) {
+          const typeName = filteredTypes[i] as InterviewRound;
+          const count = countPerType + (i < remainder ? 1 : 0);
+          const roundQs = buildQuestionSet(undefined, typeName, count, difficultyLevel, isTrending ? 0.5 : 0.2);
+
+          if (useLLM && roundQs.length > 0) {
+            try {
+              const freshQ = await Promise.race([
+                pythonAI.generateQuestion(typeName, undefined, undefined, difficultyLevel, typeName, isTrending),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), LLM_QUESTION_TIMEOUT_MS))
+              ]);
+              if (freshQ) {
+                roundQs[0] = freshQ;
+              }
+            } catch (e) {
+              console.error("LLM question generation failed:", e);
+            }
+          }
+          generatedQuestions.push(...roundQs.map(qText => ({ text: qText, round: typeName })));
+        }
       }
 
-      // Ensure we have exactly 10 questions (pad or trim if needed)
-      if (allQuestions.length < totalQuestions) {
-        // Pad with technical questions if needed
-        const needed = totalQuestions - allQuestions.length;
-        const fallbackPool = getStaticPool('technical', { preferCAndDb: preferTechnicalCAndDb });
-        allQuestions.push(...getRandomQuestions(fallbackPool, needed));
-      } else if (allQuestions.length > totalQuestions) {
-        // Trim to exactly 10
-        allQuestions = allQuestions.slice(0, totalQuestions);
+      // Ensure the first question in the first technical/behavioral/hr round has the greeting
+      const firstIntroRoundIndex = generatedQuestions.findIndex(q => ['technical', 'hr', 'behavioral', 'company', 'communication'].includes(q.round));
+      if (firstIntroRoundIndex !== -1) {
+        const studentName = [student.firstName, student.lastName].filter(Boolean).join(" ") || student.rollNumber || "Student";
+        generatedQuestions[firstIntroRoundIndex].text = `Hi ${studentName} and welcome to Skillnox AI, so here is your first question, tell me about yourself.`;
+      } else if (generatedQuestions.length > 0) {
+        const studentName = [student.firstName, student.lastName].filter(Boolean).join(" ") || student.rollNumber || "Student";
+        generatedQuestions[0].text = `Hi ${studentName} and welcome to your Skillnox AI interview. Let's begin with the first question: ${generatedQuestions[0].text}`;
       }
 
-      // Determine primary type for backward compatibility (use first type)
+      // Pad with technical questions if we are somehow short for combined mode
+      if (simMode === 'combined' && generatedQuestions.length < TOTAL_QUESTIONS_PER_INTERVIEW) {
+        const needed = TOTAL_QUESTIONS_PER_INTERVIEW - generatedQuestions.length;
+        const padQs = buildQuestionSet(undefined, 'technical', needed, difficultyLevel, 0);
+        generatedQuestions.push(...padQs.map(qText => ({ text: qText, round: 'technical' })));
+      }
+
+      // Trim if we exceed 10 in combined mode
+      let finalQuestions = generatedQuestions;
+      if (simMode === 'combined' && finalQuestions.length > TOTAL_QUESTIONS_PER_INTERVIEW) {
+        finalQuestions = finalQuestions.slice(0, TOTAL_QUESTIONS_PER_INTERVIEW);
+      }
+
+      // Create interview in DB
       const primaryType = filteredTypes[0] as any;
-
       const interview = await storage.createInterview({
         userId,
-        type: primaryType, // Keep for backward compatibility
-        types: filteredTypes, // New field for multiple types
-        difficulty: difficultyLevel, // New field for difficulty
-        company,
-        status: 'pending', // Interview starts as pending until student joins
+        type: primaryType,
+        types: filteredTypes,
+        difficulty: difficultyLevel,
+        company: company || null,
+        status: 'pending',
         avatarGender,
-        questions: allQuestions,
-        startedAt: null, // Will be set when student starts
+        simulationMode: simMode,
+        currentRound: 0,
+        roundResults: [],
+        trendingEnabled: isTrending,
+        questions: finalQuestions.map(q => q.text),
+        startedAt: null,
       });
 
-      // Batch create interview questions in parallel for better performance
-      const dbQuestionPromises = allQuestions.map((question, index) =>
+      // Save questions in interview_questions table
+      const dbQuestionPromises = finalQuestions.map((q, index) =>
         storage.createInterviewQuestion({
           interviewId: interview.id,
-          question: question,
+          question: q.text,
+          round: q.round,
           orderIndex: index,
         })
       );
@@ -2050,7 +1968,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       await storage.updateUserInterviewCount(userId);
 
-      console.log(`Interview created successfully: ${interview.id} with ${allQuestions.length} questions`);
+      console.log(`Interview created successfully: ${interview.id} with ${finalQuestions.length} questions in mode: ${simMode}`);
       res.json(interview);
     } catch (error: any) {
       console.error("Error creating interview:", error);
@@ -2134,12 +2052,14 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         console.log(`[Questions] Access denied - User ${userId} (role: ${userRole}) does not own interview ${interviewId}`);
         return res.status(403).json({
           message: "Access denied",
-          debug: {
-            userId,
-            interviewOwner: interview.userId,
-            userRole,
-            isAdmin: isAdminUser
-          }
+          ...(process.env.NODE_ENV === 'development' ? {
+            debug: {
+              userId,
+              interviewOwner: interview.userId,
+              userRole,
+              isAdmin: isAdminUser
+            }
+          } : {})
         });
       }
 
@@ -2152,19 +2072,341 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       // Allow access if interview is in_progress or completed
       if (interview.status !== 'pending' || isAdminUser) {
         const questions = await storage.getQuestionsByInterviewId(interviewId);
-        console.log(`[Questions] Returning ${questions.length} questions for interview ${interviewId}`);
+        
+        // If full simulation, filter to current round's questions only
+        if (interview.company && interview.simulationMode === 'full' && !isAdminUser) {
+          const pattern = getInterviewPattern(interview.company);
+          if (pattern && interview.currentRound !== null && interview.currentRound !== undefined) {
+            const activeRoundConfig = pattern.rounds[interview.currentRound];
+            if (activeRoundConfig) {
+              const filteredQs = questions.filter(q => q.round === activeRoundConfig.type);
+              console.log(`[Questions] Full Simulation active round: ${activeRoundConfig.name} (${activeRoundConfig.type}). Returning ${filteredQs.length} questions.`);
+              return res.json(filteredQs);
+            }
+          }
+        }
+        
+        console.log(`[Questions] Returning all ${questions.length} questions for interview ${interviewId}`);
         return res.json(questions);
       }
 
       // Should not reach here, but just in case
       return res.status(400).json({ message: "Interview not started yet." });
-
-      const questions = await storage.getQuestionsByInterviewId(interviewId);
-      console.log(`[Questions] Returning ${questions.length} questions for interview ${interviewId}`);
-      res.json(questions);
     } catch (error) {
       console.error("Error fetching questions:", error);
       res.status(500).json({ message: "Failed to fetch questions" });
+    }
+  });
+
+  // Advance to next round in full simulation mode
+  app.post('/api/interviews/:id/next-round', isAuthenticated, async (req: any, res) => {
+    try {
+      const interviewId = req.params.id;
+      const userId = req.userId;
+
+      const interview = await storage.getInterviewById(interviewId);
+      if (!interview) {
+        return res.status(404).json({ message: "Interview not found" });
+      }
+
+      if (interview.userId !== userId) {
+        return res.status(403).json({ message: "You can only advance your own interviews" });
+      }
+
+      if (interview.status !== 'in_progress') {
+        return res.status(400).json({ message: "Interview is not in progress" });
+      }
+
+      if (interview.simulationMode !== 'full' || !interview.company) {
+        return res.status(400).json({ message: "This operation is only supported for full company simulations" });
+      }
+
+      const pattern = getInterviewPattern(interview.company);
+      if (!pattern) {
+        return res.status(404).json({ message: "Company pattern not found" });
+      }
+
+      const currentRoundIdx = interview.currentRound || 0;
+      const currentRoundConfig = pattern.rounds[currentRoundIdx];
+
+      if (!currentRoundConfig) {
+        return res.status(400).json({ message: "Invalid current round index" });
+      }
+
+      // Check current round questions
+      const allQuestions = await storage.getQuestionsByInterviewId(interviewId);
+      const currentRoundQuestions = allQuestions.filter(q => q.round === currentRoundConfig.type);
+
+      // Verify all questions are answered and evaluated
+      const unevaluated = currentRoundQuestions.filter(q => !q.userAnswer || q.score === null || q.score === undefined);
+      if (unevaluated.length > 0) {
+        return res.status(400).json({
+          message: "Please complete all questions in the current round and wait for AI feedback before advancing.",
+          code: "ROUND_UNFINISHED"
+        });
+      }
+
+      // Calculate round average score
+      const avgScore = currentRoundQuestions.reduce((sum, q) => sum + (q.score || 0), 0) / currentRoundQuestions.length;
+      const passed = avgScore >= currentRoundConfig.passingScore;
+
+      // Update roundResults array
+      const currentResults = (interview.roundResults as any[]) || [];
+      const updatedResults = [
+        ...currentResults,
+        {
+          roundIndex: currentRoundIdx,
+          name: currentRoundConfig.name,
+          type: currentRoundConfig.type,
+          score: avgScore,
+          passed,
+          feedback: passed 
+            ? `Passed ${currentRoundConfig.name} with ${avgScore.toFixed(0)}%. Excellent!`
+            : `Failed to meet the passing score of ${currentRoundConfig.passingScore}% for ${currentRoundConfig.name}.`
+        }
+      ];
+
+      if (!passed) {
+        // GATING FAILURE: fail and complete the interview
+        const updated = await storage.updateInterview(interviewId, {
+          status: 'completed',
+          roundResults: updatedResults,
+          overallScore: avgScore,
+          feedback: `Interview terminated after failing ${currentRoundConfig.name}.`,
+          completedAt: new Date()
+        });
+        return res.json({
+          interview: updated,
+          advanced: false,
+          passed: false,
+          message: `Interview terminated: did not pass ${currentRoundConfig.name}.`
+        });
+      }
+
+      // If passed, check if there is a next round
+      const nextRoundIdx = currentRoundIdx + 1;
+      if (nextRoundIdx < pattern.rounds.length) {
+        // Advance to next round
+        const updated = await storage.updateInterview(interviewId, {
+          currentRound: nextRoundIdx,
+          roundResults: updatedResults
+        });
+        return res.json({
+          interview: updated,
+          advanced: true,
+          passed: true,
+          message: `Advanced to ${pattern.rounds[nextRoundIdx].name}.`
+        });
+      } else {
+        // Completed all rounds successfully! Auto-complete the interview
+        const technicalScore = updatedResults.find(r => r.type === 'technical')?.score || avgScore;
+        const communicationScore = updatedResults.find(r => r.type === 'hr' || r.type === 'communication')?.score || avgScore;
+        const emotionScore = 75 + Math.random() * 15;
+        const voiceScore = 72 + Math.random() * 15;
+        const overallScore = (technicalScore + communicationScore + emotionScore + voiceScore) / 4;
+
+        const updated = await storage.updateInterview(interviewId, {
+          status: 'completed',
+          currentRound: nextRoundIdx,
+          roundResults: updatedResults,
+          technicalScore,
+          communicationScore,
+          emotionScore,
+          voiceScore,
+          overallScore,
+          feedback: `Congratulations on completing all rounds of the ${interview.company} simulation!`,
+          completedAt: new Date()
+        });
+
+        // Trigger background placement calculations
+        (async () => {
+          try {
+            const resume = await storage.getResumeByUserId(userId);
+            const resumeScore = resume?.overallScore || 50;
+            const jds = await storage.getJobDescriptionsByUserId(userId);
+            const jdScore = jds.length > 0 ? (jds[0].matchScore || 50) : 50;
+            const personality = await analyzePersonality(allQuestions);
+            const { prob30, prob60, prob90, factors } = await calculatePlacementProbability(
+              technicalScore,
+              communicationScore,
+              emotionScore,
+              voiceScore,
+              resumeScore,
+              jdScore,
+              50,
+              personality
+            );
+
+            const existingPlacement = await storage.getPlacementProbabilityByUserId(userId);
+            if (existingPlacement) {
+              await storage.updatePlacementProbability(existingPlacement.id, {
+                probability30Days: prob30,
+                probability60Days: prob60,
+                probability90Days: prob90,
+                confidence: 85,
+                factors,
+              });
+            } else {
+              await storage.createPlacementProbability({
+                userId,
+                probability30Days: prob30,
+                probability60Days: prob60,
+                probability90Days: prob90,
+                confidence: 80,
+                factors,
+              });
+            }
+          } catch (e) {
+            console.error("Error in background placement calculation for full simulation:", e);
+          }
+        })();
+
+        return res.json({
+          interview: updated,
+          advanced: false,
+          passed: true,
+          completed: true,
+          message: `All interview rounds completed successfully!`
+        });
+      }
+    } catch (error: any) {
+      console.error("Error in next-round endpoint:", error);
+      res.status(500).json({ message: "Failed to advance to next round", error: error.message });
+    }
+  });
+
+  // Toggle share status of an interview and generate a share token
+  app.post('/api/interviews/:id/share', isAuthenticated, async (req: any, res) => {
+    try {
+      const interviewId = req.params.id;
+      const userId = req.userId;
+      const user = await storage.getUser(userId);
+      const isAdminUser = user?.role === 'admin';
+
+      const interview = await storage.getInterviewById(interviewId);
+      if (!interview) {
+        return res.status(404).json({ message: "Interview not found" });
+      }
+
+      if (interview.userId !== userId && !isAdminUser) {
+        return res.status(403).json({ message: "You can only share your own interviews" });
+      }
+
+      const isShared = !interview.isShared;
+      const shareToken = isShared ? (interview.shareToken || randomUUID()) : interview.shareToken;
+
+      const updated = await storage.updateInterview(interviewId, {
+        isShared,
+        shareToken,
+      });
+
+      res.json({
+        isShared: updated.isShared,
+        shareToken: updated.shareToken,
+        message: updated.isShared ? "Interview is now public" : "Interview is now private"
+      });
+    } catch (error) {
+      console.error("Error toggling share status:", error);
+      res.status(500).json({ message: "Failed to toggle share status" });
+    }
+  });
+
+  // Get public interview details for recruiters
+  app.get('/api/public/interviews/:shareToken', async (req, res) => {
+    try {
+      const { shareToken } = req.params;
+      const interview = await storage.getInterviewByShareToken(shareToken);
+
+      if (!interview || !interview.isShared) {
+        return res.status(404).json({ message: "Shared interview report not found or is set to private." });
+      }
+
+      // Fetch user detail for profile (only first name / college / department for student privacy)
+      const user = await storage.getUser(interview.userId);
+      const studentName = user ? `${user.firstName || ''} ${user.lastName ? user.lastName[0] + '.' : ''}`.trim() : "Anonymous Candidate";
+      const studentCollege = user?.college || "Confidential University";
+      const studentDepartment = user?.department || "Technology";
+
+      const questions = await storage.getQuestionsByInterviewId(interview.id);
+
+      res.json({
+        interview: {
+          id: interview.id,
+          company: interview.company,
+          simulationMode: interview.simulationMode,
+          overallScore: interview.overallScore,
+          technicalScore: interview.technicalScore,
+          communicationScore: interview.communicationScore,
+          emotionScore: interview.emotionScore,
+          voiceScore: interview.voiceScore,
+          feedback: interview.feedback,
+          completedAt: interview.completedAt,
+        },
+        candidate: {
+          name: studentName,
+          college: studentCollege,
+          department: studentDepartment,
+        },
+        questions: questions.map(q => ({
+          question: q.question,
+          userAnswer: q.userAnswer,
+          score: q.score,
+          feedback: q.feedback,
+          round: q.round
+        }))
+      });
+    } catch (error) {
+      console.error("Error fetching public interview:", error);
+      res.status(500).json({ message: "Failed to fetch public interview" });
+    }
+  });
+
+  // Admin: Get all scheduled campaigns
+  app.get('/api/admin/scheduler', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const campaigns = await storage.getScheduledCampaigns();
+      res.json(campaigns);
+    } catch (error) {
+      console.error("Error fetching scheduled campaigns:", error);
+      res.status(500).json({ message: "Failed to fetch scheduled campaigns" });
+    }
+  });
+
+  // Admin: Create scheduled campaign
+  app.post('/api/admin/scheduler', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { title, company, difficulty, simulationMode, branch, scheduledAt } = req.body;
+
+      if (!title || !difficulty || !simulationMode || !scheduledAt) {
+        return res.status(400).json({ message: "Missing required campaign parameters." });
+      }
+
+      const campaign = await storage.createScheduledCampaign({
+        title,
+        company: company || null,
+        difficulty,
+        simulationMode,
+        branch: branch || null,
+        scheduledAt: new Date(scheduledAt),
+        status: "pending",
+      });
+
+      res.json({ success: true, campaign });
+    } catch (error) {
+      console.error("Error creating campaign:", error);
+      res.status(500).json({ message: "Failed to create scheduled campaign" });
+    }
+  });
+
+  // Admin: Delete scheduled campaign
+  app.delete('/api/admin/scheduler/:id', isAuthenticated, isAdmin, async (req, res) => {
+    try {
+      const { id } = req.params;
+      await storage.deleteScheduledCampaign(id);
+      res.json({ success: true, message: "Campaign deleted successfully." });
+    } catch (error) {
+      console.error("Error deleting campaign:", error);
+      res.status(500).json({ message: "Failed to delete scheduled campaign" });
     }
   });
 
@@ -2202,45 +2444,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       console.log(`Answer received for question ${questionId} in interview ${interviewId}, scheduling async evaluation.`);
       res.json(optimisticQuestion);
 
-      // Fire-and-forget evaluation so UI is not blocked
-      (async () => {
-        try {
-          const questionText = question.question || '';
-
-          let score = 50;
-          let feedback = "Good attempt.";
-
-          try {
-            const evaluation = await evaluateAnswer(answer, questionText);
-            if (evaluation) {
-              score = evaluation.score || 50;
-              feedback = evaluation.feedback || "Good attempt.";
-            }
-          } catch (evalError) {
-            console.error("Error evaluating answer with AI, using fallback:", evalError);
-            const wordCount = answer.trim().split(/\s+/).length;
-            if (wordCount > 50) {
-              score = 70;
-              feedback = "Detailed response. Good work!";
-            } else if (wordCount > 20) {
-              score = 60;
-              feedback = "Good answer. Could add more detail.";
-            } else {
-              score = 50;
-              feedback = "Try to elaborate more with examples.";
-            }
-          }
-
-          await storage.updateInterviewQuestion(questionId, {
-            score,
-            feedback,
-          });
-
-          console.log(`Async evaluation completed for question ${questionId} in interview ${interviewId}`);
-        } catch (bgError) {
-          console.error("Background evaluation error (non-fatal):", bgError);
-        }
-      })();
+      // Add to evaluation queue for managed background processing
+      evaluationQueue.add(questionId, answer, question.question || '');
     } catch (error: any) {
       console.error("Error submitting answer:", error);
       res.status(500).json({
@@ -2255,6 +2460,11 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const userId = req.userId;
       const interviewId = req.params.id;
 
+      // Accept real-time accumulated scores from the client
+      const { emotionData, voiceData, communicationData } = req.body;
+
+      const existingInterview = await storage.getInterviewById(interviewId);
+
       const questions = await storage.getQuestionsByInterviewId(interviewId);
       const answeredQuestions = questions.filter(q => q.userAnswer);
 
@@ -2262,16 +2472,25 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         ? answeredQuestions.reduce((acc, q) => acc + (q.score || 0), 0) / answeredQuestions.length
         : 50;
 
-      const technicalScore = avgScore + (Math.random() * 10 - 5);
-      const communicationScore = avgScore + (Math.random() * 15 - 7.5);
-      const emotionScore = 60 + Math.random() * 30;
-      const voiceScore = 55 + Math.random() * 35;
+      // Use real data when available, deterministic fallback based on avgScore otherwise
+      const technicalScore = avgScore;
+      const communicationScore = communicationData?.overall ?? avgScore;
+      const emotionScore = emotionData?.emotion_score ?? (avgScore * 0.7 + 20);
+      const voiceScore = voiceData?.overall_voice_score ?? (avgScore * 0.6 + 25);
       const overallScore = (technicalScore + communicationScore + emotionScore + voiceScore) / 4;
 
-      const improvements = [];
+      const improvements: string[] = [];
       if (technicalScore < 70) improvements.push("Practice more technical concepts");
       if (communicationScore < 70) improvements.push("Work on structured responses");
       if (voiceScore < 70) improvements.push("Focus on voice clarity and pacing");
+      if (emotionScore < 70) improvements.push("Work on maintaining confident expressions");
+
+      // Calculate real duration from startedAt timestamp
+      const completedAt = new Date();
+      const startedAt = existingInterview?.startedAt ? new Date(existingInterview.startedAt) : null;
+      const durationSeconds = startedAt
+        ? Math.floor((completedAt.getTime() - startedAt.getTime()) / 1000)
+        : 0;
 
       const interview = await storage.updateInterview(interviewId, {
         status: 'completed',
@@ -2281,8 +2500,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         voiceScore,
         overallScore,
         improvements,
-        completedAt: new Date(),
-        duration: Math.floor(Math.random() * 1800) + 600,
+        completedAt,
+        duration: durationSeconds,
       });
 
       const resume = await storage.getResumeByUserId(userId);
@@ -2292,48 +2511,56 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const jds = await storage.getJobDescriptionsByUserId(userId);
       const jdScore = jds.length > 0 ? (jds[0].matchScore || 50) : 50;
 
-      const personality = await analyzePersonality(questions);
-      const { prob30, prob60, prob90, factors } = await calculatePlacementProbability(
-        technicalScore,
-        communicationScore,
-        emotionScore,
-        voiceScore,
-        resumeScore,
-        jdScore,
-        50, // GD score
-        personality
-      );
+      // Run heavy personality and placement predictions in background
+      (async () => {
+        try {
+          const personality = await analyzePersonality(questions);
+          const { prob30, prob60, prob90, factors } = await calculatePlacementProbability(
+            technicalScore,
+            communicationScore,
+            emotionScore,
+            voiceScore,
+            resumeScore,
+            jdScore,
+            50, // GD score
+            personality
+          );
 
-      const existingPlacement = await storage.getPlacementProbabilityByUserId(userId);
-      if (existingPlacement) {
-        await storage.updatePlacementProbability(existingPlacement.id, {
-          probability30Days: prob30,
-          probability60Days: prob60,
-          probability90Days: prob90,
-          confidence: 60 + answeredQuestions.length * 5,
-          factors,
-        });
-      } else {
-        await storage.createPlacementProbability({
-          userId,
-          probability30Days: prob30,
-          probability60Days: prob60,
-          probability90Days: prob90,
-          confidence: 40 + answeredQuestions.length * 5,
-          factors,
-        });
-      }
+          const existingPlacement = await storage.getPlacementProbabilityByUserId(userId);
+          if (existingPlacement) {
+            await storage.updatePlacementProbability(existingPlacement.id, {
+              probability30Days: prob30,
+              probability60Days: prob60,
+              probability90Days: prob90,
+              confidence: 60 + answeredQuestions.length * 5,
+              factors,
+            });
+          } else {
+            await storage.createPlacementProbability({
+              userId,
+              probability30Days: prob30,
+              probability60Days: prob60,
+              probability90Days: prob90,
+              confidence: 40 + answeredQuestions.length * 5,
+              factors,
+            });
+          }
 
-      // Personality already calculated above
-      const existingPersonality = await storage.getPersonalityByUserId(userId);
-      if (existingPersonality) {
-        await storage.updatePersonalityAssessment(existingPersonality.id, personality);
-      } else {
-        await storage.createPersonalityAssessment({
-          userId,
-          ...personality,
-        });
-      }
+          // Personality already calculated above
+          const existingPersonality = await storage.getPersonalityByUserId(userId);
+          if (existingPersonality) {
+            await storage.updatePersonalityAssessment(existingPersonality.id, personality);
+          } else {
+            await storage.createPersonalityAssessment({
+              userId,
+              ...personality,
+            });
+          }
+          console.log("Background processing for placement and personality completed.");
+        } catch (bgError) {
+          console.error("Error in background placement calculation:", bgError);
+        }
+      })();
 
       res.json(interview);
     } catch (error) {
@@ -2800,7 +3027,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const { eq, and } = await import("drizzle-orm");
 
       const slotId = req.params.slotId;
-      const userId = req.user.id;
+      const userId = req.userId;
 
       // Check if slot exists and is available
       const slot = await db.select()
@@ -2859,30 +3086,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     }
   });
 
-  // Global Settings endpoints for admin controls (e.g., pause/resume interviews)
-  app.get('/api/admin/settings', isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const settings = await storage.getGlobalSettings();
-      res.json(settings);
-    } catch (error) {
-      console.error("Error fetching global settings:", error);
-      res.status(500).json({ message: "Failed to fetch settings" });
-    }
-  });
-
-  app.post('/api/admin/settings', isAuthenticated, isAdmin, async (req, res) => {
-    try {
-      const { key, value } = req.body;
-      if (!key || value === undefined) {
-        return res.status(400).json({ message: "key and value are required" });
-      }
-      const setting = await storage.setGlobalSetting(key, String(value));
-      res.json(setting);
-    } catch (error) {
-      console.error("Error updating global setting:", error);
-      res.status(500).json({ message: "Failed to update setting" });
-    }
-  });
+  // NOTE: Global Settings endpoints are defined above (lines ~2642-2674) — duplicate removed
 
   return server;
 }

@@ -30,6 +30,7 @@ export default function InterviewsPage() {
 
   const { data: interviews, isLoading } = useQuery<Interview[]>({
     queryKey: ["/api/interviews"],
+    select: (data: any) => Array.isArray(data) ? data : (data?.interviews || []),
   });
 
   const filteredInterviews = interviews?.filter(interview => {

@@ -4,6 +4,7 @@
  */
 
 const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8000';
+const AI_SERVICE_API_KEY = process.env.AI_SERVICE_API_KEY || '';
 
 function sanitizeGeneratedQuestion(question?: string | null): string | null {
   if (!question) return null;
@@ -80,6 +81,10 @@ async function callPythonService(endpoint: string, method: 'GET' | 'POST', body?
       method,
       headers: {},
     };
+
+    if (AI_SERVICE_API_KEY) {
+      (options.headers as Record<string, string>)['X-API-Key'] = AI_SERVICE_API_KEY;
+    }
 
     if (file) {
       // For file uploads - use FormData (available in Node.js 18+)
@@ -227,12 +232,21 @@ export async function analyzeSkillGap(resumeText: string, jdText: string) {
   return result?.data || null;
 }
 
-export async function generateQuestion(questionType: string, company?: string, context?: string, difficulty?: 'easy' | 'medium' | 'hard') {
+export async function generateQuestion(
+  questionType: string,
+  company?: string,
+  context?: string,
+  difficulty?: 'easy' | 'medium' | 'hard',
+  roundType?: string,
+  includeTrending?: boolean
+) {
   const result = await callPythonService('/api/llm/generate-question', 'POST', {
     question_type: questionType,
     company: company,
     context: context,
-    difficulty: difficulty || 'medium'
+    difficulty: difficulty || 'medium',
+    round_type: roundType,
+    include_trending: includeTrending ?? true
   });
   return sanitizeGeneratedQuestion(result?.question);
 }

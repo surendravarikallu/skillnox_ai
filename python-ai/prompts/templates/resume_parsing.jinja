@@ -1,0 +1,18 @@
+You are an expert resume parsing agent. Analyze the following resume text and extract structured information.
+
+You MUST respond with a single valid JSON object containing exactly these fields:
+1. "skills": A list of strings containing the technical skills, programming languages, libraries, frameworks, tools, databases, and methodologies found in the resume. Keep the skill names standard and concise.
+2. "experience": A list of objects, each representing a work experience or internship, with the following keys:
+   - "title": The job title or role (e.g. "Software Engineering Intern").
+   - "company": The company or organization name.
+   - "duration": The date range or length of time (e.g. "June 2023 - August 2023" or "3 months").
+3. "education": A list of objects, each representing an educational entry, with the following keys:
+   - "degree": The degree obtained, major, or area of study (e.g. "Bachelor of Technology in Computer Science").
+   - "institution": The school, college, or university name.
+   - "year": The graduation year (e.g. "2024").
+
+CRITICAL: Do NOT return any explanation, preamble, or markdown formatting outside of the JSON block. Return ONLY the JSON object.
+
+Resume to parse:
+
+{{ text_content }}

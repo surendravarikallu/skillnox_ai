@@ -9,6 +9,7 @@ interface UseVoiceToTextReturn {
   startListening: () => void;
   stopListening: () => void;
   clearTranscript: () => void;
+  hardResetTranscript: () => void;
   error: string | null;
 }
 
@@ -51,19 +52,61 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       setError(null);
     };
 
+    const TECH_TERM_MAP: Record<string, string> = {
+      "re act": "React",
+      "knowed": "Node",
+      "node jess": "Node.js",
+      "typescript": "TypeScript",
+      "javascript": "JavaScript",
+      "pay thon": "Python",
+      "sequel": "SQL",
+      "post grass": "PostgreSQL",
+      "mongodeebee": "MongoDB",
+      "express jess": "Express.js",
+      "skill knocks": "Skillnox",
+      "get hub": "GitHub",
+      "get lab": "GitLab",
+      "docker": "Docker",
+      "kubernetes": "Kubernetes",
+      "aws": "AWS",
+      "azure": "Azure",
+      "api": "API",
+      "rest api": "REST API",
+      "json": "JSON",
+      "html": "HTML",
+      "css": "CSS"
+    };
+
+    const cleanupTranscript = (text: string) => {
+      let cleaned = text;
+      Object.entries(TECH_TERM_MAP).forEach(([misheard, correct]) => {
+        const regex = new RegExp(`\\b${misheard}\\b`, 'gi');
+        cleaned = cleaned.replace(regex, correct);
+      });
+      return cleaned;
+    };
+
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       let interimTranscript = "";
       for (let i = event.resultIndex; i < event.results.length; i++) {
         const result = event.results[i];
         const transcriptText = result[0].transcript;
         if (result.isFinal) {
-          finalTranscriptRef.current += transcriptText + " ";
+          // Basic auto-capitalization and punctuation for final results
+          let processed = transcriptText.trim();
+          if (processed.length > 0) {
+            processed = processed.charAt(0).toUpperCase() + processed.slice(1);
+            if (!/[.!?]$/.test(processed)) processed += ".";
+            finalTranscriptRef.current += processed + " ";
+          }
         } else {
           interimTranscript += transcriptText;
         }
       }
-      const cleanFinal = finalTranscriptRef.current.replace(/\s+/g, ' ');
-      setTranscript(cleanFinal + interimTranscript);
+      const cleanFinal = finalTranscriptRef.current.replace(/\s+/g, ' ').trim();
+      const rawFull = (cleanFinal + " " + interimTranscript).trim();
+      const fullTranscript = cleanupTranscript(rawFull);
+      setTranscript(fullTranscript);
     };
 
     recognition.onerror = (event: any) => {
@@ -124,6 +167,30 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     lastProcessedIndexRef.current = 0;
   }, []);
 
+  const hardResetTranscript = useCallback(() => {
+    console.log("performing hard reset of transcript...");
+    // 1. Stop current recognition and prevent auto-restart
+    autoRestartRef.current = false;
+    if (recognitionRef.current) {
+      try {
+        recognitionRef.current.abort(); // abort is faster than stop()
+      } catch (e) {
+        console.error("Error aborting recognition:", e);
+      }
+      recognitionRef.current = null;
+    }
+
+    // 2. Clear all state and refs
+    setTranscript("");
+    finalTranscriptRef.current = "";
+    lastProcessedIndexRef.current = 0;
+    setIsListening(false);
+    setConnectionState("disconnected");
+
+    // 3. The caller (InterviewRoom) can decide to call startListening() again if needed
+    // or we can wait a tick and restart if it was active.
+  }, []);
+
   return {
     transcript,
     isListening,
@@ -131,6 +198,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     startListening,
     stopListening,
     clearTranscript,
+    hardResetTranscript,
     error,
   };
 }
@@ -142,6 +210,7 @@ interface SpeechRecognition extends EventTarget {
   lang: string;
   start: () => void;
   stop: () => void;
+  abort: () => void;
   onstart: (() => void) | null;
   onresult: ((event: SpeechRecognitionEvent) => void) | null;
   onerror: ((event: any) => void) | null;
