@@ -9,6 +9,7 @@ import {
   gdSessions,
   systemLogs,
   globalSettings,
+  scheduledCampaigns,
   type User,
   type UpsertUser,
   type Resume,
@@ -27,6 +28,8 @@ import {
   type InsertGdSession,
   type GlobalSetting,
   type InsertGlobalSetting,
+  type ScheduledCampaign,
+  type InsertScheduledCampaign,
 } from "@shared/schema";
 import { db } from "./db";
 import { eq, desc, and, sql } from "drizzle-orm";
@@ -91,6 +94,13 @@ export interface IStorage {
   getGlobalSettings(): Promise<GlobalSetting[]>;
   getGlobalSetting(key: string): Promise<GlobalSetting | undefined>;
   setGlobalSetting(key: string, value: string, description?: string): Promise<GlobalSetting>;
+
+  // Scheduled Campaign operations
+  getScheduledCampaigns(): Promise<ScheduledCampaign[]>;
+  createScheduledCampaign(campaign: InsertScheduledCampaign): Promise<ScheduledCampaign>;
+  deleteScheduledCampaign(id: string): Promise<void>;
+  updateScheduledCampaign(id: string, data: Partial<InsertScheduledCampaign>): Promise<ScheduledCampaign>;
+  getInterviewByShareToken(shareToken: string): Promise<Interview | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -381,6 +391,30 @@ export class DatabaseStorage implements IStorage {
       })
       .returning();
     return setting;
+  }
+
+  // Scheduled Campaign operations
+  async getScheduledCampaigns(): Promise<ScheduledCampaign[]> {
+    return await db.select().from(scheduledCampaigns).orderBy(desc(scheduledCampaigns.scheduledAt));
+  }
+
+  async createScheduledCampaign(campaign: InsertScheduledCampaign): Promise<ScheduledCampaign> {
+    const [created] = await db.insert(scheduledCampaigns).values(campaign).returning();
+    return created;
+  }
+
+  async deleteScheduledCampaign(id: string): Promise<void> {
+    await db.delete(scheduledCampaigns).where(eq(scheduledCampaigns.id, id));
+  }
+
+  async updateScheduledCampaign(id: string, data: Partial<InsertScheduledCampaign>): Promise<ScheduledCampaign> {
+    const [updated] = await db.update(scheduledCampaigns).set(data).where(eq(scheduledCampaigns.id, id)).returning();
+    return updated;
+  }
+
+  async getInterviewByShareToken(shareToken: string): Promise<Interview | undefined> {
+    const [interview] = await db.select().from(interviews).where(eq(interviews.shareToken, shareToken));
+    return interview;
   }
 }
 
