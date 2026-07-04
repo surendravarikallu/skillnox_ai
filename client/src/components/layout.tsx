@@ -39,7 +39,8 @@ import {
   BarChart3,
   Briefcase,
   MessageSquare,
-  Activity
+  Activity,
+  Calendar
 } from "lucide-react";
 
 const studentNavItems = [
@@ -53,6 +54,7 @@ const studentNavItems = [
 const adminNavItems = [
   { title: "Overview", path: "/admin", icon: LayoutDashboard },
   { title: "Students", path: "/admin/students", icon: Users },
+  { title: "Scheduler", path: "/admin/scheduler", icon: Calendar },
   { title: "Assign Interview", path: "/admin/assign", icon: Brain },
   { title: "Analytics", path: "/admin/analytics", icon: BarChart3 },
   { title: "AI Status", path: "/ai-status", icon: Activity },
