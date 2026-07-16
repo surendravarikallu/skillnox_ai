@@ -62,3 +62,10 @@ huggingface/
 *.pdf
 build_output*
 llm_test_output.txt
+
+# Temporary scratch files
+scratch/
+
+# Kaggle Output compiled cache & temporary push directory
+python-ai/training/kaggle_output/unsloth_compiled_cache/
+python-ai/datasets/kaggle_push/
