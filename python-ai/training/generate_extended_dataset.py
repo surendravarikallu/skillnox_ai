@@ -208,7 +208,81 @@ TECHNICAL_QUESTIONS = {
         ("Explain the difference between Server-Side Rendering (SSR) and React Server Components.", "medium"),
         ("What is WebAssembly (WASM) and how does it enhance client-side web application performance?", "medium"),
     ],
+    "aptitude": [
+        ("A train running at 60 km/h crosses a platform in 30 seconds. If the platform is 200m long, what is the length of the train?", "easy"),
+        ("If 6 workers can complete a task in 12 days, how many days will 8 workers take?", "easy"),
+        ("A shopkeeper sells an item at 20% profit. If the cost price is Rs.500, what is the selling price?", "easy"),
+        ("What is the probability of drawing two aces from a standard deck of 52 cards?", "medium"),
+        ("A pipe can fill a tank in 6 hours and another can empty it in 8 hours. How long to fill if both are open?", "medium"),
+        ("If the ratio of boys to girls is 3:5 and total students are 120, how many girls are there?", "easy"),
+        ("A man invested Rs.10000 at 8% simple interest. What is the amount after 3 years?", "easy"),
+        ("Find the next number in the series: 2, 6, 12, 20, 30, ?", "medium"),
+        ("If the average of 5 numbers is 20 and one number is removed, the average becomes 15. What was removed?", "medium"),
+        ("A boat travels 36 km upstream in 6 hours and 36 km downstream in 4 hours. Find the speed of the stream.", "medium"),
+        ("Two dice are thrown. What is the probability that the sum is 7?", "medium"),
+        ("Complete the pattern: AZ, BY, CX, DW, ?", "easy"),
+        ("If 15% of a number is 45, what is 25% of that number?", "easy"),
+        ("A clock shows 3:15. What is the angle between the hour and minute hand?", "hard"),
+        ("In how many ways can 5 people be seated in a row?", "medium"),
+    ],
+    "coding": [
+        ("Write a function to reverse a string without using built-in reverse methods.", "easy"),
+        ("Implement a function to check if a string is a palindrome.", "easy"),
+        ("Write a function to find the second largest element in an array.", "easy"),
+        ("Implement binary search on a sorted array.", "medium"),
+        ("Write a function to detect if a linked list has a cycle.", "medium"),
+        ("Implement a stack using two queues.", "medium"),
+        ("Write a function to merge two sorted arrays.", "medium"),
+        ("Implement a function to find all permutations of a string.", "hard"),
+        ("Write a function for level-order traversal of a binary tree.", "medium"),
+        ("Implement an LRU cache with O(1) get and put operations.", "hard"),
+        ("Write a function to find the longest common subsequence of two strings.", "hard"),
+        ("Implement Dijkstra's shortest path algorithm.", "hard"),
+        ("Write a function to serialize and deserialize a binary tree.", "hard"),
+        ("Implement a min-heap data structure from scratch.", "medium"),
+        ("Write a function to solve the N-Queens problem.", "hard"),
+    ],
 }
+
+APTITUDE_TOPICS = [
+    "Quantitative Aptitude", "Logical Reasoning", "Verbal Ability",
+    "Data Interpretation", "Number Series", "Coding-Decoding",
+    "Blood Relations", "Seating Arrangement", "Syllogisms",
+    "Probability and Permutations",
+]
+
+GD_TOPICS = [
+    "Is AI a threat to jobs?",
+    "Work from home vs work from office",
+    "Is social media beneficial or harmful?",
+    "Should coding be mandatory in schools?",
+    "Is startup culture better than corporate culture?",
+    "Impact of automation on the Indian IT industry",
+    "Should higher education be free?",
+    "Technology vs privacy — where do we draw the line?",
+    "Is remote work sustainable long-term?",
+    "Indian IT companies vs product companies — career growth comparison",
+    "Is a college degree still relevant in the tech industry?",
+    "Should companies hire based on skills or degrees?",
+    "Climate change and the role of technology",
+    "Digital India — successes and challenges",
+    "Is competitive programming necessary for software engineering?",
+]
+
+SITUATIONAL_QUESTIONS = [
+    ("Your team lead asks you to cut corners on testing to meet a deadline. What do you do?", "medium"),
+    ("A client reports a critical production bug at 11 PM on a Friday. How do you handle it?", "medium"),
+    ("You discover a coworker is taking credit for your work in meetings. What's your approach?", "hard"),
+    ("Your manager assigns you a project in a technology you've never used. How do you proceed?", "medium"),
+    ("Two senior developers on your team disagree on the architecture. How do you mediate?", "hard"),
+    ("You realize the feature you shipped has a security vulnerability. What steps do you take?", "hard"),
+    ("A junior developer on your team is consistently underperforming. How do you help?", "medium"),
+    ("The client changes requirements mid-sprint. How do you handle the scope change?", "medium"),
+    ("You're offered a promotion but it means managing your former peers. What do you consider?", "hard"),
+    ("During code review, you find your manager's code has bugs. How do you address it?", "medium"),
+    ("Your project deadline conflicts with another team's dependency. How do you resolve it?", "medium"),
+    ("You strongly disagree with a technical decision made by the team. What do you do?", "medium"),
+]
 
 HR_QUESTIONS = [
     ("Tell me about yourself.", "easy"),
@@ -231,6 +305,11 @@ HR_QUESTIONS = [
     ("How do you handle disagreements with your manager?", "hard"),
     ("What makes you unique compared to other candidates?", "medium"),
     ("Describe a time you went above and beyond.", "medium"),
+    ("What is your management style?", "medium"),
+    ("How do you handle work-life balance?", "easy"),
+    ("What do you do when you're stuck on a problem?", "medium"),
+    ("Why are you leaving your current job?", "medium"),
+    ("What are your long-term career goals?", "medium"),
 ]
 
 BEHAVIORAL_QUESTIONS = [
@@ -249,6 +328,11 @@ BEHAVIORAL_QUESTIONS = [
     ("Give an example of how you handled multiple priorities.", "medium"),
     ("Tell me about a time you made a mistake and how you fixed it.", "medium"),
     ("Describe a time you improved a process or workflow.", "medium"),
+    ("Tell me about a time you mentored someone.", "medium"),
+    ("Describe a situation where you had to work with limited resources.", "medium"),
+    ("Give an example of a creative solution you came up with.", "hard"),
+    ("Tell me about a time you had to deliver bad news.", "hard"),
+    ("Describe a time you successfully managed stakeholder expectations.", "hard"),
 ]
 
 
@@ -265,6 +349,7 @@ def generate_answer_quality(score_range: str) -> Dict:
                 "provides specific examples", "includes metrics",
                 "demonstrates deep understanding", "structured response",
                 "covers edge cases", "mentions real experience",
+                "uses STAR method effectively", "quantifies impact",
             ],
             "feedback_template": "Excellent response with {detail}. {strength}.",
         }
@@ -274,6 +359,7 @@ def generate_answer_quality(score_range: str) -> Dict:
             "characteristics": [
                 "solid understanding", "relevant examples",
                 "good structure", "could add more depth",
+                "demonstrates awareness", "reasonable approach",
             ],
             "feedback_template": "Good answer with {detail}. Could improve by {suggestion}.",
         }
@@ -283,6 +369,7 @@ def generate_answer_quality(score_range: str) -> Dict:
             "characteristics": [
                 "correct but generic", "lacks depth",
                 "missing examples", "surface-level understanding",
+                "needs more specificity", "textbook answer",
             ],
             "feedback_template": "Average answer. {weakness}. Needs {suggestion}.",
         }
@@ -292,6 +379,7 @@ def generate_answer_quality(score_range: str) -> Dict:
             "characteristics": [
                 "vague", "incorrect details", "off-topic",
                 "too brief", "no examples", "misunderstands concept",
+                "factually wrong", "lacks confidence",
             ],
             "feedback_template": "Below average. {weakness}. Must {suggestion}.",
         }
@@ -323,7 +411,35 @@ def generate_resume_analysis_example() -> Dict:
     num_projects = random.randint(1, 3)
     projects = random.sample(PROJECTS[project_category], min(num_projects, len(PROJECTS[project_category])))
 
-    resume_text = f"{name}\n{role}\nSkills: {', '.join(skills)}\nExperience: {exp_years} years\nProjects: {', '.join(projects)}."
+    # Add education variety
+    colleges = [
+        "IIT Bombay", "IIT Delhi", "NIT Trichy", "BITS Pilani", "VIT Vellore",
+        "SRM University", "JNTU Hyderabad", "Anna University", "Delhi University",
+        "Pune University", "Mumbai University", "Amity University", "LPU",
+        "Manipal Institute", "IIIT Hyderabad", "DAIICT Gandhinagar",
+    ]
+    degrees = ["B.Tech CSE", "B.Tech IT", "B.E. Computer Science", "BCA", "MCA", "M.Tech CSE", "B.Sc CS"]
+    college = random.choice(colleges)
+    degree = random.choice(degrees)
+    cgpa = round(random.uniform(6.0, 9.8), 1)
+
+    # More detailed resume
+    resume_parts = [f"{name}", f"{role}", f"Education: {degree} from {college} (CGPA: {cgpa})"]
+    resume_parts.append(f"Skills: {', '.join(skills)}")
+    resume_parts.append(f"Experience: {exp_years} years")
+    resume_parts.append(f"Projects: {', '.join(projects)}.")
+
+    # Add certifications sometimes
+    if random.random() > 0.5:
+        certs = random.sample([
+            "AWS Certified Cloud Practitioner", "Google Cloud Associate",
+            "Azure Fundamentals", "Kubernetes Administrator",
+            "TensorFlow Developer Certificate", "MongoDB Certified Developer",
+            "Scrum Master Certification", "Oracle Java Certified",
+        ], random.randint(1, 2))
+        resume_parts.append(f"Certifications: {', '.join(certs)}")
+
+    resume_text = "\n".join(resume_parts)
 
     # Optionally add JD
     has_jd = random.random() > 0.3
@@ -346,12 +462,16 @@ def generate_resume_analysis_example() -> Dict:
         strengths.append(f"Solid {exp_years} years of experience")
     if len(projects) >= 2:
         strengths.append("Multiple relevant project experiences")
+    if cgpa >= 8.0:
+        strengths.append(f"Strong academic record (CGPA: {cgpa})")
     strengths.append(f"Good {skills[0]} expertise" if skills else "Shows initiative")
-    strengths = strengths[:3]
+    strengths = strengths[:4]
 
     suggestions = []
     if exp_years < 2:
         suggestions.append("Add more project experience or internships")
+    if cgpa < 7.0:
+        suggestions.append("Compensate lower CGPA with strong project portfolio")
     suggestions.append("Include measurable impact metrics")
     suggestions.append("Add testing and CI/CD experience")
     suggestions = suggestions[:3]
@@ -378,13 +498,17 @@ def generate_resume_analysis_example() -> Dict:
 
 def generate_answer_eval_example() -> Dict:
     """Generate one answer evaluation training example."""
-    # Pick question
-    topic = random.choice(list(TECHNICAL_QUESTIONS.keys()) + ["hr", "behavioral"])
+    # Pick question — now includes aptitude, coding, situational
+    topic = random.choice(
+        list(TECHNICAL_QUESTIONS.keys()) + ["hr", "behavioral", "situational"]
+    )
 
     if topic in TECHNICAL_QUESTIONS:
         q, diff = random.choice(TECHNICAL_QUESTIONS[topic])
     elif topic == "hr":
         q, diff = random.choice(HR_QUESTIONS)
+    elif topic == "situational":
+        q, diff = random.choice(SITUATIONAL_QUESTIONS)
     else:
         q, diff = random.choice(BEHAVIORAL_QUESTIONS)
 
@@ -436,7 +560,7 @@ def generate_answer_eval_example() -> Dict:
 
 def generate_question_gen_example() -> Dict:
     """Generate one question generation training example."""
-    q_type = random.choice(["technical", "hr", "behavioral", "project", "company"])
+    q_type = random.choice(["technical", "hr", "behavioral", "project", "company", "aptitude", "situational", "coding"])
     company = random.choice(ALL_COMPANIES) if q_type == "company" or random.random() > 0.6 else None
 
     if q_type == "technical":
@@ -449,6 +573,15 @@ def generate_question_gen_example() -> Dict:
     elif q_type == "behavioral":
         q, diff = random.choice(BEHAVIORAL_QUESTIONS)
         context = random.choice(["Team collaboration", "Leadership", "Conflict resolution", "Problem solving"])
+    elif q_type == "aptitude":
+        q, diff = random.choice(TECHNICAL_QUESTIONS["aptitude"])
+        context = f"{random.choice(APTITUDE_TOPICS)} for campus placement"
+    elif q_type == "situational":
+        q, diff = random.choice(SITUATIONAL_QUESTIONS)
+        context = random.choice(["Workplace ethics", "Team dynamics", "Client management", "Crisis handling"])
+    elif q_type == "coding":
+        q, diff = random.choice(TECHNICAL_QUESTIONS["coding"])
+        context = f"Coding round for {random.choice(ROLES)}"
     elif q_type == "project":
         cat = random.choice(list(PROJECTS.keys()))
         proj = random.choice(PROJECTS[cat])
@@ -504,60 +637,133 @@ def generate_communication_eval_example() -> Dict:
     }
 
 
+def generate_gd_eval_example() -> Dict:
+    """Generate one group discussion evaluation example."""
+    topic = random.choice(GD_TOPICS)
+    quality = random.choices(
+        ["excellent", "good", "average", "poor"],
+        weights=[15, 35, 30, 20],
+        k=1,
+    )[0]
+
+    if quality == "excellent":
+        response = f"I'd like to present a balanced perspective on '{topic}'. On one hand, there are significant benefits such as increased efficiency and cost reduction. On the other hand, we must consider potential drawbacks like job displacement. According to recent industry reports, companies that adopted this approach saw a {random.randint(15,40)}% improvement in productivity. I propose a middle-ground approach that leverages the advantages while mitigating risks through proper training and transition programs."
+        score = random.randint(82, 95)
+    elif quality == "good":
+        response = f"Regarding '{topic}', I believe there are valid points on both sides. The key advantage is improved efficiency. However, we need to be mindful of the challenges. In my view, a phased approach would work best, where we gradually implement changes while monitoring the impact."
+        score = random.randint(65, 81)
+    elif quality == "average":
+        response = f"I think '{topic}' is an important topic. There are pros and cons. Some people support it and some don't. I personally think it's good if done properly."
+        score = random.randint(45, 64)
+    else:
+        response = f"I agree with what others have said about '{topic}'. It's complicated."
+        score = random.randint(20, 44)
+
+    return {
+        "instruction": "Evaluate the group discussion response.",
+        "input": {
+            "topic": topic,
+            "response": response,
+        },
+        "output": {
+            "score": score,
+            "content_quality": random.choice(["Strong", "Good", "Average", "Weak"]) if quality in ["excellent", "good"] else random.choice(["Average", "Weak", "Poor"]),
+            "communication": random.choice(["Articulate", "Clear", "Adequate", "Needs improvement"]),
+            "leadership": random.choice(["Initiative shown", "Collaborative", "Passive", "Minimal"]),
+            "feedback": f"{'Strong' if quality == 'excellent' else 'Good' if quality == 'good' else 'Average' if quality == 'average' else 'Weak'} GD performance. {'Demonstrated leadership and used data to support arguments.' if quality == 'excellent' else 'Made relevant points but could use more data.' if quality == 'good' else 'Needs to contribute more original thoughts and examples.' if quality == 'average' else 'Must actively participate and present structured arguments.'}",
+        },
+    }
+
+
+def generate_aptitude_eval_example() -> Dict:
+    """Generate one aptitude answer evaluation example."""
+    q, diff = random.choice(TECHNICAL_QUESTIONS["aptitude"])
+
+    quality = random.choices(
+        ["correct_with_explanation", "correct_no_explanation", "wrong_answer", "partial"],
+        weights=[30, 20, 30, 20],
+        k=1,
+    )[0]
+
+    if quality == "correct_with_explanation":
+        answer = f"Let me solve this step by step. First, I identify the key variables. Then applying the relevant formula, I calculate the answer. The final answer is the computed value based on the given constraints."
+        score = random.randint(85, 98)
+        feedback = "Excellent! Correct answer with clear step-by-step explanation. Shows strong problem-solving approach."
+    elif quality == "correct_no_explanation":
+        answer = "The answer is 42."
+        score = random.randint(60, 75)
+        feedback = "Correct answer but lacks explanation. In interviews, always show your working — it demonstrates your thought process."
+    elif quality == "wrong_answer":
+        answer = "I think the answer is 25. I used the basic formula and calculated directly."
+        score = random.randint(15, 40)
+        feedback = "Incorrect answer. Review the fundamentals of this topic. Practice similar problems and focus on understanding the concept, not just the formula."
+    else:
+        answer = "I started solving it by identifying the variables but got confused in the middle. I think the approach involves using the rate formula."
+        score = random.randint(40, 60)
+        feedback = "Partial attempt. Good that you identified the approach but couldn't complete the solution. Practice more problems of this type to build speed and accuracy."
+
+    return {
+        "instruction": "Evaluate the aptitude test answer.",
+        "input": {"question": q, "answer": answer, "difficulty": diff},
+        "output": {"score": score, "feedback": feedback},
+    }
+
+
 # ---------------------------------------------------------------------------
 # Main generator
 # ---------------------------------------------------------------------------
 
 def generate_dataset(
-    num_resume: int = 8000,
-    num_answer: int = 10000,
-    num_question: int = 5000,
-    num_communication: int = 2000,
+    num_resume: int = 15000,
+    num_answer: int = 15000,
+    num_question: int = 10000,
+    num_communication: int = 3000,
+    num_gd: int = 3000,
+    num_aptitude: int = 4000,
     output_dir: str = None,
 ) -> str:
-    """Generate the full extended dataset."""
+    """Generate the full extended dataset (50,000 examples)."""
     if output_dir is None:
         output_dir = str(Path(__file__).parent.parent / "datasets")
 
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, "extended_training_data.jsonl")
 
-    total = num_resume + num_answer + num_question + num_communication
+    total = num_resume + num_answer + num_question + num_communication + num_gd + num_aptitude
     print(f"Generating {total:,} training examples...")
-    print(f"  Resume Analysis: {num_resume:,}")
-    print(f"  Answer Evaluation: {num_answer:,}")
+    print(f"  Resume Analysis:     {num_resume:,}")
+    print(f"  Answer Evaluation:   {num_answer:,}")
     print(f"  Question Generation: {num_question:,}")
-    print(f"  Communication Eval: {num_communication:,}")
+    print(f"  Communication Eval:  {num_communication:,}")
+    print(f"  Group Discussion:    {num_gd:,}")
+    print(f"  Aptitude Eval:       {num_aptitude:,}")
+
+    generators = [
+        (num_resume, generate_resume_analysis_example, "Resume"),
+        (num_answer, generate_answer_eval_example, "Answer Eval"),
+        (num_question, generate_question_gen_example, "Question Gen"),
+        (num_communication, generate_communication_eval_example, "Communication"),
+        (num_gd, generate_gd_eval_example, "Group Discussion"),
+        (num_aptitude, generate_aptitude_eval_example, "Aptitude"),
+    ]
 
     count = 0
+    all_examples = []
+
+    for num, gen_fn, label in generators:
+        for i in range(num):
+            all_examples.append(gen_fn())
+            count += 1
+            if count % 10000 == 0:
+                print(f"  Generated {count:,}/{total:,} examples...")
+
+    # Shuffle all examples for better training
+    random.seed(42)
+    random.shuffle(all_examples)
+
     with open(output_path, "w", encoding="utf-8") as f:
-        for i in range(num_resume):
-            example = generate_resume_analysis_example()
+        for example in all_examples:
             f.write(json.dumps(example, ensure_ascii=False) + "\n")
-            count += 1
-            if count % 5000 == 0:
-                print(f"  Generated {count:,}/{total:,} examples...")
-
-        for i in range(num_answer):
-            example = generate_answer_eval_example()
-            f.write(json.dumps(example, ensure_ascii=False) + "\n")
-            count += 1
-            if count % 5000 == 0:
-                print(f"  Generated {count:,}/{total:,} examples...")
-
-        for i in range(num_question):
-            example = generate_question_gen_example()
-            f.write(json.dumps(example, ensure_ascii=False) + "\n")
-            count += 1
-            if count % 5000 == 0:
-                print(f"  Generated {count:,}/{total:,} examples...")
-
-        for i in range(num_communication):
-            example = generate_communication_eval_example()
-            f.write(json.dumps(example, ensure_ascii=False) + "\n")
-            count += 1
-            if count % 5000 == 0:
-                print(f"  Generated {count:,}/{total:,} examples...")
 
     print(f"\n[OK] Generated {count:,} examples -> {output_path}")
 
