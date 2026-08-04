@@ -18,6 +18,7 @@ import {
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { useAuth } from "@/hooks/useAuth";
+import { BorderBeam } from "@/components/ui/border-beam";
 import { COMPANIES } from "@shared/schema";
 import type { User } from "@shared/schema";
 
@@ -28,7 +29,7 @@ const interviewTypes = [
     description: 'Data structures, algorithms, coding problems, and system design questions',
     icon: Brain,
     color: 'bg-blue-100 dark:bg-blue-900 text-blue-600 dark:text-blue-300',
-    duration: '10-15 min'
+    duration: '15-20 min'
   },
   {
     id: 'hr',
@@ -36,7 +37,7 @@ const interviewTypes = [
     description: 'Behavioral questions, culture fit, salary expectations, and career goals',
     icon: Users,
     color: 'bg-green-100 dark:bg-green-900 text-green-600 dark:text-green-300',
-    duration: '5-10 min'
+    duration: '15-20 min'
   },
   {
     id: 'behavioral',
@@ -44,7 +45,7 @@ const interviewTypes = [
     description: 'STAR method questions about past experiences and situational responses',
     icon: MessageSquare,
     color: 'bg-purple-100 dark:bg-purple-900 text-purple-600 dark:text-purple-300',
-    duration: '5-10 min'
+    duration: '15-20 min'
   },
   {
     id: 'gd',
@@ -52,7 +53,7 @@ const interviewTypes = [
     description: 'Practice GD rounds with AI-generated topics and real-time evaluation',
     icon: Users,
     color: 'bg-pink-100 dark:bg-pink-900 text-pink-600 dark:text-pink-300',
-    duration: '5-10 min'
+    duration: '15-20 min'
   },
   {
     id: 'project',
@@ -60,7 +61,7 @@ const interviewTypes = [
     description: 'Explain your projects, architecture decisions, and technical challenges',
     icon: FolderKanban,
     color: 'bg-yellow-100 dark:bg-yellow-900 text-yellow-600 dark:text-yellow-300',
-    duration: '5-10 min'
+    duration: '15-20 min'
   },
   {
     id: 'communication',
@@ -68,7 +69,7 @@ const interviewTypes = [
     description: 'Verbal communication, clarity, tone, accent, pace, and articulation assessment',
     icon: MessageSquare,
     color: 'bg-teal-100 dark:bg-teal-900 text-teal-600 dark:text-teal-300',
-    duration: '5-10 min'
+    duration: '15-20 min'
   }
 ];
 
@@ -121,10 +122,80 @@ export default function InterviewStart() {
   const [selectedMode, setSelectedMode] = useState<'full' | 'combined'>('combined');
   const [trendingEnabled, setTrendingEnabled] = useState<boolean>(true);
 
-  // Redirect if not admin
+  // Fetch student's interviews if student
+  const { data: studentInterviews, isLoading: loadingStudentInterviews } = useQuery<any[]>({
+    queryKey: ['/api/interviews'],
+    enabled: !!user && user.role === 'student',
+    select: (data: any) => Array.isArray(data) ? data : (data?.interviews || []),
+  });
+
+  // Fetch student slot status
+  const { data: slotInfo } = useQuery<{
+    slotDate: string | null;
+    slotStartTime: string | null;
+    slotEndTime: string | null;
+    isSlotActive: boolean;
+    inWaitingRoom: boolean;
+    lockReason: string | null;
+  }>({
+    queryKey: ['/api/slots/my-slot'],
+    enabled: !!user && user.role === 'student',
+  });
+
+  // Auto-redirect student if active/pending interview exists
+  const activeInterview = studentInterviews?.find(i => i.status === 'in_progress' || i.status === 'pending');
+
   if (user && user.role !== 'admin') {
-    navigate('/');
-    return null;
+    if (loadingStudentInterviews) {
+      return (
+        <div className="flex items-center justify-center min-h-[60vh]">
+          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
+        </div>
+      );
+    }
+
+    if (activeInterview) {
+      navigate(`/interview/${activeInterview.id}/room`);
+      return null;
+    }
+
+    return (
+      <div className="max-w-3xl mx-auto space-y-8 py-12 px-4">
+        <Card className="rounded-[2.5rem] glass-card p-12 text-center relative overflow-hidden border-primary/20 shadow-2xl">
+          <div className="w-20 h-20 mx-auto bg-gradient-to-br from-primary to-purple-600 rounded-3xl flex items-center justify-center shadow-xl shadow-primary/20 mb-6">
+            <Brain className="w-10 h-10 text-white" />
+          </div>
+          <Badge className="bg-primary/10 text-primary border-primary/20 mb-4 px-4 py-1 font-black uppercase tracking-widest">
+            Student Placement Portal
+          </Badge>
+          <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-4">Interview Schedule Status</h1>
+          
+          {slotInfo?.slotDate ? (
+            <div className="bg-card/50 border border-border p-6 rounded-2xl max-w-md mx-auto space-y-3 mb-6">
+              <div className="text-sm font-semibold text-muted-foreground">Assigned Placement Slot</div>
+              <div className="text-2xl font-black text-primary">{slotInfo.slotDate}</div>
+              <div className="text-sm font-bold text-foreground">{slotInfo.slotStartTime || "09:00"} - {slotInfo.slotEndTime || "17:00"}</div>
+              {slotInfo.lockReason && (
+                <div className="text-xs text-muted-foreground bg-accent/50 p-3 rounded-xl mt-2">
+                  {slotInfo.lockReason}
+                </div>
+              )}
+            </div>
+          ) : (
+            <p className="text-muted-foreground max-w-md mx-auto mb-6">
+              No placement interview is currently assigned to your account. Your administrator will assign your slot shortly.
+            </p>
+          )}
+
+          <div className="flex justify-center gap-4">
+            <Button size="lg" className="rounded-2xl px-8 font-bold" onClick={() => navigate('/interviews')}>
+              View Past Interviews
+            </Button>
+          </div>
+          <BorderBeam size={300} duration={10} />
+        </Card>
+      </div>
+    );
   }
 
   // Fetch students for admin to select

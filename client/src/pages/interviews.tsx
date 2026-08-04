@@ -190,27 +190,19 @@ export default function InterviewsPage() {
               </Table>
             </div>
           ) : (
-            <div className="text-center py-12">
-              <div className="w-16 h-16 bg-muted rounded-full flex items-center justify-center mx-auto mb-4">
-                <Brain className="w-8 h-8 text-muted-foreground" />
+            <div className="text-center py-16 px-4">
+              <div className="w-20 h-20 bg-gradient-to-br from-primary/20 via-purple-500/10 to-primary/5 border border-primary/20 rounded-3xl flex items-center justify-center mx-auto mb-6 shadow-xl">
+                <Brain className="w-10 h-10 text-primary" />
               </div>
-              <h3 className="font-medium mb-2">
-                {searchQuery ? 'No matching interviews' : 'No interviews yet'}
+              <h3 className="text-xl font-bold mb-2">
+                {searchQuery ? 'No matching interviews found' : 'No Interviews Scheduled Yet'}
               </h3>
-              <p className="text-sm text-muted-foreground mb-4">
+              <p className="text-sm text-muted-foreground max-w-md mx-auto mb-6 leading-relaxed">
                 {searchQuery 
-                  ? 'Try adjusting your search query'
-                  : 'Start your first mock interview to begin practicing'
+                  ? 'Try adjusting your search query or filters'
+                  : 'Your upcoming placement interviews will appear here once scheduled by your administrator or placement coordinator.'
                 }
               </p>
-              {!searchQuery && (
-                <Link href="/interview/start">
-                  <Button data-testid="button-start-first">
-                    <Plus className="w-4 h-4 mr-2" />
-                    Start First Interview
-                  </Button>
-                </Link>
-              )}
             </div>
           )}
         </CardContent>

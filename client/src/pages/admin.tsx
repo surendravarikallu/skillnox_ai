@@ -1,4 +1,5 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
+import { useLocation } from "wouter";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -54,6 +55,7 @@ interface SkillGap {
 }
 
 export default function AdminPage() {
+  const [, setLocation] = useLocation();
   const [searchQuery, setSearchQuery] = useState("");
   const { toast } = useToast();
   const queryClient = useQueryClient();
@@ -301,7 +303,7 @@ export default function AdminPage() {
                           <span className="text-sm font-black">{student.interviewCount || 0}</span>
                         </TableCell>
                         <TableCell className="text-right pr-8">
-                          <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary hover:text-white transition-all">
+                          <Button onClick={() => setLocation('/admin/students')} variant="ghost" size="icon" className="rounded-xl hover:bg-primary hover:text-white transition-all" title="View Student Reports">
                             <ArrowUpRight className="w-4 h-4" />
                           </Button>
                         </TableCell>
