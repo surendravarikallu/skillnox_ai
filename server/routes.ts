@@ -4,13 +4,18 @@ import { randomUUID } from "crypto";
 import path from "path";
 
 import { storage } from "./storage";
+import { sendEmail } from "./email";
+import { buildScheduledEmail, buildResultsEmail } from "./email-templates";
 import { isAuthenticated, isAdmin, isStudent, hasRole, registerHandler, loginHandler, logoutHandler, comparePassword, hashPassword } from "./auth";
+import { eq } from "drizzle-orm";
 import multer from "multer";
 import { z } from "zod";
+import { db } from "./db";
 import {
   insertInterviewSchema,
   insertJobDescriptionSchema,
   COMPANIES,
+  interviews,
   type User
 } from "@shared/schema";
 import * as pythonAI from "./pythonAI";
@@ -64,7 +69,7 @@ const MAX_PARSE_CONTENT_LENGTH = 8000;
 const RAW_RESUME_STORE_LENGTH = 4000;
 
 // ─── Constants ────────────────────────────────────────
-const TOTAL_QUESTIONS_PER_INTERVIEW = 10;
+const TOTAL_QUESTIONS_PER_INTERVIEW = 15;
 const MAX_LLM_QUESTIONS_PER_TYPE = 1;
 const LLM_QUESTION_TIMEOUT_MS = 5000;
 const GD_TOPIC_TIMEOUT_MS = 5000;
@@ -72,6 +77,36 @@ const INTERVIEW_GENERATION_TIMEOUT_MS = 10000;
 const EVALUATION_TIMEOUT_MS = 60000;
 const DEFAULT_EMOTION_SCORE = 60;
 const DEFAULT_VOICE_SCORE = 55;
+
+function generateDynamicIntroQuestion(studentName: string, company?: string | null, department?: string | null): string {
+  const name = studentName || "Candidate";
+  const dept = department || "Software Engineering";
+  const comp = company ? ` at ${company}` : "";
+
+  const templates = [
+    `Hi ${name}, welcome to Skillnox AI! To begin our interview today${comp}, please introduce yourself, your academic background in ${dept}, and your core technical strengths.`,
+    `Hello ${name}, welcome to Skillnox AI! Glad to have you here. Could you walk me through your professional background, main projects, and what inspired you to pursue ${dept}?`,
+    `Hi ${name}, welcome to Skillnox AI! Let's kick things off with a brief introduction—tell me about yourself, your core technical stack, and a major project you are proud of.`,
+    `Welcome to Skillnox AI, ${name}! Before we dive into technical questions, please introduce yourself and share your top skills and career goals.`,
+    `Good day ${name}, welcome to Skillnox AI! Give me your 60-second elevator pitch introducing your academic journey, technical expertise, and what drives your passion for software development.`,
+    `Hey ${name}, welcome to Skillnox AI! How would you introduce yourself as a developer and problem-solver? Walk me through your background and achievements.`,
+    `Hi there ${name}, welcome to Skillnox AI! Please give me an introduction covering your education, hands-on experience, and primary programming languages.`,
+    `A warm welcome ${name} to Skillnox AI! To start off, please introduce yourself and explain how your practical project experience has prepared you for a role${comp}.`,
+    `Hello ${name}, welcome to Skillnox AI! Please summarize your educational background, core technical capabilities, and key project highlights.`,
+    `Hi ${name}, welcome to Skillnox AI! Please introduce yourself, highlighting your practical engineering experience, technical interests, and problem-solving approach.`,
+    `Greetings ${name}, welcome to Skillnox AI! To start, introduce yourself, sharing a brief overview of your skills, major academic or industry projects, and career aspirations.`,
+    `Hi ${name}, welcome to Skillnox AI! Let's start with a quick introduction—tell me about your background, key technical achievements, and what sets you apart as a candidate.`
+  ];
+
+  let hash = 0;
+  const seed = `${name}-${company || ''}-${Math.random()}`;
+  for (let i = 0; i < seed.length; i++) {
+    hash = (hash << 5) - hash + seed.charCodeAt(i);
+    hash |= 0;
+  }
+  const index = Math.abs(hash) % templates.length;
+  return templates[index];
+}
 
 type ResumeFeatures = {
   links: string[];
@@ -249,92 +284,7 @@ const communicationQuestions = [
 ];
 
 
-const companyQuestions: Record<string, string[]> = {
-  TCS: [
-    "What do you know about TCS and its values?",
-    "How do you handle multiple projects with conflicting deadlines?",
-    "Explain a situation where you had to learn a new technology quickly.",
-    "What is your approach to continuous learning?",
-    "Why do you want to start your career with TCS?",
-    "Are you willing to relocate to any location in India?",
-    "What is your understanding of the IT service industry?",
-    "Describe a time you worked in a team. What was your role?",
-    "What are your long-term career goals?",
-    "How do you handle pressure and stress?"
-  ],
-  Infosys: [
-    "What attracts you to Infosys as a company?",
-    "Describe your experience with agile methodologies.",
-    "How do you ensure quality in your deliverables?",
-    "What is your understanding of digital transformation?",
-    "What do you know about Infosys foundation?",
-    "Are you comfortable working in shifts?",
-    "How do you stay updated with the latest technology trends?",
-    "Why should we hire you over other candidates?",
-    "Describe a challenging project you worked on.",
-    "What is your preferred programming language and why?"
-  ],
-  Wipro: [
-    "Why do you want to join Wipro?",
-    "Describe your experience working in a team environment.",
-    "How do you stay updated with industry trends?",
-    "What is your approach to problem-solving?",
-    "What do you know about Wipro's recent acquisitions or projects?",
-    "How do you handle constructive criticism?",
-    "Are you a quick learner? Give an example.",
-    "What are your strengths and weaknesses?",
-    "Where do you see yourself in 5 years?",
-    "Explain a technical concept to a non-technical person."
-  ],
-  Accenture: [
-    "What do you know about Accenture's business areas?",
-    "How would you handle a disagreement with a colleague?",
-    "Describe a project where you used innovative thinking.",
-    "What is your experience with client-facing work?",
-    "Why Accenture?",
-    "Describe a situation where you demonstrated leadership.",
-    "How do you prioritize tasks when everything is urgent?",
-    "What is your understanding of cloud computing?",
-    "Tell me about a time you failed and what you learned.",
-    "How strictly do you follow deadlines?"
-  ],
-  Cognizant: [
-    "Why Cognizant over other IT companies?",
-    "How do you manage work-life balance?",
-    "Describe a time when you had to meet challenging targets.",
-    "What is your understanding of digital engineering?",
-    "What do you know about Cognizant's core values?",
-    "How do you handle difficult clients or team members?",
-    "What is your favorite subject in your curriculum and why?",
-    "Are you open to learning legacy technologies if required?",
-    "Describe a time you took initiative.",
-    "What motivates you to work hard?"
-  ],
-  Capgemini: [
-    "What attracts you to Capgemini?",
-    "How do you approach learning new technologies?",
-    "Describe your experience with collaborative projects.",
-    "What are your career aspirations?",
-    "What do you know about Capgemini's 7 values?",
-    "How do you handle change?",
-    "Describe a complex problem you solved.",
-    "What defines a good team player for you?",
-    "Why is diversity important in the workplace?",
-    "How do you handle feedback?"
-  ],
-  Amazon: [
-    "Tell me about a time you disagreed with a manager's decision.",
-    "Describe a situation where you had to dive deep to solve a problem.",
-    "How do you prioritize when you have multiple deadlines?",
-    "Tell me about a time you simplified a complex process.",
-    "Explain the concept of customer obsession.",
-    "Tell me about a time you failed to meet a deadline.",
-    "Describe a time when you took a calculated risk.",
-    "How do you handle ambiguity?",
-    "What is the most innovative thing you have done?",
-    "Tell me about a time you went above and beyond for a customer."
-  ],
-};
+
 
 const SKILL_LIBRARY = [
   "JavaScript", "TypeScript", "Python", "Java", "C++", "C#", "Go", "Rust", "Ruby", "PHP", "Swift", "Kotlin",
@@ -1262,8 +1212,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   });
   // Simple rate limiter for auth endpoints
   const loginAttempts = new Map<string, { count: number; resetAt: number }>();
-  const LOGIN_RATE_LIMIT = 5; // max attempts
-  const LOGIN_RATE_WINDOW = 15 * 60 * 1000; // 15 minutes
+  const LOGIN_RATE_LIMIT = 50; // max attempts
+  const LOGIN_RATE_WINDOW = 60 * 1000; // 1 minute
 
   function checkLoginRateLimit(ip: string): boolean {
     const now = Date.now();
@@ -1914,14 +1864,15 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         }
       }
 
-      // Ensure the first question in the first technical/behavioral/hr round has the greeting
+      // Ensure Question 1 is a dynamic, varied self-introduction question tailored for this student
       const firstIntroRoundIndex = generatedQuestions.findIndex(q => ['technical', 'hr', 'behavioral', 'company', 'communication'].includes(q.round));
+      const studentName = [student.firstName, student.lastName].filter(Boolean).join(" ") || student.rollNumber || "Student";
+      const dynamicIntro = generateDynamicIntroQuestion(studentName, company, student.department);
+
       if (firstIntroRoundIndex !== -1) {
-        const studentName = [student.firstName, student.lastName].filter(Boolean).join(" ") || student.rollNumber || "Student";
-        generatedQuestions[firstIntroRoundIndex].text = `Hi ${studentName} and welcome to Skillnox AI, so here is your first question, tell me about yourself.`;
+        generatedQuestions[firstIntroRoundIndex].text = dynamicIntro;
       } else if (generatedQuestions.length > 0) {
-        const studentName = [student.firstName, student.lastName].filter(Boolean).join(" ") || student.rollNumber || "Student";
-        generatedQuestions[0].text = `Hi ${studentName} and welcome to your Skillnox AI interview. Let's begin with the first question: ${generatedQuestions[0].text}`;
+        generatedQuestions[0].text = dynamicIntro;
       }
 
       // Pad with technical questions if we are somehow short for combined mode
@@ -1969,6 +1920,31 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       await storage.updateUserInterviewCount(userId);
 
       console.log(`Interview created successfully: ${interview.id} with ${finalQuestions.length} questions in mode: ${simMode}`);
+
+      // ─── AUTO EMAIL: Interview Scheduled Notification ───
+      (async () => {
+        try {
+          const studentFullName = [student.firstName, student.lastName].filter(Boolean).join(' ') || student.rollNumber || 'Candidate';
+          const interviewTypeStr = filteredTypes.join(', ');
+          const emailData = buildScheduledEmail({
+            studentName: studentFullName,
+            rollNumber: student.rollNumber || 'N/A',
+            interviewType: interviewTypeStr,
+            difficulty: difficultyLevel,
+            scheduledDate: student.slotDate || new Date().toLocaleDateString('en-IN', { day: '2-digit', month: 'long', year: 'numeric' }),
+            scheduledTime: student.slotStartTime || 'As per slot allotment',
+            company: company || undefined,
+            questionCount: finalQuestions.length,
+          });
+          if (student.email) {
+            await sendEmail({ to: student.email, subject: emailData.subject, html: emailData.html });
+            console.log(`[AUTO EMAIL] Interview scheduled notification sent to ${student.email}`);
+          }
+        } catch (emailErr) {
+          console.error('[AUTO EMAIL ERROR] Failed to send scheduled interview email:', emailErr);
+        }
+      })();
+
       res.json(interview);
     } catch (error: any) {
       console.error("Error creating interview:", error);
@@ -2000,6 +1976,39 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         return res.status(400).json({ message: `Interview is already ${interview.status}` });
       }
 
+      // Check student slot schedule permission
+      const user = await storage.getUser(userId);
+      if (user && user.role !== 'admin' && user.slotDate) {
+        const todayStr = new Date().toISOString().split('T')[0];
+        if (user.slotDate !== todayStr) {
+          return res.status(403).json({
+            message: `Your interview is scheduled for ${user.slotDate}${user.slotStartTime ? ' at ' + user.slotStartTime : ''}. Access is restricted outside your assigned date.`,
+            code: "SLOT_LOCKED",
+            slotDate: user.slotDate,
+            slotStartTime: user.slotStartTime
+          });
+        }
+
+        // Enforce slot start time window: Do NOT permit starting interview until slotStartTime arrives
+        if (user.slotStartTime) {
+          const now = new Date();
+          const [startH, startM] = user.slotStartTime.split(':').map(Number);
+          const startTimeDate = new Date();
+          startTimeDate.setHours(startH, startM, 0, 0);
+
+          const diffSeconds = Math.floor((startTimeDate.getTime() - now.getTime()) / 1000);
+          if (diffSeconds > 0) {
+            return res.status(403).json({
+              message: `Your interview starts today at ${user.slotStartTime}. You are in the waiting room until your slot time.`,
+              code: "SLOT_LOCKED_TIME",
+              slotDate: user.slotDate,
+              slotStartTime: user.slotStartTime,
+              secondsUntilStart: diffSeconds
+            });
+          }
+        }
+      }
+
       // Check if interviews are globally paused
       const pausedSetting = await storage.getGlobalSetting('interviews_paused');
       if (pausedSetting && pausedSetting.value === 'true') {
@@ -2019,6 +2028,96 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     } catch (error) {
       console.error("Error starting interview:", error);
       res.status(500).json({ message: "Failed to start interview" });
+    }
+  });
+
+  // Student endpoint: Get assigned slot details with 10s auto-polling waiting room support
+  app.get('/api/slots/my-slot', isAuthenticated, async (req: any, res) => {
+    try {
+      const user = await storage.getUser(req.userId);
+      if (!user) return res.status(404).json({ message: "User not found" });
+
+      if (user.role === 'admin' || !user.slotDate) {
+        return res.json({
+          slotDate: user.slotDate || null,
+          slotStartTime: user.slotStartTime || null,
+          slotEndTime: user.slotEndTime || null,
+          slotStatus: user.slotStatus || "active",
+          isSlotActive: true,
+          inWaitingRoom: false,
+          secondsUntilStart: 0,
+          lockReason: null
+        });
+      }
+
+      const todayStr = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
+      const isDateMatch = user.slotDate === todayStr;
+
+      let isSlotActive = isDateMatch;
+      let inWaitingRoom = false;
+      let secondsUntilStart = 0;
+      let lockReason = null;
+
+      if (!isDateMatch) {
+        isSlotActive = false;
+        lockReason = `Your interview is scheduled for ${user.slotDate}${user.slotStartTime ? ' at ' + user.slotStartTime : ''}. Access is restricted outside your assigned date.`;
+      } else if (user.slotStartTime) {
+        const now = new Date();
+        const [startH, startM] = user.slotStartTime.split(':').map(Number);
+        
+        const startTimeDate = new Date();
+        startTimeDate.setHours(startH, startM, 0, 0);
+
+        const diffSeconds = Math.floor((startTimeDate.getTime() - now.getTime()) / 1000);
+
+        if (diffSeconds > 0) {
+          inWaitingRoom = true;
+          isSlotActive = false;
+          secondsUntilStart = diffSeconds;
+          lockReason = `Your interview starts today at ${user.slotStartTime}. You are in the waiting room. Checking start status every 10 seconds...`;
+        } else {
+          isSlotActive = true;
+          inWaitingRoom = false;
+          secondsUntilStart = 0;
+        }
+      }
+
+      res.json({
+        slotDate: user.slotDate,
+        slotStartTime: user.slotStartTime || "09:00",
+        slotEndTime: user.slotEndTime || "17:00",
+        slotStatus: user.slotStatus || "active",
+        isSlotActive,
+        inWaitingRoom,
+        secondsUntilStart,
+        lockReason
+      });
+    } catch (error) {
+      res.status(500).json({ message: "Failed to fetch slot details" });
+    }
+  });
+
+  // Admin endpoint: Assign interview slot date and times to students
+  app.post('/api/admin/assign-slots', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { userIds, slotDate, slotStartTime, slotEndTime } = req.body;
+      if (!userIds || !Array.isArray(userIds) || !slotDate) {
+        return res.status(400).json({ message: "userIds array and slotDate are required" });
+      }
+
+      const updates = userIds.map(id => 
+        storage.updateUser(id, {
+          slotDate,
+          slotStartTime: slotStartTime || "09:00",
+          slotEndTime: slotEndTime || "17:00",
+          slotStatus: "active"
+        } as any)
+      );
+      await Promise.all(updates);
+
+      res.json({ success: true, count: userIds.length, slotDate });
+    } catch (error: any) {
+      res.status(500).json({ message: error.message || "Failed to assign slots" });
     }
   });
 
@@ -2261,6 +2360,40 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           }
         })();
 
+        // ─── AUTO EMAIL: Full Simulation Results Report ───
+        (async () => {
+          try {
+            const student = await storage.getUser(userId);
+            if (student?.email) {
+              const studentFullName = [student.firstName, student.lastName].filter(Boolean).join(' ') || student.rollNumber || 'Candidate';
+              const interviewTypes = (interview.types as string[]) || [interview.type || 'technical'];
+              const completedAtStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+              const emailData = buildResultsEmail({
+                studentName: studentFullName,
+                rollNumber: student.rollNumber || 'N/A',
+                interviewType: interviewTypes.join(', '),
+                difficulty: interview.difficulty || 'medium',
+                company: interview.company || undefined,
+                overallScore,
+                technicalScore,
+                communicationScore,
+                emotionScore,
+                voiceScore,
+                feedback: `Congratulations on completing all rounds of the ${interview.company || 'interview'} simulation!`,
+                improvements: [],
+                interviewId: interview.id,
+                completedAt: completedAtStr,
+              });
+
+              await sendEmail({ to: student.email, subject: emailData.subject, html: emailData.html });
+              console.log(`[AUTO EMAIL] Full simulation results report sent to ${student.email}`);
+            }
+          } catch (emailErr) {
+            console.error('[AUTO EMAIL ERROR] Failed to send full simulation results email:', emailErr);
+          }
+        })();
+
         return res.json({
           interview: updated,
           advanced: false,
@@ -2466,24 +2599,38 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const existingInterview = await storage.getInterviewById(interviewId);
 
       const questions = await storage.getQuestionsByInterviewId(interviewId);
-      const answeredQuestions = questions.filter(q => q.userAnswer);
+      const validAnsweredQuestions = questions.filter(q => {
+        const a = (q.userAnswer || '').trim().toLowerCase();
+        return a.length > 0 && a !== "(no answer recorded)" && a !== "silence detected";
+      });
 
-      const avgScore = answeredQuestions.length > 0
-        ? answeredQuestions.reduce((acc, q) => acc + (q.score || 0), 0) / answeredQuestions.length
-        : 50;
+      const totalQuestionsCount = questions.length || 1;
+      const totalPointsEarned = questions.reduce((acc, q) => acc + (q.score || 0), 0);
 
-      // Use real data when available, deterministic fallback based on avgScore otherwise
-      const technicalScore = avgScore;
-      const communicationScore = communicationData?.overall ?? avgScore;
-      const emotionScore = emotionData?.emotion_score ?? (avgScore * 0.7 + 20);
-      const voiceScore = voiceData?.overall_voice_score ?? (avgScore * 0.6 + 25);
-      const overallScore = (technicalScore + communicationScore + emotionScore + voiceScore) / 4;
+      let technicalScore = 0;
+      let communicationScore = 0;
+      let emotionScore = 0;
+      let voiceScore = 0;
+      let overallScore = 0;
+
+      if (validAnsweredQuestions.length > 0) {
+        const avgScore = totalPointsEarned / totalQuestionsCount;
+        technicalScore = Math.round(avgScore);
+        communicationScore = communicationData?.overall ?? Math.round(avgScore);
+        emotionScore = emotionData?.emotion_score ?? Math.round(avgScore * 0.9);
+        voiceScore = voiceData?.overall_voice_score ?? Math.round(avgScore * 0.9);
+        overallScore = Math.round((technicalScore + communicationScore + emotionScore + voiceScore) / 4);
+      }
 
       const improvements: string[] = [];
-      if (technicalScore < 70) improvements.push("Practice more technical concepts");
-      if (communicationScore < 70) improvements.push("Work on structured responses");
-      if (voiceScore < 70) improvements.push("Focus on voice clarity and pacing");
-      if (emotionScore < 70) improvements.push("Work on maintaining confident expressions");
+      if (validAnsweredQuestions.length === 0) {
+        improvements.push("No responses recorded during session. Ensure your microphone is connected and test your audio before starting.");
+      } else {
+        if (technicalScore < 70) improvements.push("Practice more technical concepts and explain code logic in detail");
+        if (communicationScore < 70) improvements.push("Work on structured responses using bullet points and clear examples");
+        if (voiceScore < 70) improvements.push("Focus on voice clarity, steady pacing, and speaking volume");
+        if (emotionScore < 70) improvements.push("Work on maintaining confident expressions during the interview");
+      }
 
       // Calculate real duration from startedAt timestamp
       const completedAt = new Date();
@@ -2532,7 +2679,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
               probability30Days: prob30,
               probability60Days: prob60,
               probability90Days: prob90,
-              confidence: 60 + answeredQuestions.length * 5,
+              confidence: 60 + validAnsweredQuestions.length * 5,
               factors,
             });
           } else {
@@ -2541,7 +2688,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
               probability30Days: prob30,
               probability60Days: prob60,
               probability90Days: prob90,
-              confidence: 40 + answeredQuestions.length * 5,
+              confidence: 40 + validAnsweredQuestions.length * 5,
               factors,
             });
           }
@@ -2559,6 +2706,41 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           console.log("Background processing for placement and personality completed.");
         } catch (bgError) {
           console.error("Error in background placement calculation:", bgError);
+        }
+      })();
+
+      // ─── AUTO EMAIL: Interview Results & Report ───
+      (async () => {
+        try {
+          const student = await storage.getUser(userId);
+          if (student?.email) {
+            const studentFullName = [student.firstName, student.lastName].filter(Boolean).join(' ') || student.rollNumber || 'Candidate';
+            const interviewTypes = (existingInterview?.types as string[]) || [existingInterview?.type || 'technical'];
+            const completedAtStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
+
+            const emailData = buildResultsEmail({
+              studentName: studentFullName,
+              rollNumber: student.rollNumber || 'N/A',
+              interviewType: interviewTypes.join(', '),
+              difficulty: existingInterview?.difficulty || 'medium',
+              company: existingInterview?.company || undefined,
+              overallScore,
+              technicalScore,
+              communicationScore,
+              emotionScore,
+              voiceScore,
+              feedback: (interview as any).feedback || 'Your performance has been evaluated by our AI assessment engine.',
+              improvements: (interview as any).improvements || [],
+              interviewId: interviewId,
+              completedAt: completedAtStr,
+              duration: durationSeconds || undefined,
+            });
+
+            await sendEmail({ to: student.email, subject: emailData.subject, html: emailData.html });
+            console.log(`[AUTO EMAIL] Interview results report sent to ${student.email}`);
+          }
+        } catch (emailErr) {
+          console.error('[AUTO EMAIL ERROR] Failed to send results email:', emailErr);
         }
       })();
 
@@ -2683,17 +2865,148 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   app.get('/api/admin/students', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const students = await storage.getStudents();
+      const allInterviews = await db.select().from(interviews);
 
-      // SECURITY: Remove password hashes from response
+      const now = Date.now();
+
+      // Auto-finalize any in_progress interview started > 25 mins ago so reports don't get stuck in 'Evaluating'
+      for (const i of allInterviews) {
+        if (i.status === 'in_progress') {
+          const started = i.startedAt ? new Date(i.startedAt).getTime() : 0;
+          if (started > 0 && now - started > 25 * 60 * 1000) {
+            const qList = (i.questions as any[]) || [];
+            const validAnswers = qList.filter(q => {
+              const a = (q.userAnswer || '').trim();
+              return a.length > 0 && a !== '(no answer recorded)' && a !== 'silence detected';
+            });
+            const totalCount = qList.length || 1;
+            const pointsEarned = qList.reduce((acc, q) => acc + (q.score || 0), 0);
+            const avgScore = validAnswers.length > 0 ? Math.round(pointsEarned / totalCount) : 0;
+
+            await db.update(interviews)
+              .set({
+                status: 'completed',
+                technicalScore: avgScore,
+                communicationScore: avgScore,
+                emotionScore: Math.round(avgScore * 0.9),
+                voiceScore: Math.round(avgScore * 0.9),
+                overallScore: avgScore,
+                completedAt: new Date(),
+              } as any)
+              .where(eq(interviews.id, i.id));
+
+            i.status = 'completed';
+            i.overallScore = avgScore;
+          }
+        }
+      }
+
+      const userInterviewMap = new Map<string, any[]>();
+      allInterviews.forEach((i: any) => {
+        if (!userInterviewMap.has(i.userId)) userInterviewMap.set(i.userId, []);
+        userInterviewMap.get(i.userId)!.push(i);
+      });
+
+      // SECURITY: Remove password hashes & attach real-time interview participation status
       const sanitizedStudents = students.map(student => {
         const { passwordHash, ...studentWithoutPassword } = student as any;
-        return studentWithoutPassword;
+        const userInts = userInterviewMap.get(student.id) || [];
+
+        const liveInt = userInts.find((i: any) => i.status === 'in_progress');
+        const compInt = userInts.find((i: any) => i.status === 'completed');
+        const pendInt = userInts.find((i: any) => i.status === 'pending');
+        const latestInt = liveInt || compInt || pendInt || userInts[0];
+
+        return {
+          ...studentWithoutPassword,
+          activeInterviewStatus: liveInt ? 'in_progress' : compInt ? 'completed' : pendInt ? 'pending' : 'not_scheduled',
+          latestInterviewScore: compInt?.overallScore ?? null,
+          latestInterviewId: latestInt?.id ?? null,
+          latestInterviewType: latestInt?.type ?? null,
+        };
       });
 
       res.json(sanitizedStudents);
     } catch (error) {
       console.error("Error fetching students:", error);
       res.status(500).json({ message: "Failed to fetch students" });
+    }
+  });
+
+  // GET /api/admin/students/:id/interviews - View all interview reports for a student
+  app.get('/api/admin/students/:id/interviews', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const studentId = req.params.id;
+      const student = await storage.getUser(studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+
+      const userInterviews = await db.select().from(interviews).where(eq(interviews.userId, studentId));
+      const { passwordHash, ...sanitizedStudent } = student as any;
+
+      res.json({
+        student: sanitizedStudent,
+        interviews: userInterviews,
+      });
+    } catch (error) {
+      console.error("Error fetching student interview reports:", error);
+      res.status(500).json({ message: "Failed to fetch student interview reports" });
+    }
+  });
+
+  // POST /api/admin/send-report-email - Email an interview report to student or placement team
+  app.post('/api/admin/send-report-email', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { interviewId, recipientEmail } = req.body;
+      if (!interviewId) {
+        return res.status(400).json({ message: "Interview ID is required" });
+      }
+
+      const intRec = await storage.getInterviewById(interviewId);
+      if (!intRec) {
+        return res.status(404).json({ message: "Interview not found" });
+      }
+
+      const student = await storage.getUser(intRec.userId);
+      const targetEmail = recipientEmail || student?.email;
+
+      if (!targetEmail || !targetEmail.includes("@")) {
+        return res.status(400).json({ message: "Valid recipient email is required" });
+      }
+
+      const studentName = student ? `${student.firstName || ''} ${student.lastName || ''}`.trim() || "Student" : "Student";
+      const rollNumber = student?.rollNumber || "N/A";
+      const overallScore = intRec.overallScore ?? 0;
+
+      const emailContent = buildResultsEmail({
+        studentName,
+        rollNumber,
+        interviewType: intRec.type || 'technical',
+        company: intRec.company || undefined,
+        difficulty: 'medium',
+        overallScore,
+        technicalScore: intRec.technicalScore ?? overallScore,
+        communicationScore: intRec.communicationScore ?? overallScore,
+        emotionScore: intRec.emotionScore ?? overallScore,
+        voiceScore: intRec.voiceScore ?? overallScore,
+        feedback: (intRec.improvements || []).join('. ') || 'Good effort across technical and behavioral dimensions.',
+        improvements: intRec.improvements || [],
+        interviewId: intRec.id,
+        completedAt: intRec.completedAt ? new Date(intRec.completedAt).toLocaleString() : new Date().toLocaleString(),
+        duration: intRec.duration || undefined,
+      });
+
+      await sendEmail({
+        to: targetEmail,
+        subject: emailContent.subject || `[AI MOCK INTERVIEW REPORT] Performance Summary - ${rollNumber}`,
+        html: emailContent.html,
+      });
+
+      res.json({ message: `Interview report successfully emailed to ${targetEmail}` });
+    } catch (error: any) {
+      console.error("Error sending report email:", error);
+      res.status(500).json({ message: error.message || "Failed to send report email" });
     }
   });
 
@@ -2704,6 +3017,10 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     department: z.string().optional(),
     year: z.number().int().optional(),
     password: z.string().min(1).optional(),
+    slotDate: z.string().optional(),
+    slotStartTime: z.string().optional(),
+    slotEndTime: z.string().optional(),
+    slotStatus: z.string().optional(),
   });
 
   app.patch('/api/admin/students/:id', isAuthenticated, isAdmin, async (req: any, res) => {
@@ -2737,6 +3054,18 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       if (typeof data.password === 'string' && data.password.trim()) {
         updateData.passwordHash = await hashPassword(data.password.trim());
       }
+      if (typeof data.slotDate === 'string') {
+        updateData.slotDate = data.slotDate || null;
+      }
+      if (typeof data.slotStartTime === 'string') {
+        updateData.slotStartTime = data.slotStartTime || null;
+      }
+      if (typeof data.slotEndTime === 'string') {
+        updateData.slotEndTime = data.slotEndTime || null;
+      }
+      if (typeof data.slotStatus === 'string') {
+        updateData.slotStatus = data.slotStatus || 'scheduled';
+      }
 
       const updated = await storage.updateUser(studentId, updateData as any);
       const { passwordHash, ...responseUser } = updated as any;
@@ -2760,6 +3089,105 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     } catch (error) {
       console.error("Error deleting student:", error);
       res.status(500).json({ message: "Failed to delete student" });
+    }
+  });
+
+  // Fetch student's interviews for Admin Report modal
+  app.get('/api/admin/students/:id/interviews', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const studentId = req.params.id;
+      const student = await storage.getUser(studentId);
+      if (!student) {
+        return res.status(404).json({ message: "Student not found" });
+      }
+      const studentInterviews = await storage.getInterviewsByUserId(studentId);
+      res.json({ student, interviews: studentInterviews });
+    } catch (error) {
+      console.error("Error fetching student interviews for admin:", error);
+      res.status(500).json({ message: "Failed to fetch student interviews" });
+    }
+  });
+
+  // Send Detailed Result Report via Email (Brevo API & SMTP - Kitaghire Subsystem)
+  app.post('/api/admin/send-report-email', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { interviewId, recipientEmail } = req.body;
+      if (!interviewId) {
+        return res.status(400).json({ message: "Interview ID is required" });
+      }
+
+      const interview = await storage.getInterviewById(interviewId);
+      if (!interview) {
+        return res.status(404).json({ message: "Interview not found" });
+      }
+
+      const student = await storage.getUser(interview.userId);
+      const emailToUse = recipientEmail || student?.email;
+
+      if (!emailToUse) {
+        return res.status(400).json({ message: "No valid student email address found" });
+      }
+
+      const studentName = student ? `${student.firstName || ''} ${student.lastName || ''}`.trim() : 'Candidate';
+
+      const htmlReport = `
+        <div style="font-family: 'Segoe UI', Arial, sans-serif; max-width: 650px; margin: 0 auto; background: #0f172a; color: #f8fafc; padding: 32px; border-radius: 16px; border: 1px solid #1e293b;">
+          <div style="text-align: center; margin-bottom: 24px;">
+            <h1 style="color: #6366f1; font-size: 28px; margin: 0;">Skillnox AI</h1>
+            <p style="color: #94a3b8; font-size: 14px; margin-top: 4px;">Placement & Interview Readiness Subsystem | Kitaghire</p>
+          </div>
+          
+          <div style="background: #1e293b; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+            <h2 style="font-size: 20px; color: #ffffff; margin-top: 0;">Interview Results & Report</h2>
+            <p style="color: #cbd5e1; font-size: 15px;">Candidate: <strong>${studentName}</strong> (${student?.rollNumber || 'N/A'})</p>
+            <p style="color: #cbd5e1; font-size: 15px;">Interview Type: <strong>${((interview.types as string[]) || [interview.type]).join(', ').toUpperCase()}</strong></p>
+            <p style="color: #cbd5e1; font-size: 15px;">Difficulty: <strong>${(interview.difficulty || 'medium').toUpperCase()}</strong></p>
+          </div>
+
+          <div style="display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 24px;">
+            <div style="background: #1e293b; padding: 16px; border-radius: 12px; text-align: center;">
+              <span style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">Overall Score</span>
+              <h3 style="font-size: 28px; color: #6366f1; margin: 8px 0 0 0;">${Math.round(interview.overallScore || 0)}%</h3>
+            </div>
+            <div style="background: #1e293b; padding: 16px; border-radius: 12px; text-align: center;">
+              <span style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">Technical Score</span>
+              <h3 style="font-size: 28px; color: #10b981; margin: 8px 0 0 0;">${Math.round(interview.technicalScore || 0)}%</h3>
+            </div>
+            <div style="background: #1e293b; padding: 16px; border-radius: 12px; text-align: center;">
+              <span style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">Communication Score</span>
+              <h3 style="font-size: 28px; color: #f59e0b; margin: 8px 0 0 0;">${Math.round(interview.communicationScore || 0)}%</h3>
+            </div>
+            <div style="background: #1e293b; padding: 16px; border-radius: 12px; text-align: center;">
+              <span style="font-size: 12px; color: #94a3b8; text-transform: uppercase;">Voice & Clarity</span>
+              <h3 style="font-size: 28px; color: #ec4899; margin: 8px 0 0 0;">${Math.round(interview.voiceScore || 0)}%</h3>
+            </div>
+          </div>
+
+          <div style="background: #1e293b; padding: 20px; border-radius: 12px; margin-bottom: 24px;">
+            <h4 style="color: #818cf8; margin-top: 0;">Detailed AI Feedback Summary</h4>
+            <p style="color: #cbd5e1; font-size: 14px; line-height: 1.6;">${interview.feedback || 'Candidate performed well during the interview drive session.'}</p>
+          </div>
+
+          <div style="text-align: center; margin-top: 32px; border-top: 1px solid #334155; padding-top: 16px;">
+            <p style="color: #64748b; font-size: 12px;">Skillnox AI — Official Subsystem of Kitaghire (https://skillnoxai.kitaghire.in)</p>
+          </div>
+        </div>
+      `;
+
+      const sent = await sendEmail({
+        to: emailToUse,
+        subject: `[Skillnox AI] Official Interview Report - ${studentName}`,
+        html: htmlReport,
+      });
+
+      if (sent) {
+        res.json({ message: `Detailed report emailed successfully to ${emailToUse}` });
+      } else {
+        res.status(500).json({ message: "Failed to deliver report email via Brevo SMTP/API" });
+      }
+    } catch (error: any) {
+      console.error("Error sending report email:", error);
+      res.status(500).json({ message: error.message || "Failed to send report email" });
     }
   });
 

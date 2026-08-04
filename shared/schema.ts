@@ -49,11 +49,17 @@ export const users = pgTable("users", {
   year: integer("year"),
   department: varchar("department"),
   college: varchar("college"),
+  // Slot scheduling metadata
+  slotDate: varchar("slot_date"), // 'YYYY-MM-DD' e.g. '2026-07-31'
+  slotStartTime: varchar("slot_start_time"), // 'HH:MM' e.g. '09:00'
+  slotEndTime: varchar("slot_end_time"), // 'HH:MM' e.g. '09:15'
+  slotStatus: varchar("slot_status").default("active"), // 'active', 'completed', 'expired'
   interviewCount: integer("interview_count").default(0).notNull(),
   createdAt: timestamp("created_at").defaultNow(),
   updatedAt: timestamp("updated_at").defaultNow(),
 }, (table) => [
   index("idx_users_roll_number").on(table.rollNumber),
+  index("idx_users_slot_date").on(table.slotDate),
 ]);
 
 // Resume table

@@ -29,7 +29,8 @@ export const registerSchema = z.object({
 });
 
 export const loginSchema = z.object({
-  identifier: z.string().min(1),
+  identifier: z.string().optional(),
+  email: z.string().optional(),
   password: z.string().min(1),
 });
 
@@ -127,7 +128,7 @@ export async function registerHandler(req: any, res: any) {
     // Set cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: req.secure || req.headers["x-forwarded-proto"] === "https",
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });
@@ -156,18 +157,55 @@ export async function registerHandler(req: any, res: any) {
 export async function loginHandler(req: any, res: any) {
   try {
     const body = loginSchema.parse(req.body);
-    const identifier = body.identifier.trim();
+    const identifier = (body.identifier || body.email || '').trim();
+    if (!identifier) {
+      return res.status(400).json({ message: "Email or Roll Number is required" });
+    }
     const resolveEmailFromRoll = (value: string) => `${value}@students.local`;
 
     let user: User | undefined;
-    if (identifier.includes("@")) {
-      user = await storage.getUserByEmail(identifier);
-    } else {
-      const sanitizedRoll = identifier.replace(/\s+/g, "");
-      if (sanitizedRoll.length === 0) {
-        return res.status(401).json({ message: "Invalid email or password" });
+    
+    // 1. Direct match on full identifier/email
+    user = await storage.getUserByEmail(identifier);
+
+    // 1b. Direct match by Roll Number
+    if (!user) {
+      user = await storage.getUserByRollNumber(identifier);
+    }
+    
+    // 2. If not found and contains '@', try username prefix before '@'
+    if (!user && identifier.includes("@")) {
+      const usernamePrefix = identifier.split("@")[0].trim();
+      if (usernamePrefix) {
+        user = await storage.getUserByEmail(usernamePrefix);
+        if (!user) {
+          user = await storage.getUserByEmail(`${usernamePrefix}@interviewai.com`);
+        }
+        if (!user) {
+          user = await storage.getUserByRollNumber(usernamePrefix);
+        }
       }
-      user = await storage.getUserByEmail(resolveEmailFromRoll(sanitizedRoll));
+    }
+
+    // 3. If not found and doesn't contain '@', try common domain suffixes
+    if (!user && !identifier.includes("@")) {
+      user = await storage.getUserByEmail(`${identifier}@interviewai.com`);
+      if (!user) {
+        const sanitizedRoll = identifier.replace(/\s+/g, "");
+        user = await storage.getUserByEmail(`${sanitizedRoll}@students.local`);
+      }
+    }
+
+    // 4. Fuzzy fallback across all users
+    if (!user) {
+      const prefix = identifier.split("@")[0].toLowerCase().trim();
+      const allUsers = await storage.getAllUsers();
+      user = allUsers.find(u => 
+        u.email.toLowerCase() === identifier.toLowerCase() ||
+        u.rollNumber?.toLowerCase() === prefix ||
+        u.email.toLowerCase().startsWith(prefix + "@") ||
+        u.firstName?.toLowerCase() === prefix
+      );
     }
 
     if (!user) {
@@ -191,7 +229,7 @@ export async function loginHandler(req: any, res: any) {
     // Set cookie
     res.cookie("token", token, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      secure: req.secure || req.headers["x-forwarded-proto"] === "https",
       sameSite: "lax",
       maxAge: 7 * 24 * 60 * 60 * 1000, // 7 days
     });

@@ -636,7 +636,7 @@ export function getCompaniesByCategory(category: CompanyInterviewPattern['catego
 }
 
 /** Build a combined-mode question distribution from a pattern */
-export function getCombinedModeDistribution(pattern: CompanyInterviewPattern, totalQuestions: number = 10): {
+export function getCombinedModeDistribution(pattern: CompanyInterviewPattern, totalQuestions: number = 15): {
   type: InterviewRound;
   count: number;
   difficulty: { easy: number; medium: number; hard: number };

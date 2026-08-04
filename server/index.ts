@@ -11,6 +11,7 @@ import { evaluationQueue } from "./evaluation-queue";
 import { storage } from "./storage";
 
 const app = express();
+app.set("trust proxy", 1);
 const httpServer = createServer(app);
 
 declare module "http" {
@@ -95,15 +96,10 @@ app.use((req, res, next) => {
   // ALWAYS serve the app on the port specified in the environment variable PORT
   // Other ports are firewalled. Default to 5060 if not specified.
   // this serves both the API and the client.
-  // It is the only port that is not firewalled.
-  const port = parseInt(process.env.PORT || "5060", 10);
-  httpServer.listen(
-    port,
-    "localhost",
-    () => {
-      log(`serving on port ${port}`);
-    },
-  );
+  const port = parseInt(process.env.PORT || "5070", 10);
+  httpServer.listen(port, () => {
+    log(`serving on port ${port}`);
+  });
 
   let campaignWorkerInterval: NodeJS.Timeout;
 
