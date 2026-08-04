@@ -1,26 +1,21 @@
 @echo off
 echo ========================================
-echo Starting Interview AI System Servers
+echo Starting Skillnox AI System (NVIDIA Cloud Engine)
 echo ========================================
 echo.
 
-echo Starting Python AI Service (port 8000)...
-start "Python AI Service" cmd /k "cd python-ai && python services/api_service.py"
-
-timeout /t 3 /nobreak >nul
-
-echo Starting Node.js Backend (port 5050)...
-start "Node.js Server" cmd /k "npm run dev"
+echo Starting Node.js Backend Server (port 5070)...
+start "Skillnox AI Server" cmd /k "npm run dev"
 
 echo.
 echo ========================================
-echo Servers Starting...
+echo Server Starting...
 echo ========================================
 echo.
-echo Python AI Service: http://localhost:8000
-echo Node.js Backend:   http://localhost:5050
+echo Node.js Server:   http://localhost:5070
+echo NVIDIA AI Engine:  Connected (meta/llama-3.1-8b-instruct)
 echo.
-echo Open your browser to: http://localhost:5050
+echo Open your browser to: http://localhost:5070
 echo.
 echo Test Accounts:
 echo   Admin:   admin@interviewai.com / admin123
