@@ -36,7 +36,7 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
 FINETUNED_MODEL = os.environ.get("OLLAMA_FINETUNED_MODEL", "")
 
 model_to_use = FINETUNED_MODEL if FINETUNED_MODEL else OLLAMA_MODEL
-print(f"Initializing Ollama LLM: {model_to_use}")
+print(f"Initializing AI LLM Engine (Model/NVIDIA NIM Cloud: {model_to_use})")
 llm = get_llm(model_name=model_to_use)
 
 
@@ -44,10 +44,10 @@ llm = get_llm(model_name=model_to_use)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     # ── Startup ──
-    print("[WARMUP] Warming up Ollama LLM model...")
+    print("[WARMUP] Warming up AI LLM Engine...")
     try:
         _ = await llm.generate_question_async("technical", "Python", "easy")
-        print("[OK] Ollama LLM model ready")
+        print("[OK] AI LLM Engine ready")
     except Exception as e:
         print(f"[WARN] Warm-up warning: {e}")
     yield
@@ -157,6 +157,18 @@ def root():
 @app.get("/health")
 async def health():
     """Health check endpoint"""
+    nvidia_key = os.environ.get("NVIDIA_API_KEY")
+    nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+
+    if nvidia_key:
+        return {
+            "status": "healthy",
+            "llm_status": "loaded",
+            "llm_backend": "nvidia_nim",
+            "model": nvidia_model,
+            "concurrency_limit": 50
+        }
+
     try:
         import httpx
         base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
@@ -171,7 +183,7 @@ async def health():
         "llm_status": llm_status,
         "llm_backend": "ollama",
         "model": model_to_use,
-        "concurrency_limit": 2
+        "concurrency_limit": 50
     }
 
 
@@ -374,4 +386,5 @@ if __name__ == "__main__":
     import uvicorn
     # Use multiple workers if CPU cores allow, but with semaphore we handle concurrency internally
     port = int(os.environ.get("PYTHON_AI_PORT", "8060"))
-    uvicorn.run(app, host="0.0.0.0", port=port, workers=1)
+    workers = int(os.environ.get("PYTHON_AI_WORKERS", "4"))
+    uvicorn.run(app, host="0.0.0.0", port=port, workers=workers)

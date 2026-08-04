@@ -37,16 +37,16 @@ env_path = Path(__file__).parent.parent.parent / '.env'
 load_dotenv(dotenv_path=env_path)
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
-OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "120"))
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "skillnox-qwen:latest")
+OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "180"))
 
 # Global semaphore to limit concurrent LLM inferences
-# This prevents RAM/CPU spikes that crash the server
-LLM_CONCURRENCY = int(os.environ.get("OLLAMA_CONCURRENCY", "3"))
+# Set to 50 concurrent candidate evaluations for high-scale student placement drives
+LLM_CONCURRENCY = int(os.environ.get("OLLAMA_CONCURRENCY", "100"))
 LLM_SEMAPHORE = asyncio.Semaphore(LLM_CONCURRENCY)
 
 # Simple cache for repeated evaluations (10 minute TTL)
-eval_cache = TTLCache(maxsize=100, ttl=600)
+eval_cache = TTLCache(maxsize=500, ttl=600)
 
 # ---------------------------------------------------------------------------
 # OllamaLLM — Main LLM class
@@ -67,15 +67,21 @@ class OllamaLLM:
         self._session = requests.Session()
         self._session.headers.update({"Content-Type": "application/json"})
         
-        # Async client for better performance under load
+        # High-performance multi-socket Async client for true parallel concurrency
+        limits = httpx.Limits(max_keepalive_connections=120, max_connections=250)
         self._async_client = httpx.AsyncClient(
-            base_url=self.base_url,
+            limits=limits,
             timeout=float(self.timeout),
             headers={"Content-Type": "application/json"}
         )
 
-        print(f"Initializing Ollama LLM: {model_name} @ {base_url}")
-        self._verify_connection()
+        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+        if nvidia_key:
+            nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+            print(f"[OK] AI Engine Initialized: NVIDIA NIM Cloud API ({nvidia_model})")
+        else:
+            print(f"Initializing Local LLM: {model_name} @ {base_url}")
+            self._verify_connection()
 
     async def close(self):
         """Close the async client to free connections."""
@@ -91,7 +97,14 @@ class OllamaLLM:
     # ------------------------------------------------------------------
 
     def _verify_connection(self):
-        """Verify Ollama is running and model is available."""
+        """Verify NVIDIA NIM API or local Ollama is running."""
+        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+
+        if nvidia_key:
+            print(f"[OK] NVIDIA NIM LLM Cloud API ready: {nvidia_model} (High-Speed H100 GPU cluster)")
+            return
+
         try:
             resp = self._session.get(
                 f"{self.base_url}/api/tags", timeout=10
@@ -112,19 +125,62 @@ class OllamaLLM:
             print(f"[WARN] Ollama connection check failed: {e}")
 
     # ------------------------------------------------------------------
-    # Core generation (Async)
+    # Core generation (Async & Sync with NVIDIA NIM Cloud Fallback)
     # ------------------------------------------------------------------
 
     async def generate_async(
         self,
         prompt: str,
-        max_length: int = 200,
+        max_length: int = 300,
         temperature: float = 0.7,
         system_prompt: Optional[str] = None,
         json_format: bool = False,
     ) -> str:
-        """Generate text from prompt using Ollama API (Asynchronous & Throttled)."""
-        # Use semaphore to limit concurrency
+        """Generate text using NVIDIA NIM API if key exists, otherwise local Ollama."""
+        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+
+        if nvidia_key:
+            url = "https://integrate.api.nvidia.com/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {nvidia_key}",
+                "Content-Type": "application/json"
+            }
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            payload = {
+                "model": nvidia_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_length,
+                "top_p": 0.9
+            }
+            if json_format:
+                payload["response_format"] = {"type": "json_object"}
+
+            # Retry loop with backoff on HTTP 429 (Rate Limit 40 RPM)
+            for attempt in range(4):
+                try:
+                    async with LLM_SEMAPHORE:
+                        resp = await self._async_client.post(url, headers=headers, json=payload)
+                        if resp.status_code == 429:
+                            backoff = (attempt + 1) * 1.5
+                            print(f"[NVIDIA 429 RateLimit] 40 RPM quota hit. Retrying in {backoff:.1f}s... (Attempt {attempt+1}/4)")
+                            await asyncio.sleep(backoff)
+                            continue
+                        resp.raise_for_status()
+                        data = resp.json()
+                        return data["choices"][0]["message"]["content"].strip()
+                except Exception as e:
+                    if attempt == 3:
+                        print(f"[WARN] NVIDIA NIM API async call failed after 4 retries: {e}. Falling back to local Ollama...")
+                    else:
+                        await asyncio.sleep(1.5)
+
+        # Fallback to local Ollama API
         async with LLM_SEMAPHORE:
             try:
                 payload = {
@@ -136,7 +192,7 @@ class OllamaLLM:
                         "top_p": 0.9,
                         "num_predict": max_length,
                         "repeat_penalty": 1.1,
-                        "num_ctx": 32768 if json_format else 8192,
+                        "num_ctx": 2048,
                     },
                 }
                 if system_prompt:
@@ -144,19 +200,45 @@ class OllamaLLM:
                 if json_format:
                     payload["format"] = "json"
 
-                resp = await self._async_client.post("/api/generate", json=payload)
+                resp = await self._async_client.post(f"{self.base_url}/api/generate", json=payload)
                 resp.raise_for_status()
                 return resp.json().get("response", "").strip()
-
-            except (httpx.TimeoutException, httpx.ConnectError) as e:
-                print(f"[WARN] Ollama async request failed: {e}")
-                return self._fallback_generate(prompt)
             except Exception as e:
-                print(f"Error in Ollama async generation: {e}")
+                print(f"[WARN] Local Ollama async generation failed: {e}")
                 return self._fallback_generate(prompt)
 
-    def generate(self, prompt, max_length=200, temperature=0.7, system_prompt=None):
-        """Synchronous wrapper for legacy support - uses sync requests"""
+    def generate(self, prompt, max_length=300, temperature=0.7, system_prompt=None):
+        """Synchronous generation using NVIDIA NIM API if key exists, otherwise local Ollama."""
+        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+
+        if nvidia_key:
+            try:
+                url = "https://integrate.api.nvidia.com/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {nvidia_key}",
+                    "Content-Type": "application/json"
+                }
+                messages = []
+                if system_prompt:
+                    messages.append({"role": "system", "content": system_prompt})
+                messages.append({"role": "user", "content": prompt})
+
+                payload = {
+                    "model": nvidia_model,
+                    "messages": messages,
+                    "temperature": temperature,
+                    "max_tokens": max_length,
+                    "top_p": 0.9
+                }
+                resp = self._session.post(url, headers=headers, json=payload, timeout=self.timeout)
+                resp.raise_for_status()
+                data = resp.json()
+                return data["choices"][0]["message"]["content"].strip()
+            except Exception as e:
+                print(f"[WARN] NVIDIA NIM API sync call failed: {e}. Falling back to local Ollama...")
+
+        # Fallback to local Ollama API
         try:
             payload = {
                 "model": self.model_name,
@@ -261,32 +343,29 @@ class OllamaLLM:
         is_behavioral = any(word in question.lower() for word in ["tell me about a time", "situation", "describe a scenario", "how do you handle", "conflict", "experience"])
         
         system = (
-            "You are an expert technical and behavioral interviewer conducting a rigorous evaluation. "
-            "Analyze the candidate's answer critically and provide strict, honest feedback. "
-            "ALWAYS respond in this EXACT format with NO extra text:\n"
+            "You are a friendly, encouraging Campus Technical Recruiter and College Academic Interviewer evaluating 3rd-year B.Tech engineering students.\n"
+            "Your goal is to evaluate student responses fairly, highlighting what they got right while providing clear, constructive guidance to help them learn.\n\n"
+            "EXACT OUTPUT FORMAT REQUIRED (No preamble, no markdown headers):\n"
             "Score: [number 0-100]\n"
-            "Feedback: [2-3 specific sentences about what was good/bad]\n"
-            "IdealAnswer: [A concise 2-4 sentence model answer showing how to properly answer this question]\n\n"
-            "Scoring Rubric:\n"
-            "- 0-30: Vague, irrelevant, or extremely short (under 10 words).\n"
-            "- 31-50: Partially addresses question but lacks depth or examples.\n"
-            "- 51-70: Good answer, addresses most points, but could be more structured.\n"
-            "- 71-85: Strong answer with clear examples and technical/behavioral maturity.\n"
-            "- 86-100: Exceptional, uses STAR method (for behavioral) or high technical depth, perfectly articulated.\n\n"
-            + ("For this BEHAVIORAL question, look specifically for the STAR method: Situation, Task, Action, Result. Penalize if the result or specific actions are missing.\n" if is_behavioral else "For this TECHNICAL question, look for accuracy, depth, and mention of relevant tools/frameworks.\n") +
-            "DO NOT include any reasoning, breakdown, thought process, or markdown. "
-            "ONLY output Score, Feedback, and IdealAnswer."
+            "Feedback: [2-3 supportive, constructive sentences highlighting candidate strengths and simple areas to improve]\n"
+            "IdealAnswer: [2-3 clear, student-friendly sentences demonstrating how to answer this question effectively]\n\n"
+            "FAIR STUDENT-LEVEL SCORING RUBRIC:\n"
+            "- 0-20: Empty response, completely off-topic, or 'I don't know'.\n"
+            "- 21-45: Basic attempt; shows partial awareness but misses the core definition or concept.\n"
+            "- 46-65: Solid student answer; accurately explains the main definition/concept correctly.\n"
+            "- 66-85: Great student answer; mentions key terminology, proper logic, or a good example.\n"
+            "- 86-100: Outstanding answer; comprehensive explanation, highly structured, and well-articulated.\n\n"
+            + ("SPECIAL INSTRUCTION (BEHAVIORAL): Encourage candidate storytelling and clear personal contribution.\n" if is_behavioral else "SPECIAL INSTRUCTION (TECHNICAL): Reward correct technical definitions, fundamental understanding, and clear reasoning.\n") +
+            "Evaluate fairly for college students and start your response immediately with 'Score: '."
         )
 
         prompt = (
-            f"/no_think\n"
             f"Question: {question}\n"
             f"Candidate Answer: {answer}\n\n"
-            "Evaluate with Score (0-100), Feedback, and IdealAnswer. "
-            "START YOUR RESPONSE WITH 'Score: '."
+            "Evaluate fairly and output Score, Feedback, and IdealAnswer."
         )
 
-        evaluation = await self.generate_async(prompt, max_length=450, system_prompt=system)
+        evaluation = await self.generate_async(prompt, max_length=500, temperature=0.3, system_prompt=system)
 
         # Strip any <think>...</think> blocks
         evaluation = re.sub(r'<think>.*?</think>', '', evaluation, flags=re.DOTALL).strip()

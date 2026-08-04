@@ -101,9 +101,7 @@ async function callPythonService(endpoint: string, method: 'GET' | 'POST', body?
       options.body = formData;
       // Don't set Content-Type header - let fetch set it with boundary
     } else if (body) {
-      options.headers = {
-        'Content-Type': 'application/json',
-      };
+      (options.headers as Record<string, string>)['Content-Type'] = 'application/json';
       options.body = JSON.stringify(body);
     }
 

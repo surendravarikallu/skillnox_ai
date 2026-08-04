@@ -59,14 +59,22 @@ export async function evaluateAnswer(answer: string, question?: string): Promise
   const trimmed = (answer || '').trim();
   const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
 
+  // Immediately score empty / missing answers as 0
+  if (!trimmed || trimmed.toLowerCase() === "no answer recorded" || trimmed.toLowerCase() === "silence detected") {
+    return {
+      score: 0,
+      feedback: "No response was recorded for this question."
+    };
+  }
+
   // Try Python AI service first
   let aiSucceeded = false;
-  let score = 50;
-  let feedback = "Good attempt.";
+  let score = 0;
+  let feedback = "Attempted response.";
 
   try {
-    const truncatedAnswerForAI = trimmed.length > 1500 ? trimmed.slice(0, 1500) : trimmed;
-    const truncatedQuestionForAI = question && question.length > 500 ? question.slice(0, 500) : question;
+    const truncatedAnswerForAI = trimmed.length > 8000 ? trimmed.slice(0, 8000) : trimmed;
+    const truncatedQuestionForAI = question && question.length > 1000 ? question.slice(0, 1000) : question;
 
     const aiResult = await withTimeout(
       pythonAI.evaluateAnswer(truncatedAnswerForAI, truncatedQuestionForAI),

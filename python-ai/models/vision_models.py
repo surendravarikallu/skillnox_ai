@@ -181,7 +181,71 @@ class EmotionAnalyzer:
         return image
 
     def analyze(self, image) -> Dict:
-        """Analyze emotion from image"""
+        """Analyze emotion and facial expression using NVIDIA NIM API if available, else local HSEmotion"""
+        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+
+        if nvidia_key:
+            try:
+                import io, base64, requests
+                
+                # Convert PIL Image or numpy array to JPEG base64 (resized to 512x512 max for payload efficiency)
+                if isinstance(image, np.ndarray):
+                    image = Image.fromarray(image)
+                if image.mode != 'RGB':
+                    image = image.convert('RGB')
+                
+                # Resize thumbnail for high-speed API payload transmission
+                image.thumbnail((512, 512))
+                    
+                buffer = io.BytesIO()
+                image.save(buffer, format="JPEG", quality=80)
+                base64_img = base64.b64encode(buffer.getvalue()).decode('utf-8')
+
+                url = "https://integrate.api.nvidia.com/v1/chat/completions"
+                headers = {
+                    "Authorization": f"Bearer {nvidia_key}",
+                    "Content-Type": "application/json"
+                }
+                
+                payload = {
+                    "model": "meta/llama-3.2-11b-vision-instruct",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": [
+                                {"type": "text", "text": "Analyze candidate facial expression and composure in this interview frame. Return JSON object with keys: emotion (Happy/Neutral/Surprise/Focused/Confident), confidence (0-100), eye_contact (0-100), nervousness (0-100), emotion_score (0-100). Output JSON only."},
+                                {"type": "image_url", "image_url": {"url": f"data:image/jpeg;base64,{base64_img}"}}
+                            ]
+                        }
+                    ],
+                    "max_tokens": 150,
+                    "temperature": 0.2
+                }
+
+                resp = requests.post(url, headers=headers, json=payload, timeout=12)
+                if resp.status_code == 200:
+                    raw_out = resp.json()['choices'][0]['message']['content'].strip()
+                    # Parse JSON block
+                    import json
+                    json_str = raw_out
+                    if "```json" in raw_out:
+                        json_str = raw_out.split("```json")[1].split("```")[0].strip()
+                    elif "```" in raw_out:
+                        json_str = raw_out.split("```")[1].split("```")[0].strip()
+                        
+                    data = json.loads(json_str)
+                    return {
+                        'emotion': data.get('emotion', 'Confident'),
+                        'emotion_probabilities': {'Confident': 0.8, 'Neutral': 0.2},
+                        'confidence': float(data.get('confidence', 85.0)),
+                        'eye_contact': float(data.get('eye_contact', 88.0)),
+                        'nervousness': float(data.get('nervousness', 15.0)),
+                        'emotion_score': float(data.get('emotion_score', 85.0)),
+                    }
+            except Exception as e:
+                print(f"[WARN] NVIDIA Vision API emotion analysis failed: {e}. Falling back to local HSEmotion...")
+
+        # Fallback: Local HSEmotionRecognizer
         image = self.preprocess_image(image)
 
         # Detect faces

@@ -10,16 +10,10 @@ print("=" * 60)
 
 try:
     # Initialize LLM (try fine-tuned model first)
-    print("\n[1] Loading LLM model...")
-    # Check if fine-tuned model exists
-    model_path = Path(__file__).parent / "models" / "finetuned_llm"
-    if model_path.exists() and (model_path / "adapter_config.json").exists():
-        print("  Using fine-tuned model...")
-        llm = get_llm(model_name="models/finetuned_llm", use_lightweight=False)
-    else:
-        print("  Using base model (fine-tuned model not found)...")
-        llm = get_llm(model_name="Qwen/Qwen2.5-0.5B-Instruct", use_lightweight=False)
-    print("  ✓ LLM loaded successfully!")
+    # Initialize Ollama LLM
+    print("\n[1] Loading Ollama LLM model (skillnox-qwen:latest)...")
+    llm = get_llm(model_name="skillnox-qwen:latest", use_lightweight=False)
+    print("  [OK] Ollama LLM ready!")
     
     # Test question generation
     print("\n[2] Testing question generation...")
@@ -42,11 +36,11 @@ try:
     print(f"  Feedback: {evaluation.get('feedback', 'N/A')[:100]}...")
     
     print("\n" + "=" * 60)
-    print("✓ All tests passed! LLM is working correctly.")
+    print("[OK] All tests passed! LLM is working correctly.")
     print("=" * 60)
     
 except Exception as e:
-    print(f"\n✗ Error testing LLM: {e}")
+    print(f"\n[ERROR] Error testing LLM: {e}")
     import traceback
     traceback.print_exc()
 

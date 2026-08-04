@@ -172,18 +172,49 @@ class AudioTranscriber:
                         print(f"Fallback also failed: {e2}")
 
     def transcribe(self, audio_array: np.ndarray) -> str:
-        """Transcribe audio array to text with optimized settings"""
+        """Transcribe audio array to text using NVIDIA API or Faster-Whisper large-v3-turbo"""
+        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+        
+        # If NVIDIA API Key exists, use high-speed cloud speech-to-text API if available
+        if nvidia_key:
+            try:
+                import io, wave
+                # Convert float32 numpy audio array to 16kHz PCM WAV bytes
+                if audio_array.dtype != np.float32:
+                    audio_array = audio_array.astype(np.float32)
+                
+                pcm16 = (audio_array * 32767).astype(np.int16)
+                wav_io = io.BytesIO()
+                with wave.open(wav_io, 'wb') as wf:
+                    wf.setnchannels(1)
+                    wf.setsampwidth(2)
+                    wf.setframerate(22050)
+                    wf.writeframes(pcm16.tobytes())
+                wav_bytes = wav_io.getvalue()
+                
+                # High-accuracy Cloud Speech Recognition endpoint
+                url = "https://integrate.api.nvidia.com/v1/audio/transcriptions"
+                headers = {"Authorization": f"Bearer {nvidia_key}"}
+                files = {"file": ("speech.wav", wav_bytes, "audio/wav")}
+                data = {"model": "nvidia/canary-1b"}
+                
+                resp = requests.post(url, headers=headers, files=files, data=data, timeout=15)
+                if resp.status_code == 200:
+                    text = resp.json().get("text", "").strip()
+                    if text:
+                        return text
+            except Exception as e:
+                print(f"[WARN] Cloud Speech-to-Text API call failed: {e}. Falling back to local Faster-Whisper...")
+
+        # Fallback to local Faster-Whisper (large-v3-turbo)
         self._load_model()
         if self.model is None:
             return ""
 
         try:
-            # Faster Whisper expects float32 array
             if audio_array.dtype != np.float32:
                 audio_array = audio_array.astype(np.float32)
 
-            # Use beam_size=10 for better accuracy (moderate latency trade-off)
-            # vad_filter helps remove silence for cleaner transcription
             segments, info = self.model.transcribe(
                 audio_array,
                 beam_size=10,

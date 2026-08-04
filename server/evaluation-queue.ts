@@ -10,9 +10,9 @@ interface EvaluationTask {
 }
 
 // ─── Constants ────────────────────────────────────────
-const MAX_QUEUE_SIZE = 100;
+const MAX_QUEUE_SIZE = 2000;
 const MAX_RETRIES = 3;
-const CONCURRENT_LIMIT = 2;
+const CONCURRENT_LIMIT = 100;
 const STATUS_LOG_INTERVAL_MS = 10000;
 const RETRY_BACKOFF_MS = 5000;
 
