@@ -1,5 +1,6 @@
 import { Link, useLocation } from "wouter";
 import { useAuth } from "@/hooks/useAuth";
+import { queryClient } from "@/lib/queryClient";
 import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
 import { Button } from "@/components/ui/button";
 import { cn } from "@/lib/utils";
@@ -70,6 +71,17 @@ export default function Layout({ children }: LayoutProps) {
 
   const isAdmin = user?.role === 'admin';
   const navItems = isAdmin ? adminNavItems : studentNavItems;
+  const isPathActive = (itemPath: string) => {
+    if (itemPath === '/') return location === '/';
+    return location === itemPath || location.startsWith(itemPath + '/');
+  };
+
+  const getBreadcrumbLabel = (loc: string) => {
+    if (loc === '/') return 'Dashboard';
+    const parts = loc.split('/').filter(Boolean);
+    if (parts.length === 0) return 'Dashboard';
+    return parts.map(p => p.charAt(0).toUpperCase() + p.slice(1).replace(/-/g, ' ')).join(' / ');
+  };
 
   const sidebarStyle = {
     "--sidebar-width": "16rem",
@@ -80,69 +92,70 @@ export default function Layout({ children }: LayoutProps) {
     <SidebarProvider style={sidebarStyle}>
       <div className="flex h-screen w-full">
         <Sidebar collapsible="icon" className="border-r border-border bg-sidebar transition-all duration-300">
-          <SidebarHeader className="h-16 flex items-center justify-center group-data-[collapsible=icon]:px-0 px-6 border-b border-transparent">
-            <Link href="/">
-              <div className="flex items-center gap-3 cursor-pointer group overflow-hidden transition-all duration-300">
-                <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-110 transition-all shrink-0">
-                  <Brain className="w-5 h-5 text-white" />
-                </div>
-                <div className="flex flex-col group-data-[collapsible=icon]:hidden opacity-100 group-data-[collapsible=icon]:opacity-0 transition-opacity duration-300">
-                  <span className="text-lg font-bold tracking-tight leading-none text-foreground whitespace-nowrap">Skillnox</span>
-                  <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">AI</span>
-                </div>
+          <SidebarHeader className="h-16 flex items-center justify-center px-4 group-data-[collapsible=icon]:px-0 border-b border-transparent">
+            <Link href="/" className="flex items-center justify-center gap-3 cursor-pointer group">
+              <div className="w-9 h-9 rounded-xl bg-gradient-to-br from-primary to-purple-600 flex items-center justify-center shadow-lg shadow-primary/20 group-hover:scale-110 transition-all shrink-0">
+                <Brain className="w-5 h-5 text-white" />
+              </div>
+              <div className="flex flex-col group-data-[collapsible=icon]:hidden">
+                <span className="text-lg font-bold tracking-tight leading-none text-foreground whitespace-nowrap">Skillnox</span>
+                <span className="text-[10px] font-black uppercase tracking-[0.2em] text-primary">AI</span>
               </div>
             </Link>
           </SidebarHeader>
 
           <SidebarContent className="px-2">
             <SidebarGroup>
-              <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">
+              <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 group-data-[collapsible=icon]:hidden">
                 {isAdmin ? 'Admin Console' : 'Student Hub'}
               </SidebarGroupLabel>
               <SidebarGroupContent>
                 <SidebarMenu>
-                  {navItems.map((item) => (
-                    <SidebarMenuItem key={item.path} className="mb-1">
-                      <SidebarMenuButton
-                        asChild
-                        isActive={location === item.path}
-                        className={cn(
-                          "h-11 px-4 rounded-xl transition-all duration-300",
-                          location === item.path 
-                            ? "bg-primary/10 text-primary border border-primary/20" 
-                            : "hover:bg-accent text-muted-foreground hover:text-foreground"
-                        )}
-                        data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
-                      >
-                        <Link href={item.path}>
-                          <item.icon className={cn("w-4 h-4 mr-2", location === item.path && "animate-pulse")} />
-                          <span className="font-medium">{item.title}</span>
-                        </Link>
-                      </SidebarMenuButton>
-                    </SidebarMenuItem>
-                  ))}
+                  {navItems.map((item) => {
+                    const active = isPathActive(item.path);
+                    return (
+                      <SidebarMenuItem key={item.path} className="mb-1">
+                        <SidebarMenuButton
+                          asChild
+                          isActive={active}
+                          className={cn(
+                            "h-11 px-3.5 rounded-xl transition-all duration-300 group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0",
+                            active 
+                              ? "bg-primary/10 text-primary border border-primary/20" 
+                              : "hover:bg-accent text-muted-foreground hover:text-foreground"
+                          )}
+                          data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
+                        >
+                          <Link href={item.path} className="flex items-center gap-3 w-full group-data-[collapsible=icon]:justify-center">
+                            <item.icon className={cn("w-4 h-4 shrink-0", active && "animate-pulse")} />
+                            <span className="font-medium group-data-[collapsible=icon]:hidden">{item.title}</span>
+                          </Link>
+                        </SidebarMenuButton>
+                      </SidebarMenuItem>
+                    );
+                  })}
                 </SidebarMenu>
               </SidebarGroupContent>
             </SidebarGroup>
 
             {!isAdmin && (
               <SidebarGroup className="mt-4">
-                <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50">Rapid Actions</SidebarGroupLabel>
+                <SidebarGroupLabel className="px-4 text-[10px] font-bold uppercase tracking-widest text-muted-foreground/50 group-data-[collapsible=icon]:hidden">Rapid Actions</SidebarGroupLabel>
                 <SidebarGroupContent>
                   <SidebarMenu>
                     <SidebarMenuItem>
-                      <SidebarMenuButton asChild className="h-11 px-4 rounded-xl hover:bg-primary/5 group" data-testid="nav-start-interview">
-                        <Link href="/interview/start">
-                          <Brain className="w-4 h-4 mr-2 text-primary group-hover:scale-110 transition-transform" />
-                          <span className="font-medium">Live Interview</span>
+                      <SidebarMenuButton asChild className="h-11 px-3.5 rounded-xl hover:bg-primary/5 group group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0" data-testid="nav-start-interview">
+                        <Link href="/interview/start" className="flex items-center gap-3 w-full group-data-[collapsible=icon]:justify-center">
+                          <Brain className="w-4 h-4 text-primary group-hover:scale-110 transition-transform shrink-0" />
+                          <span className="font-medium group-data-[collapsible=icon]:hidden">Live Interview</span>
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
                     <SidebarMenuItem>
-                      <SidebarMenuButton asChild className="h-11 px-4 rounded-xl hover:bg-orange-500/5 group" data-testid="nav-company-sim">
-                        <Link href="/interview/start?type=company">
-                          <Briefcase className="w-4 h-4 mr-2 text-orange-500 group-hover:scale-110 transition-transform" />
-                          <span className="font-medium">Company Sim</span>
+                      <SidebarMenuButton asChild className="h-11 px-3.5 rounded-xl hover:bg-orange-500/5 group group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0" data-testid="nav-company-sim">
+                        <Link href="/interview/start?type=company" className="flex items-center gap-3 w-full group-data-[collapsible=icon]:justify-center">
+                          <Briefcase className="w-4 h-4 text-orange-500 group-hover:scale-110 transition-transform shrink-0" />
+                          <span className="font-medium group-data-[collapsible=icon]:hidden">Company Sim</span>
                         </Link>
                       </SidebarMenuButton>
                     </SidebarMenuItem>
@@ -152,17 +165,17 @@ export default function Layout({ children }: LayoutProps) {
             )}
           </SidebarContent>
 
-          <SidebarFooter className="p-4 border-t border-border">
+          <SidebarFooter className="p-3 border-t border-border group-data-[collapsible=icon]:p-1.5 group-data-[collapsible=icon]:flex group-data-[collapsible=icon]:justify-center">
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" className="w-full justify-start gap-3 h-auto py-3 px-3 rounded-2xl hover:bg-accent transition-all" data-testid="button-user-menu">
-                  <Avatar className="w-9 h-9 border border-border shadow-sm">
+                <Button variant="ghost" className="w-full justify-start gap-3 h-auto py-2.5 px-2.5 rounded-2xl hover:bg-accent transition-all group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:px-0" data-testid="button-user-menu">
+                  <Avatar className="w-8 h-8 border border-border shadow-sm shrink-0">
                     <AvatarImage src={user?.profileImageUrl || undefined} className="object-cover" />
-                    <AvatarFallback className="bg-primary/10 text-primary font-bold">
+                    <AvatarFallback className="bg-primary/10 text-primary font-bold text-xs">
                       {user?.firstName?.[0] || user?.email?.[0]?.toUpperCase() || 'U'}
                     </AvatarFallback>
                   </Avatar>
-                  <div className="flex flex-col items-start text-left overflow-hidden">
+                  <div className="flex flex-col items-start text-left overflow-hidden group-data-[collapsible=icon]:hidden">
                     <span className="text-sm font-bold truncate max-w-[120px]">
                       {user?.firstName || user?.email?.split('@')[0] || 'User'}
                     </span>
@@ -190,6 +203,7 @@ export default function Layout({ children }: LayoutProps) {
                     } catch (error) {
                       console.error("Logout error:", error);
                     }
+                    queryClient.clear();
                     localStorage.removeItem("token");
                     window.location.href = "/login";
                   }}
@@ -214,7 +228,7 @@ export default function Layout({ children }: LayoutProps) {
               <div className="h-4 w-[1px] bg-border hidden md:block" />
               <div className="hidden md:flex items-center gap-2">
                 <span className="text-xs font-bold text-muted-foreground uppercase tracking-widest">Current View /</span>
-                <span className="text-xs font-black text-foreground uppercase tracking-widest">{location === '/' ? 'Dashboard' : location.split('/')[1]}</span>
+                <span className="text-xs font-black text-foreground uppercase tracking-widest">{getBreadcrumbLabel(location)}</span>
               </div>
             </div>
             <div className="flex items-center gap-2">
