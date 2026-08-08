@@ -41,8 +41,8 @@ OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "skillnox-qwen:latest")
 OLLAMA_TIMEOUT = int(os.environ.get("OLLAMA_TIMEOUT", "180"))
 
 # Global semaphore to limit concurrent LLM inferences
-# Set to 50 concurrent candidate evaluations for high-scale student placement drives
-LLM_CONCURRENCY = int(os.environ.get("OLLAMA_CONCURRENCY", "100"))
+# Set to 350 concurrent candidate evaluations for massive placement drives
+LLM_CONCURRENCY = int(os.environ.get("OLLAMA_CONCURRENCY", "350"))
 LLM_SEMAPHORE = asyncio.Semaphore(LLM_CONCURRENCY)
 
 # Simple cache for repeated evaluations (10 minute TTL)
@@ -68,7 +68,7 @@ class OllamaLLM:
         self._session.headers.update({"Content-Type": "application/json"})
         
         # High-performance multi-socket Async client for true parallel concurrency
-        limits = httpx.Limits(max_keepalive_connections=120, max_connections=250)
+        limits = httpx.Limits(max_keepalive_connections=350, max_connections=500)
         self._async_client = httpx.AsyncClient(
             limits=limits,
             timeout=float(self.timeout),
@@ -137,15 +137,17 @@ class OllamaLLM:
         json_format: bool = False,
     ) -> str:
         """Generate text using NVIDIA NIM API if key exists, otherwise local Ollama."""
-        nvidia_key = os.environ.get("NVIDIA_API_KEY")
+        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
+        if keys_str:
+            nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+        else:
+            single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
+            nvidia_keys = [single_k] if single_k else []
+
         nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
 
-        if nvidia_key:
+        if nvidia_keys:
             url = "https://integrate.api.nvidia.com/v1/chat/completions"
-            headers = {
-                "Authorization": f"Bearer {nvidia_key}",
-                "Content-Type": "application/json"
-            }
             messages = []
             if system_prompt:
                 messages.append({"role": "system", "content": system_prompt})
@@ -161,24 +163,34 @@ class OllamaLLM:
             if json_format:
                 payload["response_format"] = {"type": "json_object"}
 
-            # Retry loop with backoff on HTTP 429 (Rate Limit 40 RPM)
-            for attempt in range(4):
-                try:
-                    async with LLM_SEMAPHORE:
-                        resp = await self._async_client.post(url, headers=headers, json=payload)
-                        if resp.status_code == 429:
-                            backoff = (attempt + 1) * 1.5
-                            print(f"[NVIDIA 429 RateLimit] 40 RPM quota hit. Retrying in {backoff:.1f}s... (Attempt {attempt+1}/4)")
-                            await asyncio.sleep(backoff)
-                            continue
-                        resp.raise_for_status()
-                        data = resp.json()
-                        return data["choices"][0]["message"]["content"].strip()
-                except Exception as e:
-                    if attempt == 3:
-                        print(f"[WARN] NVIDIA NIM API async call failed after 4 retries: {e}. Falling back to local Ollama...")
-                    else:
-                        await asyncio.sleep(1.5)
+            # Iterate through key pool first
+            for key_idx, nvidia_key in enumerate(nvidia_keys, 1):
+                headers = {
+                    "Authorization": f"Bearer {nvidia_key}",
+                    "Content-Type": "application/json"
+                }
+
+                # Retry loop per key
+                for attempt in range(2):
+                    is_rate_limited = False
+                    try:
+                        async with LLM_SEMAPHORE:
+                            resp = await self._async_client.post(url, headers=headers, json=payload)
+                            if resp.status_code == 429:
+                                is_rate_limited = True
+                            else:
+                                resp.raise_for_status()
+                                data = resp.json()
+                                return data["choices"][0]["message"]["content"].strip()
+                    except Exception as e:
+                        if not is_rate_limited:
+                            print(f"[NVIDIA Key {key_idx}] Attempt {attempt+1} failed ({e}), trying next option...")
+                            await asyncio.sleep(0.3)
+
+                    if is_rate_limited:
+                        backoff = (attempt + 1) * 0.5
+                        print(f"[NVIDIA Key {key_idx} 429] Rate limit hit. Retrying key {key_idx} after releasing semaphore...")
+                        await asyncio.sleep(backoff)
 
         # Fallback to local Ollama API
         async with LLM_SEMAPHORE:
@@ -294,12 +306,18 @@ class OllamaLLM:
                     "You are an expert interview coach for engineering placement preparation. "
                     f"Difficulty level: {difficulty.upper()}. {diff_instruction}\n"
                     f"{trending_ctx}\n"
+                    "STRICT GUARDRAILS:\n"
+                    "- Do NOT ask the candidate to write code, implement functions, or produce code output.\n"
+                    "- Do NOT ask coding/algorithm problems that require writing actual code.\n"
+                    "- You CAN ask about technical concepts (OOP, DBMS, OS, networking, design patterns).\n"
+                    "- You CAN ask 'explain', 'describe', 'compare', 'what is', 'how does X work' questions.\n"
+                    "- You CAN ask system design/architecture questions about designing systems at scale.\n"
                     "Generate exactly ONE interview question. Output ONLY the question — "
                     "no preamble, no numbering, no explanation."
                 )
 
             type_hints = {
-                "technical": f"Generate a {difficulty} technical interview question. Focus: {context or 'Software Engineering'}.",
+                "technical": f"Generate a {difficulty} technical interview question. Focus: {context or 'Software Engineering concepts like OOP, DBMS, OS, Networking, Design Patterns'}. Do NOT ask to write code — ask conceptual explanation questions only.",
                 "hr": f"Generate a {difficulty} HR interview question. Focus: {context or 'Career goals and cultural fit'}.",
                 "behavioral": f"Generate a {difficulty} behavioral STAR-method question. Focus: {context or 'Professional scenarios'}.",
                 "project": f"Generate a {difficulty} project explanation question. Focus: {context or 'Architecture and contributions'}.",
@@ -307,6 +325,8 @@ class OllamaLLM:
                 "communication": f"Generate a {difficulty} communication assessment question. Focus: {context or 'Clarity and articulation'}.",
                 "coding": f"Generate a {difficulty} coding/algorithm question. Focus: {context or 'Data structures and algorithms'}.",
                 "aptitude": f"Generate a {difficulty} aptitude/reasoning question. Focus: {context or 'Quantitative and logical reasoning'}.",
+                "resume_based": f"Generate a {difficulty} interview question based on the candidate's resume skills: {context or 'general software engineering skills'}. Ask about their practical experience, depth of knowledge, or real-world application of these specific skills. Do NOT ask to write code.",
+                "system_design": f"Generate a {difficulty} system design/architecture question. Focus: {context or 'Designing scalable systems, APIs, databases, and distributed architectures for millions of users'}. Ask about high-level architecture, component design, trade-offs, and scalability strategies.",
             }
 
             prompt = type_hints.get(question_type, type_hints["technical"])
@@ -343,19 +363,21 @@ class OllamaLLM:
         is_behavioral = any(word in question.lower() for word in ["tell me about a time", "situation", "describe a scenario", "how do you handle", "conflict", "experience"])
         
         system = (
-            "You are a friendly, encouraging Campus Technical Recruiter and College Academic Interviewer evaluating 3rd-year B.Tech engineering students.\n"
-            "Your goal is to evaluate student responses fairly, highlighting what they got right while providing clear, constructive guidance to help them learn.\n\n"
+            "You are an encouraging, expert Campus Technical Recruiter evaluating engineering students in a live mock interview.\n"
+            "CRITICAL CONTEXT: Candidate answers are recorded via Speech-To-Text (STT/Whisper). "
+            "STT software frequently produces minor phonetic typos or homophone mis-hearings (e.g., 'hits' for 'heads', 'actual' for 'factorial', 'NBDIJOD' for 'NBDIJOF', 'consecutive 2 difference' for 'difference increases by 2'). "
+            "You MUST be intelligent and forgiving of minor STT transcription errors. Do NOT penalize phonetic or spelling glitches caused by speech recognition!\n\n"
+            "FAIR CANDIDATE SCORING RULES:\n"
+            "- If the candidate states the CORRECT numerical answer or core technical concept (e.g., 120, 42, 37.5% / 3 in 8, block scope vs function scope, shifting letters in alphabet), ALWAYS AWARD AT LEAST 75-90% SCORE!\n"
+            "- 85-100: Candidate provides correct answer AND clear explanation or step-by-step logic.\n"
+            "- 70-84: Candidate provides correct final answer or main concept clearly, even if brief or containing STT phonetic typos.\n"
+            "- 45-69: Candidate shows partial understanding but missed key details or made a slight calculation error.\n"
+            "- 0-30: Answer is completely wrong, off-topic, or empty.\n\n"
             "EXACT OUTPUT FORMAT REQUIRED (No preamble, no markdown headers):\n"
             "Score: [number 0-100]\n"
             "Feedback: [2-3 supportive, constructive sentences highlighting candidate strengths and simple areas to improve]\n"
             "IdealAnswer: [2-3 clear, student-friendly sentences demonstrating how to answer this question effectively]\n\n"
-            "FAIR STUDENT-LEVEL SCORING RUBRIC:\n"
-            "- 0-20: Empty response, completely off-topic, or 'I don't know'.\n"
-            "- 21-45: Basic attempt; shows partial awareness but misses the core definition or concept.\n"
-            "- 46-65: Solid student answer; accurately explains the main definition/concept correctly.\n"
-            "- 66-85: Great student answer; mentions key terminology, proper logic, or a good example.\n"
-            "- 86-100: Outstanding answer; comprehensive explanation, highly structured, and well-articulated.\n\n"
-            + ("SPECIAL INSTRUCTION (BEHAVIORAL): Encourage candidate storytelling and clear personal contribution.\n" if is_behavioral else "SPECIAL INSTRUCTION (TECHNICAL): Reward correct technical definitions, fundamental understanding, and clear reasoning.\n") +
+            + ("SPECIAL INSTRUCTION (BEHAVIORAL): Encourage candidate storytelling and clear personal contribution.\n" if is_behavioral else "SPECIAL INSTRUCTION (TECHNICAL): Focus on core technical understanding and problem solving.\n") +
             "Evaluate fairly for college students and start your response immediately with 'Score: '."
         )
 
