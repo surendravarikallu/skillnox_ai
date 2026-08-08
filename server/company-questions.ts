@@ -10,7 +10,7 @@
 
 // ─── Types ────────────────────────────────────────────
 
-export type InterviewRound = 'aptitude' | 'technical' | 'hr' | 'behavioral' | 'coding' | 'managerial' | 'gd' | 'company' | 'communication';
+export type InterviewRound = 'aptitude' | 'technical' | 'hr' | 'behavioral' | 'coding' | 'managerial' | 'gd' | 'company' | 'communication' | 'resume_based' | 'system_design';
 
 export interface CompanyQuestion {
   id: string;
@@ -627,6 +627,28 @@ export const genericGDTopics: CompanyQuestion[] = [
   q('Generic', 'gd', 'Is a 4-day work week practical for the Indian IT industry?', { difficulty: 'medium', category: 'GD Topic', tags: ['work-culture', 'india'], trending: true }),
 ];
 
+// ─── System Design / Architecture Questions ──────────
+export const genericSystemDesignQuestions: CompanyQuestion[] = [
+  q('Generic', 'system_design', 'How would you design a URL shortening service like bit.ly that handles millions of requests per day?', { difficulty: 'medium', category: 'System Design', tags: ['url-shortener', 'scalability'], trending: true }),
+  q('Generic', 'system_design', 'Explain how you would architect a real-time chat application like WhatsApp for 100 million users.', { difficulty: 'hard', category: 'System Design', tags: ['real-time', 'messaging', 'websockets'], trending: true }),
+  q('Generic', 'system_design', 'How would you design an API rate limiter for a payment gateway to prevent abuse?', { difficulty: 'medium', category: 'System Design', tags: ['rate-limiting', 'api', 'security'] }),
+  q('Generic', 'system_design', 'Describe how you would design a notification system that sends push, email, and SMS alerts to millions of users.', { difficulty: 'medium', category: 'System Design', tags: ['notifications', 'distributed'] }),
+  q('Generic', 'system_design', 'How would you design an e-commerce platform like Flipkart to handle flash sales with millions of concurrent users?', { difficulty: 'hard', category: 'System Design', tags: ['e-commerce', 'flash-sale', 'concurrency'], trending: true }),
+  q('Generic', 'system_design', 'Explain the trade-offs between SQL and NoSQL databases. When would you choose one over the other?', { difficulty: 'easy', category: 'System Design', tags: ['database', 'sql', 'nosql'] }),
+  q('Generic', 'system_design', 'How would you design a content delivery network (CDN) to serve static assets globally with low latency?', { difficulty: 'hard', category: 'System Design', tags: ['cdn', 'caching', 'latency'] }),
+  q('Generic', 'system_design', 'Describe how you would architect a social media news feed system like Instagram or Twitter.', { difficulty: 'hard', category: 'System Design', tags: ['news-feed', 'fanout', 'social-media'], trending: true }),
+  q('Generic', 'system_design', 'How would you design an online video streaming platform like YouTube to handle uploads and playback at scale?', { difficulty: 'hard', category: 'System Design', tags: ['video-streaming', 'transcoding', 'storage'] }),
+  q('Generic', 'system_design', 'Explain the concept of microservices architecture. What are its advantages and disadvantages compared to a monolithic approach?', { difficulty: 'easy', category: 'System Design', tags: ['microservices', 'monolith', 'architecture'] }),
+  q('Generic', 'system_design', 'How would you design a distributed caching layer using Redis or Memcached for a high-traffic web application?', { difficulty: 'medium', category: 'System Design', tags: ['caching', 'redis', 'performance'] }),
+  q('Generic', 'system_design', 'Describe how load balancing works. What are the different load balancing algorithms and when would you use each?', { difficulty: 'easy', category: 'System Design', tags: ['load-balancing', 'infrastructure'] }),
+  q('Generic', 'system_design', 'How would you design a ride-sharing service like Uber that matches drivers to riders in real-time?', { difficulty: 'hard', category: 'System Design', tags: ['location', 'matching', 'real-time'], trending: true }),
+  q('Generic', 'system_design', 'Explain how you would design an authentication and authorization system for a multi-tenant SaaS platform.', { difficulty: 'medium', category: 'System Design', tags: ['auth', 'jwt', 'rbac'] }),
+  q('Generic', 'system_design', 'How would you design a search autocomplete feature like Google Suggest that returns results within 100 milliseconds?', { difficulty: 'medium', category: 'System Design', tags: ['search', 'trie', 'autocomplete'] }),
+  q('Generic', 'system_design', 'Describe how you would handle database sharding for a system with billions of records. What are the challenges?', { difficulty: 'hard', category: 'System Design', tags: ['sharding', 'database', 'partitioning'] }),
+  q('Generic', 'system_design', 'How would you design a file storage and sharing system like Google Drive or Dropbox?', { difficulty: 'medium', category: 'System Design', tags: ['file-storage', 'sync', 'cloud'] }),
+  q('Generic', 'system_design', 'Explain the CAP theorem and how it influences the design of distributed databases.', { difficulty: 'medium', category: 'System Design', tags: ['cap-theorem', 'distributed-systems', 'consistency'] }),
+];
+
 // ═══════════════════════════════════════════════════════
 // AGGREGATED QUESTION BANK
 // ═══════════════════════════════════════════════════════
@@ -672,6 +694,7 @@ export const ALL_QUESTIONS: CompanyQuestion[] = [
   ...genericProjectQuestions,
   ...genericCommunicationQuestions,
   ...genericGDTopics,
+  ...genericSystemDesignQuestions,
 ];
 
 // ─── Query helpers ────────────────────────────────────
