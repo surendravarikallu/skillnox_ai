@@ -380,7 +380,7 @@ export default function AdminPage() {
                 <Badge className="bg-emerald-500/20 text-emerald-500 hover:bg-emerald-500/20 border-0">ACTIVE</Badge>
               </div>
               <div className="pt-4">
-                <Button className="w-full rounded-xl bg-muted hover:bg-accent text-foreground border-border font-bold">
+                <Button onClick={() => setLocation('/ai-status')} className="w-full rounded-xl bg-muted hover:bg-accent text-foreground border-border font-bold">
                   View Detailed Logs
                 </Button>
               </div>

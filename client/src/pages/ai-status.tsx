@@ -33,6 +33,17 @@ export default function AIStatusPage() {
     }
   }, [user, authLoading, navigate]);
 
+  // Initial check and 30s auto-refresh polling
+  useEffect(() => {
+    if (user?.role === 'admin') {
+      checkStatus();
+      const timer = setInterval(() => {
+        checkStatus();
+      }, 30000);
+      return () => clearInterval(timer);
+    }
+  }, [user]);
+
   // Show loading while checking auth
   if (authLoading) {
     return (
