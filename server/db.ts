@@ -8,11 +8,16 @@ if (!process.env.DATABASE_URL) {
   );
 }
 
-export const pool = new pg.Pool({ connectionString: process.env.DATABASE_URL });
+export const pool = new pg.Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 20,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 5000,
+});
 
 pool.on('error', (err) => {
-  console.error('Unexpected error on idle client', err);
-  process.exit(-1);
+  console.error('⚠️ Unexpected idle client error in PostgreSQL pool:', err?.message || err);
+  // Do NOT process.exit(-1) here — allow pool to handle client reconnection gracefully
 });
 
 export const db = drizzle(pool, { schema });
