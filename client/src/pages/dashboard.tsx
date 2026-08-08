@@ -22,7 +22,11 @@ import {
   Sparkles,
   Zap,
   TrendingUp,
-  Award
+  Award,
+  Calendar,
+  Clock,
+  Heart,
+  Mic
 } from "lucide-react";
 import type { Interview, Resume, PlacementProbability } from "@shared/schema";
 import { cn } from "@/lib/utils";
@@ -43,8 +47,20 @@ export default function Dashboard() {
     queryKey: ["/api/placement-probability"],
   });
 
+  const { data: mySlot } = useQuery<any>({
+    queryKey: ["/api/slots/my-slot"],
+  });
+
   const recentInterviews = interviews?.slice(0, 5) || [];
   const completedInterviews = interviews?.filter(i => i.status === 'completed') || [];
+  const pendingInterview = interviews?.find(i => i.status === 'pending' || i.status === 'in_progress');
+
+  // Dynamic trend computation
+  const scoreTrend = completedInterviews.length >= 2
+    ? (completedInterviews[0].overallScore || 0) >= (completedInterviews[1].overallScore || 0)
+      ? "upwards"
+      : "stable"
+    : "upwards";
 
   const avgTechnical = completedInterviews.length > 0
     ? completedInterviews.reduce((acc, i) => acc + (i.technicalScore || 0), 0) / completedInterviews.length
@@ -60,7 +76,45 @@ export default function Dashboard() {
     : null;
 
   return (
-    <div className="max-w-[1600px] mx-auto space-y-10 pb-12">
+    <div className="max-w-[1600px] mx-auto space-y-8 pb-12">
+      {/* SLOT ALLOTMENT BANNER (IF ASSIGNED) */}
+      {user?.slotDate && (
+        <Card className="rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-purple-500/10 to-card p-6 shadow-xl">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-primary/20 to-purple-600/20 border border-primary/30 flex items-center justify-center text-primary shadow-inner shrink-0 relative group">
+                <Calendar className="w-6 h-6 text-primary group-hover:scale-110 transition-transform" />
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-background" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-primary text-white text-[10px] font-black uppercase tracking-widest">
+                    Assigned Slot
+                  </Badge>
+
+                  <Badge variant={mySlot?.isSlotActive ? "default" : "secondary"} className={mySlot?.isSlotActive ? "bg-emerald-500 font-bold" : "font-bold"}>
+                    {mySlot?.isSlotActive ? "Slot Active Now ✓" : "Upcoming Slot"}
+                  </Badge>
+                </div>
+                <p className="font-extrabold text-base mt-1">
+                  Interview Scheduled: {user.slotDate} ({user.slotStartTime || '09:00'} - {user.slotEndTime || '17:00'})
+                </p>
+                {mySlot?.lockReason && !mySlot.isSlotActive && (
+                  <p className="text-xs text-amber-500 font-medium mt-0.5">{mySlot.lockReason}</p>
+                )}
+              </div>
+            </div>
+            {pendingInterview && (
+              <Link href={`/interview/${pendingInterview.id}/room`}>
+                <Button className="rounded-xl px-6 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20">
+                  Enter Interview Room →
+                </Button>
+              </Link>
+            )}
+          </div>
+        </Card>
+      )}
+
       {/* Hero Welcome Section */}
       <section className="relative group">
         <div className="absolute inset-0 bg-gradient-to-r from-primary/20 via-purple-500/10 to-transparent rounded-[2rem] blur-3xl opacity-50 group-hover:opacity-70 transition-opacity" />
@@ -88,17 +142,26 @@ export default function Dashboard() {
               </h1>
               <p className="text-lg text-muted-foreground max-w-xl">
                 You&apos;ve completed <span className="text-foreground font-bold">{completedInterviews.length}</span> interview sessions. 
-                Your current technical score is trending <span className="text-emerald-500 font-bold">upwards</span>.
+                Your current technical score is trending <span className="text-emerald-500 font-bold">{scoreTrend}</span>.
               </p>
             </div>
 
             <div className="flex flex-col gap-3 shrink-0">
-              <Link href="/interview/start">
-                <Button size="lg" className="rounded-2xl px-8 h-14 bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 font-bold group">
-                  Start Live Session
-                  <Play className="w-4 h-4 ml-2 fill-white group-hover:scale-125 transition-transform" />
-                </Button>
-              </Link>
+              {pendingInterview ? (
+                <Link href={`/interview/${pendingInterview.id}/room`}>
+                  <Button size="lg" className="rounded-2xl px-8 h-14 bg-emerald-600 hover:bg-emerald-700 shadow-xl shadow-emerald-600/20 font-bold group text-white">
+                    Resume Active Session
+                    <Play className="w-4 h-4 ml-2 fill-white group-hover:scale-125 transition-transform" />
+                  </Button>
+                </Link>
+              ) : (
+                <Link href="/interview/start">
+                  <Button size="lg" className="rounded-2xl px-8 h-14 bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 font-bold group">
+                    Start Live Session
+                    <Play className="w-4 h-4 ml-2 fill-white group-hover:scale-125 transition-transform" />
+                  </Button>
+                </Link>
+              )}
               <Link href="/resume">
                 <Button variant="outline" size="lg" className="rounded-2xl px-8 h-14 border-border hover:bg-accent font-bold">
                   Review Resume
@@ -132,7 +195,7 @@ export default function Dashboard() {
         <GradientStatCard
           title="Emotional Quotient"
           value={avgEmotion}
-          icon={Award}
+          icon={Heart}
           gradientFrom="purple-500"
           gradientTo="pink-600"
           className="shadow-xl"
@@ -140,7 +203,7 @@ export default function Dashboard() {
         <GradientStatCard
           title="Voice Confidence"
           value={avgVoice}
-          icon={Target}
+          icon={Mic}
           gradientFrom="cyan-400"
           gradientTo="blue-500"
           className="shadow-xl"

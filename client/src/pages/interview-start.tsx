@@ -13,7 +13,9 @@ import {
   FolderKanban,
   ArrowRight,
   Check,
-  Building2
+  Building2,
+  FileText,
+  Network
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -69,6 +71,22 @@ const interviewTypes = [
     description: 'Verbal communication, clarity, tone, accent, pace, and articulation assessment',
     icon: MessageSquare,
     color: 'bg-teal-100 dark:bg-teal-900 text-teal-600 dark:text-teal-300',
+    duration: '15-20 min'
+  },
+  {
+    id: 'resume_based',
+    title: 'Resume Based',
+    description: 'AI generates personalized questions based on your uploaded resume skills and projects',
+    icon: FileText,
+    color: 'bg-orange-100 dark:bg-orange-900 text-orange-600 dark:text-orange-300',
+    duration: '15-20 min'
+  },
+  {
+    id: 'system_design',
+    title: 'System Architecture',
+    description: 'Design scalable systems, APIs, databases, and architectures for millions of users',
+    icon: Network,
+    color: 'bg-indigo-100 dark:bg-indigo-900 text-indigo-600 dark:text-indigo-300',
     duration: '15-20 min'
   }
 ];
