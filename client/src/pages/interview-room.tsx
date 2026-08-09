@@ -256,7 +256,7 @@ export default function InterviewRoom() {
     const answerText = transcript.trim();
     const finalAnswer = answerText || "(no answer recorded)";
 
-    // 1. INSTANT ZERO-LATENCY UI SWITCH (0-second wait for student!)
+    // 1. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION (0-second wait for student!)
     clearTranscript();
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
@@ -268,34 +268,8 @@ export default function InterviewRoom() {
       }
     }
 
-    // 2. Submit candidate's answer asynchronously in background
+    // 2. Submit candidate's answer asynchronously to server in background (fire & forget)
     submitAnswerMutation.mutate({ questionId: qId, answer: finalAnswer });
-
-    // 3. Non-blocking background STT refinement via Groq Cloud Whisper
-    getRecordedAudio().then(async (audioBlob) => {
-      if (audioBlob && audioBlob.size > 500) {
-        try {
-          const formData = new FormData();
-          formData.append('file', audioBlob, 'recording.webm');
-
-          const res = await fetch('/api/transcribe', {
-            method: 'POST',
-            body: formData,
-            credentials: 'include',
-          });
-          if (res.ok) {
-            const data = await res.json();
-            if (data.text && data.text.trim().length > answerText.length) {
-              const serverText = data.text.trim();
-              console.log(`[InterviewRoom] Background STT refined answer: "${serverText}"`);
-              await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: serverText });
-            }
-          }
-        } catch (bgErr) {
-          console.warn("[InterviewRoom] Non-blocking background STT error:", bgErr);
-        }
-      }
-    }).catch(err => console.warn("[InterviewRoom] getRecordedAudio bg error:", err));
   };
 
   const handleComplete = () => completeInterviewMutation.mutate();
