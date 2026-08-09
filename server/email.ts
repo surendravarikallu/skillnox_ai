@@ -3,23 +3,6 @@ import dns from 'dns';
 
 dns.setDefaultResultOrder('ipv4first');
 
-const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
-const SMTP_HOST = process.env.SMTP_HOST || 'smtp-relay.brevo.com';
-const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
-const SMTP_USER = process.env.SMTP_USER || 'no-reply@kitaghire.in';
-const SENDER_EMAIL = process.env.SENDER_EMAIL || 'no-reply@kitaghire.in';
-const SENDER_NAME = process.env.SENDER_NAME || 'Skillnox AI (Kitaghire)';
-
-const transporter = nodemailer.createTransport({
-  host: SMTP_HOST,
-  port: SMTP_PORT,
-  secure: false,
-  auth: {
-    user: SMTP_USER,
-    pass: BREVO_API_KEY,
-  },
-});
-
 export interface SendEmailOptions {
   to: string;
   subject: string;
@@ -29,11 +12,11 @@ export interface SendEmailOptions {
 
 export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
   const apiKey = process.env.BREVO_API_KEY || '';
-  const smtpHost = process.env.SMTP_HOST || 'smtp-relay.brevo.com';
+  const smtpHost = process.env.SMTP_HOST || '';
   const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
-  const smtpUser = process.env.SMTP_USER || 'no-reply@kitaghire.in';
-  const senderEmail = process.env.SENDER_EMAIL || 'no-reply@kitaghire.in';
-  const senderName = process.env.SENDER_NAME || 'Skillnox AI (Kitaghire)';
+  const smtpUser = process.env.SMTP_USER || '';
+  const senderEmail = process.env.SENDER_EMAIL || '';
+  const senderName = process.env.SENDER_NAME || 'Skillnox AI';
 
   // Method 1: Brevo HTTP REST API (Primary)
   if (apiKey) {
@@ -66,28 +49,33 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
   }
 
   // Method 2: Nodemailer SMTP Fallback
-  try {
-    const dynamicTransporter = nodemailer.createTransport({
-      host: smtpHost,
-      port: smtpPort,
-      secure: false,
-      auth: {
-        user: smtpUser,
-        pass: apiKey,
-      },
-    });
+  if (smtpHost && smtpUser) {
+    try {
+      const dynamicTransporter = nodemailer.createTransport({
+        host: smtpHost,
+        port: smtpPort,
+        secure: false,
+        auth: {
+          user: smtpUser,
+          pass: apiKey,
+        },
+      });
 
-    const info = await dynamicTransporter.sendMail({
-      from: `"${senderName}" <${senderEmail}>`,
-      to: options.to,
-      subject: options.subject,
-      html: options.html,
-      text: options.text || options.subject,
-    });
-    console.log(`[EMAIL SUCCESS via Nodemailer SMTP] Sent to ${options.to}, Message ID: ${info.messageId}`);
-    return true;
-  } catch (smtpError) {
-    console.error('[EMAIL ERROR] Failed to send email via SMTP:', smtpError);
-    return false;
+      const info = await dynamicTransporter.sendMail({
+        from: `"${senderName}" <${senderEmail}>`,
+        to: options.to,
+        subject: options.subject,
+        html: options.html,
+        text: options.text || options.subject,
+      });
+      console.log(`[EMAIL SUCCESS via Nodemailer SMTP] Sent to ${options.to}, Message ID: ${info.messageId}`);
+      return true;
+    } catch (smtpError) {
+      console.error('[EMAIL ERROR] Failed to send email via SMTP:', smtpError);
+      return false;
+    }
   }
+
+  console.error('[EMAIL ERROR] No email service credentials configured in environment variables.');
+  return false;
 }
