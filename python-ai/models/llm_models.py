@@ -302,24 +302,33 @@ class OllamaLLM:
                 if include_trending:
                     trending_ctx = f"\nIncorporate awareness of 2025-26 trends where relevant:\n{get_trending_context()}"
 
-                system = (
-                    "You are an expert interview coach for engineering placement preparation. "
-                    f"Difficulty level: {difficulty.upper()}. {diff_instruction}\n"
-                    f"{trending_ctx}\n"
-                    "STRICT GUARDRAILS:\n"
-                    "- Do NOT ask the candidate to write code, implement functions, or produce code output.\n"
-                    "- Do NOT ask coding/algorithm problems that require writing actual code.\n"
-                    "- You CAN ask about technical concepts (OOP, DBMS, OS, networking, design patterns).\n"
-                    "- You CAN ask 'explain', 'describe', 'compare', 'what is', 'how does X work' questions.\n"
-                    "- You CAN ask system design/architecture questions about designing systems at scale.\n"
-                    "Generate exactly ONE interview question. Output ONLY the question — "
-                    "no preamble, no numbering, no explanation."
-                )
+                if question_type == "hr":
+                    system = (
+                        "You are an experienced HR Recruiter conducting a campus placement HR interview round.\n"
+                        "STRICT GUARDRAILS FOR HR INTERVIEW:\n"
+                        "- Do NOT ask technical questions, coding problems, math/arithmetic problems, or system design.\n"
+                        "- Focus strictly on HR topics: career goals (e.g. 'Where do you see yourself in 3 to 5 years in this job?'), expectations regarding job roles & responsibilities, company culture fit, strengths/weaknesses, teamwork, handling pressure, and personal motivation.\n"
+                        "Generate exactly ONE HR interview question. Output ONLY the question — no preamble, no numbering, no explanation."
+                    )
+                else:
+                    system = (
+                        "You are an expert interview coach for engineering placement preparation. "
+                        f"Difficulty level: {difficulty.upper()}. {diff_instruction}\n"
+                        f"{trending_ctx}\n"
+                        "STRICT GUARDRAILS:\n"
+                        "- Do NOT ask the candidate to write code, implement functions, or produce code output.\n"
+                        "- Do NOT ask coding/algorithm problems that require writing actual code.\n"
+                        "- You CAN ask about technical concepts (OOP, DBMS, OS, networking, design patterns).\n"
+                        "- You CAN ask 'explain', 'describe', 'compare', 'what is', 'how does X work' questions.\n"
+                        "- You CAN ask system design/architecture questions about designing systems at scale.\n"
+                        "Generate exactly ONE interview question. Output ONLY the question — "
+                        "no preamble, no numbering, no explanation."
+                    )
 
             type_hints = {
                 "technical": f"Generate a {difficulty} technical interview question. Focus: {context or 'Software Engineering concepts like OOP, DBMS, OS, Networking, Design Patterns'}. Do NOT ask to write code — ask conceptual explanation questions only.",
-                "hr": f"Generate a {difficulty} HR interview question. Focus: {context or 'Career goals and cultural fit'}.",
-                "behavioral": f"Generate a {difficulty} behavioral STAR-method question. Focus: {context or 'Professional scenarios'}.",
+                "hr": f"Generate a {difficulty} HR interview question. Focus: {context or 'Career goals, 3-5 year future plans, expectations for roles & responsibilities, strengths, weaknesses, and company culture fit'}. Do NOT ask technical, math, or coding questions.",
+                "behavioral": f"Generate a {difficulty} behavioral STAR-method question. Focus: {context or 'Professional scenarios, teamwork, conflict resolution, and handling pressure'}.",
                 "project": f"Generate a {difficulty} project explanation question. Focus: {context or 'Architecture and contributions'}.",
                 "company": f"Generate a {difficulty} company-specific interview question for {company or 'a tech company'}. Focus: {context or 'Company values and fit'}.",
                 "communication": f"Generate a {difficulty} communication assessment question. Focus: {context or 'Clarity and articulation'}.",

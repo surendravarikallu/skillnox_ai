@@ -333,27 +333,44 @@ def build_company_question_prompt(
     persona = get_company_persona(company) if company else DEFAULT_PERSONA
     diff_instruction = get_difficulty_instruction(difficulty)
 
-    prompt_parts = [
-        f"You are a senior technical interviewer",
-    ]
+    if question_type == "hr":
+        prompt_parts = [
+            f"You are a senior HR Recruiter and Talent Acquisition Manager",
+        ]
+        if company:
+            prompt_parts[0] += f" at {company}"
+            prompt_parts.append(f"Company values: {persona['values']}")
+            prompt_parts.append(f"Evaluation emphasis: {persona['evaluation_emphasis']}")
 
-    if company:
-        prompt_parts[0] += f" at {company}"
-        prompt_parts.append(f"Interview style: {persona['interviewer_style']}")
-        prompt_parts.append(f"Key focus areas: {persona['key_focus']}")
-        prompt_parts.append(f"Company values: {persona['values']}")
-        prompt_parts.append(f"Evaluation emphasis: {persona['evaluation_emphasis']}")
+        prompt_parts.append(f"\nDifficulty level: {difficulty.upper()}")
+        prompt_parts.append(f"Question type: HR & Behavioral Round")
+        prompt_parts.append(
+            "\nSTRICT GUARDRAILS FOR HR INTERVIEWS:\n"
+            "- Do NOT ask technical questions, coding problems, math/arithmetic problems, or system design.\n"
+            "- Focus strictly on HR topics: career goals (e.g. 'Where do you see yourself in 3-5 years?'), expectations regarding job roles & responsibilities, company culture fit, strengths/weaknesses, teamwork, handling pressure, and personal motivation."
+        )
+    else:
+        prompt_parts = [
+            f"You are a senior technical interviewer",
+        ]
 
-    prompt_parts.append(f"\nDifficulty level: {difficulty.upper()}")
-    prompt_parts.append(f"Difficulty instruction: {diff_instruction}")
-    prompt_parts.append(f"\nQuestion type: {question_type}")
+        if company:
+            prompt_parts[0] += f" at {company}"
+            prompt_parts.append(f"Interview style: {persona['interviewer_style']}")
+            prompt_parts.append(f"Key focus areas: {persona['key_focus']}")
+            prompt_parts.append(f"Company values: {persona['values']}")
+            prompt_parts.append(f"Evaluation emphasis: {persona['evaluation_emphasis']}")
 
-    if include_trending:
-        relevant_categories = _get_relevant_categories(question_type)
-        trending_context = get_trending_context(relevant_categories)
-        if trending_context:
-            prompt_parts.append(f"\nIncorporate awareness of these 2025-26 trending topics where relevant:")
-            prompt_parts.append(trending_context)
+        prompt_parts.append(f"\nDifficulty level: {difficulty.upper()}")
+        prompt_parts.append(f"Difficulty instruction: {diff_instruction}")
+        prompt_parts.append(f"\nQuestion type: {question_type}")
+
+        if include_trending:
+            relevant_categories = _get_relevant_categories(question_type)
+            trending_context = get_trending_context(relevant_categories)
+            if trending_context:
+                prompt_parts.append(f"\nIncorporate awareness of these 2025-26 trending topics where relevant:")
+                prompt_parts.append(trending_context)
 
     prompt_parts.append(
         "\nGenerate a single, high-quality interview question. "

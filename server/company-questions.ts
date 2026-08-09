@@ -571,14 +571,24 @@ export const genericTechnicalQuestions: CompanyQuestion[] = [
 ];
 
 export const genericHRQuestions: CompanyQuestion[] = [
-  q('Generic', 'hr', 'Tell me about yourself and your career goals.', { difficulty: 'easy', category: 'Introduction', tags: ['introduction'] }),
-  q('Generic', 'hr', 'What are your greatest strengths and weaknesses?', { difficulty: 'easy', category: 'Self-Assessment', tags: ['strengths', 'weaknesses'] }),
-  q('Generic', 'hr', 'Why do you want to work for our company?', { difficulty: 'easy', category: 'Motivation', tags: ['why-company'] }),
-  q('Generic', 'hr', 'Where do you see yourself in 5 years?', { difficulty: 'easy', category: 'Career Goals', tags: ['career-goals'] }),
-  q('Generic', 'hr', 'Describe a challenging situation and how you handled it.', { difficulty: 'medium', category: 'Problem Solving', tags: ['challenge'] }),
-  q('Generic', 'hr', 'How do you handle stress and pressure?', { difficulty: 'easy', category: 'Stress Management', tags: ['stress'] }),
-  q('Generic', 'hr', 'What motivates you in your work?', { difficulty: 'easy', category: 'Motivation', tags: ['motivation'] }),
-  q('Generic', 'hr', 'Why should we hire you?', { difficulty: 'medium', category: 'Value Proposition', tags: ['value'] }),
+  q('Generic', 'hr', 'Tell me about yourself, your background, and your long-term career goals.', { difficulty: 'easy', category: 'Introduction', tags: ['introduction'] }),
+  q('Generic', 'hr', 'Where do you see yourself 3 to 5 years from now in your career?', { difficulty: 'easy', category: 'Career Goals', tags: ['career-goals', 'future-plans'] }),
+  q('Generic', 'hr', 'What are your expectations regarding the roles and responsibilities in this job position?', { difficulty: 'easy', category: 'Role Expectations', tags: ['roles-responsibilities'] }),
+  q('Generic', 'hr', 'Why do you want to join our organization over other companies in the market?', { difficulty: 'easy', category: 'Motivation', tags: ['why-company'] }),
+  q('Generic', 'hr', 'What are your greatest strengths, and what is one area or weakness you are actively trying to improve?', { difficulty: 'easy', category: 'Self-Assessment', tags: ['strengths', 'weaknesses'] }),
+  q('Generic', 'hr', 'Describe a challenging workplace or academic situation you faced and how you successfully resolved it.', { difficulty: 'medium', category: 'Problem Solving', tags: ['challenge', 'resolution'] }),
+  q('Generic', 'hr', 'How do you handle tight project deadlines, stress, and high-pressure work environments?', { difficulty: 'easy', category: 'Stress Management', tags: ['stress', 'pressure'] }),
+  q('Generic', 'hr', 'What key factors motivate you to perform at your best every single day?', { difficulty: 'easy', category: 'Motivation', tags: ['motivation'] }),
+  q('Generic', 'hr', 'Why should our company hire you over other qualified candidates applying for this role?', { difficulty: 'medium', category: 'Value Proposition', tags: ['value', 'hire-me'] }),
+  q('Generic', 'hr', 'How do you approach resolving disagreements or conflicts with colleagues or team leads?', { difficulty: 'medium', category: 'Conflict Resolution', tags: ['conflict', 'teamwork'] }),
+  q('Generic', 'hr', 'Are you open to relocation, flexible working hours, or rotational shifts if required by the role?', { difficulty: 'easy', category: 'Flexibility', tags: ['relocation', 'shifts'] }),
+  q('Generic', 'hr', 'How do you stay updated with the latest technological developments and continuously upskill yourself?', { difficulty: 'easy', category: 'Growth Mindset', tags: ['learning', 'upskilling'] }),
+  q('Generic', 'hr', 'Describe a situation where you had to adapt quickly to unexpected changes in project requirements.', { difficulty: 'medium', category: 'Adaptability', tags: ['adaptability', 'change'] }),
+  q('Generic', 'hr', 'What principles guide your professional ethics and decision-making when facing difficult choices?', { difficulty: 'medium', category: 'Work Ethic', tags: ['ethics', 'values'] }),
+  q('Generic', 'hr', 'What type of work culture and management style helps you perform most effectively?', { difficulty: 'easy', category: 'Work Culture', tags: ['culture-fit'] }),
+  q('Generic', 'hr', 'Tell me about a time you took initiative on a project without being explicitly asked to do so.', { difficulty: 'medium', category: 'Initiative', tags: ['leadership', 'initiative'] }),
+  q('Generic', 'hr', 'How do you prioritize your tasks when managing multiple competing deadlines?', { difficulty: 'easy', category: 'Time Management', tags: ['prioritization'] }),
+  q('Generic', 'hr', 'What are your expectations regarding career growth and mentorship in your first 1-2 years?', { difficulty: 'easy', category: 'Career Development', tags: ['growth', 'mentorship'] }),
 ];
 
 export const genericBehavioralQuestions: CompanyQuestion[] = [
@@ -760,12 +770,14 @@ export function buildQuestionSet(
     // If company pool is too small, supplement with generic
     if (regularPool.length < regularCount) {
       const genericPool = ALL_QUESTIONS.filter(
-        q => q.round === round && q.company === 'Generic'
+        q => (round === 'hr' ? (q.round === 'hr' || q.round === 'behavioral') : q.round === round) && q.company === 'Generic'
       );
       regularPool = [...regularPool, ...genericPool];
     }
   } else {
-    regularPool = ALL_QUESTIONS.filter(q => q.round === round);
+    regularPool = ALL_QUESTIONS.filter(
+      q => round === 'hr' ? (q.round === 'hr' || q.round === 'behavioral') : q.round === round
+    );
   }
 
   const regular = getRandomFromPool(
