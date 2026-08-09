@@ -332,20 +332,24 @@ export function useVoiceToText(): UseVoiceToTextReturn {
   }, []);
 
   const getRecordedAudio = useCallback(async (): Promise<Blob | null> => {
-    // Wait for MediaRecorder to fully stop and flush its final data chunk
-    await stopMediaRecorder();
-    // Small delay to ensure ondataavailable has fired
-    await new Promise(r => setTimeout(r, 100));
-    
-    console.log("[VoiceToText] getRecordedAudio: chunks available:", audioChunksRef.current.length, 
-      "total size:", audioChunksRef.current.reduce((sum, c) => sum + c.size, 0), "bytes");
-    
+    try {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        mediaRecorderRef.current.requestData();
+      }
+    } catch (e) {}
+
+    // Micro-delay for ondataavailable event to push final chunk
+    await new Promise(r => setTimeout(r, 20));
+
     if (audioChunksRef.current.length === 0) return null;
     const type = mediaRecorderRef.current?.mimeType || "audio/webm";
     const blob = new Blob(audioChunksRef.current, { type });
-    console.log("[VoiceToText] Assembled audio blob:", blob.size, "bytes, type:", blob.type);
+
+    // Clear chunks for clean next question recording
+    audioChunksRef.current = [];
+    console.log("[VoiceToText] Instant audio blob extracted for Groq STT:", blob.size, "bytes");
     return blob;
-  }, [stopMediaRecorder]);
+  }, []);
 
   const startListening = useCallback(() => {
     setError(null);

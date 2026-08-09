@@ -253,10 +253,12 @@ export default function InterviewRoom() {
   const handleSubmitAnswer = async () => {
     if (!questions) return;
     const qId = questions[currentQuestionIndex].id;
-    const answerText = transcript.trim();
-    const finalAnswer = answerText || "(no answer recorded)";
+    const fallbackText = transcript.trim();
 
-    // 1. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION (0-second wait for student!)
+    // 1. Instantly extract candidate's recorded audio blob (~20ms)
+    const audioBlob = await getRecordedAudio();
+
+    // 2. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION (0-second wait for candidate!)
     clearTranscript();
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
@@ -268,8 +270,35 @@ export default function InterviewRoom() {
       }
     }
 
-    // 2. Submit candidate's answer asynchronously to server in background (fire & forget)
-    submitAnswerMutation.mutate({ questionId: qId, answer: finalAnswer });
+    // 3. Process Groq Cloud Whisper AI STT in background worker (non-blocking)
+    (async () => {
+      let groqTranscript = fallbackText;
+      if (audioBlob && audioBlob.size > 500) {
+        try {
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'recording.webm');
+
+          const res = await fetch('/api/transcribe', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.text && data.text.trim().length > 0) {
+              groqTranscript = data.text.trim();
+              console.log(`[InterviewRoom] ✅ Groq Cloud Whisper AI transcribed (${groqTranscript.length} chars): "${groqTranscript.substring(0, 60)}..."`);
+            }
+          }
+        } catch (err) {
+          console.warn("[InterviewRoom] Background Groq Whisper STT error:", err);
+        }
+      }
+
+      // Save the official Groq Whisper AI transcription directly to database
+      const finalSaveAnswer = groqTranscript || "(no answer recorded)";
+      await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: finalSaveAnswer });
+    })();
   };
 
   const handleComplete = () => completeInterviewMutation.mutate();
