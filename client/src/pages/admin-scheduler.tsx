@@ -56,7 +56,7 @@ export default function AdminScheduler() {
   const [endDate, setEndDate] = useState<string>("");
   const [dailyStartTime, setDailyStartTime] = useState<string>("09:00");
   const [dailyEndTime, setDailyEndTime] = useState<string>("17:00");
-  const [slotDurationMinutes, setSlotDurationMinutes] = useState<number>(30);
+  const [slotDurationMinutes, setSlotDurationMinutes] = useState<number>(20);
   const [breakMinutes, setBreakMinutes] = useState<number>(5);
 
   // Queries
@@ -503,6 +503,7 @@ export default function AdminScheduler() {
                   </SelectTrigger>
                   <SelectContent>
                     <SelectItem value="15">15 Minutes</SelectItem>
+                    <SelectItem value="20">20 Minutes (Standard - 15 Qs)</SelectItem>
                     <SelectItem value="30">30 Minutes</SelectItem>
                     <SelectItem value="45">45 Minutes</SelectItem>
                     <SelectItem value="60">60 Minutes</SelectItem>

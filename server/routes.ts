@@ -3794,7 +3794,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         endDate,   // YYYY-MM-DD
         dailyStartTime, // HH:MM e.g. "09:00"
         dailyEndTime,   // HH:MM e.g. "17:00"
-        slotDurationMinutes = 30,
+        slotDurationMinutes = 20,
         breakMinutes = 5,
         interviewType = 'technical',
         types, // Array of interview types from multi-select
