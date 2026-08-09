@@ -5,7 +5,7 @@ import path from "path";
 
 import { storage } from "./storage";
 import { sendEmail } from "./email";
-import { buildScheduledEmail, buildResultsEmail } from "./email-templates";
+import { buildScheduledEmail, buildResultsEmail, buildAccountCreatedEmail } from "./email-templates";
 import { isAuthenticated, isAdmin, isStudent, hasRole, registerHandler, loginHandler, logoutHandler, comparePassword, hashPassword } from "./auth";
 import { eq } from "drizzle-orm";
 import multer from "multer";
@@ -1122,7 +1122,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   // Health check endpoint for Python AI service (Admin only)
   app.get('/api/ai/health', isAuthenticated, isAdmin, async (req, res) => {
     try {
-      const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8000';
+      const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8060';
 
       // Try health endpoint first (with longer timeout for LLM check)
       const healthController = new AbortController();
@@ -1754,7 +1754,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         : (type ? [type] : ['technical']);
 
       // Validate types
-      const validTypes = ['technical', 'hr', 'behavioral', 'project', 'gd', 'company', 'communication', 'aptitude', 'coding', 'managerial'];
+      const validTypes = ['technical', 'hr', 'behavioral', 'project', 'gd', 'company', 'communication', 'aptitude', 'coding', 'managerial', 'resume_based', 'system_design'];
       const filteredTypes = interviewTypes.filter(t => validTypes.includes(t));
       if (filteredTypes.length === 0) {
         return res.status(400).json({ message: "At least one valid interview type is required" });
@@ -1842,6 +1842,24 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         const countPerType = Math.floor(TOTAL_QUESTIONS_PER_INTERVIEW / filteredTypes.length);
         const remainder = TOTAL_QUESTIONS_PER_INTERVIEW % filteredTypes.length;
 
+        // Fetch student's resume skills for resume_based interview type
+        let resumeSkillsContext: string | undefined;
+        if (filteredTypes.includes('resume_based')) {
+          try {
+            const resume = await storage.getResumeByUserId(userId);
+            if (resume?.skills && Array.isArray(resume.skills) && resume.skills.length > 0) {
+              resumeSkillsContext = `Candidate's resume skills: ${(resume.skills as string[]).join(', ')}`;
+              console.log(`[ResumeInterview] Found ${(resume.skills as string[]).length} skills for student ${userId}: ${resumeSkillsContext}`);
+            } else {
+              resumeSkillsContext = 'General software engineering skills (no resume uploaded)';
+              console.log(`[ResumeInterview] No resume found for student ${userId}, using generic context`);
+            }
+          } catch (e) {
+            console.error('[ResumeInterview] Failed to fetch resume:', e);
+            resumeSkillsContext = 'General software engineering skills';
+          }
+        }
+
         for (let i = 0; i < filteredTypes.length; i++) {
           const typeName = filteredTypes[i] as InterviewRound;
           const count = countPerType + (i < remainder ? 1 : 0);
@@ -1849,8 +1867,10 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
           if (useLLM && roundQs.length > 0) {
             try {
+              // Pass resume skills as context for resume_based questions
+              const questionContext = typeName === 'resume_based' ? resumeSkillsContext : undefined;
               const freshQ = await Promise.race([
-                pythonAI.generateQuestion(typeName, undefined, undefined, difficultyLevel, typeName, isTrending),
+                pythonAI.generateQuestion(typeName, undefined, questionContext, difficultyLevel, typeName, isTrending),
                 new Promise<null>((resolve) => setTimeout(() => resolve(null), LLM_QUESTION_TIMEOUT_MS))
               ]);
               if (freshQ) {
@@ -1954,6 +1974,95 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       });
     }
   });
+  // ─── Server-Side TTS & STT (NVIDIA NIM / edge-tts / Faster-Whisper) ───
+
+  // Text-to-Speech: Returns audio for a given text
+  app.post('/api/tts', isAuthenticated, async (req: any, res) => {
+    try {
+      const { text } = req.body;
+      if (!text || typeof text !== 'string' || text.trim().length === 0) {
+        return res.status(400).json({ message: "Text is required" });
+      }
+
+      const audioBuffer = await pythonAI.textToSpeech(text.trim());
+      if (!audioBuffer || audioBuffer.length < 100) {
+        return res.status(500).json({ message: "TTS generation failed" });
+      }
+
+      // Check header magic bytes for MP3 (ID3 or 0xFF 0xFB) vs WAV (RIFF)
+      const isRIFF = audioBuffer[0] === 0x52 && audioBuffer[1] === 0x49 && audioBuffer[2] === 0x46 && audioBuffer[3] === 0x46;
+      const mimeType = isRIFF ? 'audio/wav' : 'audio/mp3';
+      
+      res.setHeader('Content-Type', mimeType);
+      res.setHeader('Content-Length', String(audioBuffer.length));
+      res.setHeader('Cache-Control', 'no-cache');
+      res.send(audioBuffer);
+    } catch (error: any) {
+      console.error("[TTS Route] Error:", error);
+      res.status(500).json({ message: "TTS failed", error: error?.message });
+    }
+  });
+
+  // Speech-to-Text: Transcribes uploaded audio (accepts multipart/form-data or raw body)
+  app.post('/api/transcribe', isAuthenticated, async (req: any, res) => {
+    try {
+      let audioBuffer: Buffer;
+      let contentType: string = 'audio/webm';
+
+      // Check if this is a multipart form upload
+      if (req.headers['content-type']?.includes('multipart/form-data')) {
+        // Forward the entire request to Python service as multipart
+        const chunks: Buffer[] = [];
+        for await (const chunk of req) {
+          chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+        }
+        const rawBody = Buffer.concat(chunks);
+
+        // Forward multipart request directly to Python service
+        const pythonUrl = `${process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8060'}/api/transcribe`;
+        const headers: Record<string, string> = {
+          'content-type': req.headers['content-type'],
+        };
+        if (process.env.AI_SERVICE_API_KEY) {
+          headers['x-api-key'] = process.env.AI_SERVICE_API_KEY;
+        }
+
+        const pyRes = await fetch(pythonUrl, {
+          method: 'POST',
+          headers,
+          body: rawBody,
+          signal: AbortSignal.timeout(30000),
+        });
+
+        if (pyRes.ok) {
+          const data = await pyRes.json() as { success: boolean; text: string };
+          console.log(`[STT Route] Groq/Whisper transcription: "${(data.text || '').substring(0, 60)}..."`);
+          return res.json({ success: true, text: data.text || '' });
+        } else {
+          console.error(`[STT Route] Python STT error: ${pyRes.status}`);
+          return res.json({ success: true, text: '' });
+        }
+      }
+
+      // Fallback: read raw body
+      const chunks: Buffer[] = [];
+      for await (const chunk of req) {
+        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
+      }
+      audioBuffer = Buffer.concat(chunks);
+
+      if (audioBuffer.length < 100) {
+        return res.json({ success: true, text: "" });
+      }
+
+      contentType = req.headers['content-type'] || 'audio/webm';
+      const transcript = await pythonAI.transcribeAudio(audioBuffer, contentType);
+      res.json({ success: true, text: transcript });
+    } catch (error: any) {
+      console.error("[STT Route] Error:", error);
+      res.json({ success: true, text: "" }); // Don't fail the student's submission
+    }
+  });
 
   // Start/Join interview - changes status from pending to in_progress
   app.post('/api/interviews/:id/start', isAuthenticated, async (req: any, res) => {
@@ -1979,8 +2088,17 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       // Check student slot schedule permission
       const user = await storage.getUser(userId);
       if (user && user.role !== 'admin' && user.slotDate) {
-        const todayStr = new Date().toISOString().split('T')[0];
-        if (user.slotDate !== todayStr) {
+        const d = new Date();
+        const year = d.getFullYear().toString();
+        const month = (d.getMonth() + 1).toString().padStart(2, '0');
+        const day = d.getDate().toString().padStart(2, '0');
+        const todayYMD = `${year}-${month}-${day}`;
+        const todayDMY = `${day}-${month}-${year}`;
+
+        const cleanSlot = (user.slotDate || '').trim();
+        const isToday = cleanSlot === todayYMD || cleanSlot === todayDMY;
+
+        if (!isToday) {
           return res.status(403).json({
             message: `Your interview is scheduled for ${user.slotDate}${user.slotStartTime ? ' at ' + user.slotStartTime : ''}. Access is restricted outside your assigned date.`,
             code: "SLOT_LOCKED",
@@ -2050,8 +2168,15 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         });
       }
 
-      const todayStr = new Date().toISOString().split('T')[0]; // 'YYYY-MM-DD'
-      const isDateMatch = user.slotDate === todayStr;
+      const d = new Date();
+      const year = d.getFullYear().toString();
+      const month = (d.getMonth() + 1).toString().padStart(2, '0');
+      const day = d.getDate().toString().padStart(2, '0');
+      const todayYMD = `${year}-${month}-${day}`;
+      const todayDMY = `${day}-${month}-${year}`;
+
+      const cleanSlot = (user.slotDate || '').trim();
+      const isDateMatch = cleanSlot === todayYMD || cleanSlot === todayDMY;
 
       let isSlotActive = isDateMatch;
       let inWaitingRoom = false;
@@ -2369,6 +2494,44 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
               const interviewTypes = (interview.types as string[]) || [interview.type || 'technical'];
               const completedAtStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+              // Generate AI-powered personalized feedback and improvements
+              const allQuestions = await storage.getQuestionsByInterviewId(interview.id);
+              const questionsAndAnswers = allQuestions
+                .filter(q => q.userAnswer)
+                .map(q => ({
+                  question: q.question,
+                  answer: q.userAnswer || '',
+                  score: q.score != null ? `${q.score}%` : undefined,
+                }));
+
+              let feedbackSummary = `Your ${interviewTypes.join(' & ')} interview performance has been evaluated.`;
+              let improvements: string[] = ['Continue practicing with mock interviews to improve your skills.'];
+
+              try {
+                const aiFeedback = await Promise.race([
+                  pythonAI.generateInterviewFeedback({
+                    studentName: studentFullName,
+                    interviewTypes,
+                    difficulty: interview.difficulty || 'medium',
+                    overallScore,
+                    technicalScore,
+                    communicationScore,
+                    emotionScore,
+                    voiceScore,
+                    questionsAndAnswers,
+                  }),
+                  new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000)) // 15s timeout
+                ]);
+
+                if (aiFeedback) {
+                  feedbackSummary = aiFeedback.feedback;
+                  improvements = aiFeedback.improvements;
+                  console.log(`[AI Feedback] Generated personalized feedback for ${studentFullName}`);
+                }
+              } catch (fbErr) {
+                console.error('[AI Feedback] Failed, using fallback:', fbErr);
+              }
+
               const emailData = buildResultsEmail({
                 studentName: studentFullName,
                 rollNumber: student.rollNumber || 'N/A',
@@ -2380,8 +2543,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
                 communicationScore,
                 emotionScore,
                 voiceScore,
-                feedback: `Congratulations on completing all rounds of the ${interview.company || 'interview'} simulation!`,
-                improvements: [],
+                feedback: feedbackSummary,
+                improvements,
                 interviewId: interview.id,
                 completedAt: completedAtStr,
               });
@@ -2604,8 +2767,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         return a.length > 0 && a !== "(no answer recorded)" && a !== "silence detected";
       });
 
-      const totalQuestionsCount = questions.length || 1;
-      const totalPointsEarned = questions.reduce((acc, q) => acc + (q.score || 0), 0);
+      const scoredQuestions = questions.filter(q => typeof q.score === 'number' && q.score > 0);
+      const totalPointsEarned = scoredQuestions.reduce((acc, q) => acc + (q.score || 0), 0);
 
       let technicalScore = 0;
       let communicationScore = 0;
@@ -2613,13 +2776,19 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       let voiceScore = 0;
       let overallScore = 0;
 
-      if (validAnsweredQuestions.length > 0) {
-        const avgScore = totalPointsEarned / totalQuestionsCount;
-        technicalScore = Math.round(avgScore);
-        communicationScore = communicationData?.overall ?? Math.round(avgScore);
+      if (scoredQuestions.length > 0) {
+        const avgScore = Math.round(totalPointsEarned / scoredQuestions.length);
+        technicalScore = avgScore;
+        communicationScore = communicationData?.overall ?? Math.round(avgScore * 0.95);
         emotionScore = emotionData?.emotion_score ?? Math.round(avgScore * 0.9);
         voiceScore = voiceData?.overall_voice_score ?? Math.round(avgScore * 0.9);
         overallScore = Math.round((technicalScore + communicationScore + emotionScore + voiceScore) / 4);
+      } else if (validAnsweredQuestions.length > 0) {
+        technicalScore = 75;
+        communicationScore = 75;
+        emotionScore = 70;
+        voiceScore = 70;
+        overallScore = 73;
       }
 
       const improvements: string[] = [];
@@ -2718,6 +2887,44 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
             const interviewTypes = (existingInterview?.types as string[]) || [existingInterview?.type || 'technical'];
             const completedAtStr = new Date().toLocaleString('en-IN', { day: '2-digit', month: 'long', year: 'numeric', hour: '2-digit', minute: '2-digit' });
 
+            // Generate AI-powered personalized feedback
+            const allQuestions = await storage.getQuestionsByInterviewId(interviewId);
+            const questionsAndAnswers = allQuestions
+              .filter(q => q.userAnswer)
+              .map(q => ({
+                question: q.question,
+                answer: q.userAnswer || '',
+                score: q.score != null ? `${q.score}%` : undefined,
+              }));
+
+            let feedbackSummary = 'Your interview performance has been evaluated.';
+            let improvements: string[] = ['Continue practicing with mock interviews to improve your skills.'];
+
+            try {
+              const aiFeedback = await Promise.race([
+                pythonAI.generateInterviewFeedback({
+                  studentName: studentFullName,
+                  interviewTypes,
+                  difficulty: existingInterview?.difficulty || 'medium',
+                  overallScore,
+                  technicalScore,
+                  communicationScore,
+                  emotionScore,
+                  voiceScore,
+                  questionsAndAnswers,
+                }),
+                new Promise<null>((resolve) => setTimeout(() => resolve(null), 15000))
+              ]);
+
+              if (aiFeedback) {
+                feedbackSummary = aiFeedback.feedback;
+                improvements = aiFeedback.improvements;
+                console.log(`[AI Feedback] Generated personalized feedback for ${studentFullName}`);
+              }
+            } catch (fbErr) {
+              console.error('[AI Feedback] Failed, using fallback:', fbErr);
+            }
+
             const emailData = buildResultsEmail({
               studentName: studentFullName,
               rollNumber: student.rollNumber || 'N/A',
@@ -2729,8 +2936,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
               communicationScore,
               emotionScore,
               voiceScore,
-              feedback: (interview as any).feedback || 'Your performance has been evaluated by our AI assessment engine.',
-              improvements: (interview as any).improvements || [],
+              feedback: feedbackSummary,
+              improvements,
               interviewId: interviewId,
               completedAt: completedAtStr,
               duration: durationSeconds || undefined,
@@ -2945,9 +3152,17 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const userInterviews = await db.select().from(interviews).where(eq(interviews.userId, studentId));
       const { passwordHash, ...sanitizedStudent } = student as any;
 
+      // Attach questions (with userAnswer, score, feedback) to each interview
+      const interviewsWithQuestions = await Promise.all(
+        userInterviews.map(async (inv) => {
+          const qs = await storage.getQuestionsByInterviewId(inv.id);
+          return { ...inv, questions: qs };
+        })
+      );
+
       res.json({
         student: sanitizedStudent,
-        interviews: userInterviews,
+        interviews: interviewsWithQuestions,
       });
     } catch (error) {
       console.error("Error fetching student interview reports:", error);
@@ -3092,7 +3307,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     }
   });
 
-  // Fetch student's interviews for Admin Report modal
+  // Fetch student's interviews for Admin Report modal (with questions)
   app.get('/api/admin/students/:id/interviews', isAuthenticated, isAdmin, async (req: any, res) => {
     try {
       const studentId = req.params.id;
@@ -3101,7 +3316,17 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         return res.status(404).json({ message: "Student not found" });
       }
       const studentInterviews = await storage.getInterviewsByUserId(studentId);
-      res.json({ student, interviews: studentInterviews });
+      
+      // Attach questions (with userAnswer, score, feedback) to each interview
+      const interviewsWithQuestions = await Promise.all(
+        studentInterviews.map(async (inv) => {
+          const qs = await storage.getQuestionsByInterviewId(inv.id);
+          return { ...inv, questions: qs };
+        })
+      );
+      
+      const { passwordHash, ...sanitizedStudent } = student as any;
+      res.json({ student: sanitizedStudent, interviews: interviewsWithQuestions });
     } catch (error) {
       console.error("Error fetching student interviews for admin:", error);
       res.status(500).json({ message: "Failed to fetch student interviews" });
@@ -3311,6 +3536,20 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
                 department: row.branch || null,
                 role: 'student',
               } as any);
+
+              // Send account-created email with credentials (async, non-blocking)
+              if (!email.endsWith('@students.local')) {
+                const emailData = buildAccountCreatedEmail({
+                  studentName: `${firstName || ''} ${lastName || ''}`.trim() || normalizedRoll,
+                  rollNumber: normalizedRoll,
+                  email,
+                  department: row.branch || 'Not specified',
+                  password: passwordToHash,
+                });
+                sendEmail({ to: email, subject: emailData.subject, html: emailData.html })
+                  .catch(err => console.error(`[Email] Failed to send account email to ${email}:`, err));
+              }
+
               return { status: 'created' as const };
             }
           } catch (err: any) {
@@ -3423,8 +3662,361 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   });
 
   /**
-   * Get available interview slots
+   * Detailed analytics for the dedicated Analytics dashboard
    */
+  app.get('/api/admin/analytics/detailed', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { getDailyAnalytics, getTodayStats } = await import("./adminUtils.js");
+
+      // Get all students and interviews from DB
+      const allStudents = await storage.getStudents();
+      const allInterviewsList = await db.select().from(interviews);
+
+      // Today's stats
+      const todayStats = await getTodayStats();
+      const dailyStats = await getDailyAnalytics(30);
+
+      // ── Branch-wise performance ──
+      const branchMap: Record<string, { students: number; interviews: number; techTotal: number; commTotal: number; overallTotal: number; scored: number }> = {};
+      for (const s of allStudents) {
+        const dept = s.department || 'Unassigned';
+        if (!branchMap[dept]) branchMap[dept] = { students: 0, interviews: 0, techTotal: 0, commTotal: 0, overallTotal: 0, scored: 0 };
+        branchMap[dept].students++;
+      }
+      for (const inv of allInterviewsList) {
+        const student = allStudents.find(s => s.id === inv.userId);
+        const dept = student?.department || 'Unassigned';
+        if (!branchMap[dept]) branchMap[dept] = { students: 0, interviews: 0, techTotal: 0, commTotal: 0, overallTotal: 0, scored: 0 };
+        branchMap[dept].interviews++;
+        if (inv.status === 'completed' && inv.overallScore != null) {
+          branchMap[dept].techTotal += inv.technicalScore || 0;
+          branchMap[dept].commTotal += inv.communicationScore || 0;
+          branchMap[dept].overallTotal += inv.overallScore || 0;
+          branchMap[dept].scored++;
+        }
+      }
+      const branchPerformance = Object.entries(branchMap).map(([branch, data]) => ({
+        branch,
+        students: data.students,
+        interviews: data.interviews,
+        avgTechnical: data.scored > 0 ? Math.round(data.techTotal / data.scored) : 0,
+        avgCommunication: data.scored > 0 ? Math.round(data.commTotal / data.scored) : 0,
+        avgOverall: data.scored > 0 ? Math.round(data.overallTotal / data.scored) : 0,
+      })).sort((a, b) => b.interviews - a.interviews);
+
+      // ── Interview type breakdown ──
+      const typeMap: Record<string, { count: number; completed: number; totalScore: number; scored: number }> = {};
+      for (const inv of allInterviewsList) {
+        const t = inv.type || 'technical';
+        if (!typeMap[t]) typeMap[t] = { count: 0, completed: 0, totalScore: 0, scored: 0 };
+        typeMap[t].count++;
+        if (inv.status === 'completed') {
+          typeMap[t].completed++;
+          if (inv.overallScore != null) {
+            typeMap[t].totalScore += inv.overallScore;
+            typeMap[t].scored++;
+          }
+        }
+      }
+      const interviewTypeBreakdown = Object.entries(typeMap).map(([type, data]) => ({
+        type,
+        total: data.count,
+        completed: data.completed,
+        avgScore: data.scored > 0 ? Math.round(data.totalScore / data.scored) : 0,
+      })).sort((a, b) => b.total - a.total);
+
+      // ── Score distribution buckets ──
+      const scoreBuckets = { excellent: 0, good: 0, average: 0, poor: 0 };
+      const completedInterviews = allInterviewsList.filter(i => i.status === 'completed' && i.overallScore != null);
+      for (const inv of completedInterviews) {
+        const s = inv.overallScore!;
+        if (s >= 80) scoreBuckets.excellent++;
+        else if (s >= 60) scoreBuckets.good++;
+        else if (s >= 40) scoreBuckets.average++;
+        else scoreBuckets.poor++;
+      }
+
+      // ── Top skill gaps ──
+      const skillGaps = await storage.getSkillGapAnalysis();
+
+      // ── Status summary ──
+      const statusSummary = {
+        total: allInterviewsList.length,
+        completed: allInterviewsList.filter(i => i.status === 'completed').length,
+        inProgress: allInterviewsList.filter(i => i.status === 'in_progress').length,
+        pending: allInterviewsList.filter(i => i.status === 'pending').length,
+        cancelled: allInterviewsList.filter(i => i.status === 'cancelled').length,
+      };
+
+      // ── Top performers ──
+      const studentScores: Record<string, { name: string; dept: string; total: number; count: number }> = {};
+      for (const inv of completedInterviews) {
+        const student = allStudents.find(s => s.id === inv.userId);
+        if (!student) continue;
+        const key = student.id;
+        if (!studentScores[key]) studentScores[key] = { name: `${student.firstName || ''} ${student.lastName || ''}`.trim() || student.email || 'Unknown', dept: student.department || '', total: 0, count: 0 };
+        studentScores[key].total += inv.overallScore || 0;
+        studentScores[key].count++;
+      }
+      const topPerformers = Object.values(studentScores)
+        .map(s => ({ ...s, avgScore: Math.round(s.total / s.count) }))
+        .sort((a, b) => b.avgScore - a.avgScore)
+        .slice(0, 10);
+
+      res.json({
+        today: todayStats,
+        daily: dailyStats,
+        branchPerformance,
+        interviewTypeBreakdown,
+        scoreDistribution: scoreBuckets,
+        skillGaps: skillGaps?.slice(0, 10) || [],
+        statusSummary,
+        topPerformers,
+        totalStudents: allStudents.length,
+        totalInterviews: allInterviewsList.length,
+      });
+    } catch (error) {
+      console.error("Error fetching detailed analytics:", error);
+      res.status(500).json({ message: "Failed to fetch detailed analytics" });
+    }
+  });
+
+  /**
+   * Generate Dynamic Slots Proposal (Draft - Pending Approval)
+   */
+  app.post('/api/admin/scheduler/generate-dynamic-slots', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const {
+        targetType, // 'branch' | 'custom_students' | 'all'
+        branch,
+        studentIds,
+        startDate, // YYYY-MM-DD
+        endDate,   // YYYY-MM-DD
+        dailyStartTime, // HH:MM e.g. "09:00"
+        dailyEndTime,   // HH:MM e.g. "17:00"
+        slotDurationMinutes = 30,
+        breakMinutes = 5,
+        interviewType = 'technical',
+        types, // Array of interview types from multi-select
+        company,
+        difficulty = 'medium'
+      } = req.body;
+
+      // Use types array if provided, otherwise fall back to single interviewType
+      const interviewTypes = Array.isArray(types) && types.length > 0 ? types : [interviewType];
+
+      if (!startDate || !endDate || !dailyStartTime || !dailyEndTime) {
+        return res.status(400).json({ message: "Start date, end date, daily start time, and daily end time are required." });
+      }
+
+      // Fetch target students
+      const allStudents = await storage.getStudents();
+      let targetStudents = allStudents;
+
+      if (targetType === 'branch' && branch && branch !== 'all') {
+        targetStudents = allStudents.filter(s => s.department === branch);
+      } else if (targetType === 'custom_students' && Array.isArray(studentIds) && studentIds.length > 0) {
+        targetStudents = allStudents.filter(s => studentIds.includes(s.id));
+      }
+
+      if (targetStudents.length === 0) {
+        return res.status(400).json({ message: "No students found matching the selected target criteria." });
+      }
+
+      // Generate date array for consecutive days
+      const start = new Date(startDate);
+      const end = new Date(endDate);
+      const dates: string[] = [];
+      const curr = new Date(start);
+
+      while (curr <= end) {
+        const yyyy = curr.getFullYear();
+        const mm = (curr.getMonth() + 1).toString().padStart(2, '0');
+        const dd = curr.getDate().toString().padStart(2, '0');
+        dates.push(`${dd}-${mm}-${yyyy}`); // DD-MM-YYYY format
+        curr.setDate(curr.getDate() + 1);
+      }
+
+      if (dates.length === 0) {
+        return res.status(400).json({ message: "Invalid date range selected." });
+      }
+
+      // Generate daily time slots
+      const [startH, startM] = dailyStartTime.split(':').map(Number);
+      const [endH, endM] = dailyEndTime.split(':').map(Number);
+      const dailyStartMinutes = startH * 60 + startM;
+      const dailyEndMinutes = endH * 60 + endM;
+
+      const totalSlotStep = slotDurationMinutes + breakMinutes;
+      const dailySlotTimes: Array<{ start: string; end: string }> = [];
+
+      for (let min = dailyStartMinutes; min + slotDurationMinutes <= dailyEndMinutes; min += totalSlotStep) {
+        const sH = Math.floor(min / 60).toString().padStart(2, '0');
+        const sM = (min % 60).toString().padStart(2, '0');
+        const eMin = min + slotDurationMinutes;
+        const eH = Math.floor(eMin / 60).toString().padStart(2, '0');
+        const eM = (eMin % 60).toString().padStart(2, '0');
+        dailySlotTimes.push({
+          start: `${sH}:${sM}`,
+          end: `${eH}:${eM}`
+        });
+      }
+
+      if (dailySlotTimes.length === 0) {
+        return res.status(400).json({ message: "No slots could be generated within the specified daily time range." });
+      }
+
+      // Total available slot capacity across consecutive days
+      const totalCapacity = dates.length * dailySlotTimes.length;
+      
+      // Distribute students across days and time slots
+      const proposedSlots: any[] = [];
+      let studentIdx = 0;
+
+      for (const dStr of dates) {
+        for (const timeSlot of dailySlotTimes) {
+          if (studentIdx >= targetStudents.length) break;
+          const student = targetStudents[studentIdx];
+          proposedSlots.push({
+            studentId: student.id,
+            studentName: `${student.firstName || ''} ${student.lastName || ''}`.trim() || student.email,
+            rollNumber: student.rollNumber || 'N/A',
+            department: student.department || 'General',
+            email: student.email,
+            slotDate: dStr,
+            slotStartTime: timeSlot.start,
+            slotEndTime: timeSlot.end,
+            interviewType: interviewTypes[0],
+            types: interviewTypes,
+            company: company || null,
+            difficulty
+          });
+          studentIdx++;
+        }
+        if (studentIdx >= targetStudents.length) break;
+      }
+
+      const proposal = {
+        id: `prop_${Date.now()}`,
+        targetType,
+        branch: branch || 'All',
+        studentCount: targetStudents.length,
+        scheduledCount: proposedSlots.length,
+        unassignedCount: Math.max(0, targetStudents.length - proposedSlots.length),
+        startDate,
+        endDate,
+        dailyStartTime,
+        dailyEndTime,
+        slotDurationMinutes,
+        interviewType: interviewTypes[0],
+        types: interviewTypes,
+        company: company || null,
+        difficulty,
+        status: 'draft_pending_approval',
+        createdAt: new Date().toISOString(),
+        proposedSlots
+      };
+
+      // Save proposal as draft in globalSettings
+      const { setGlobalSetting } = await import("./adminUtils.js");
+      await setGlobalSetting('draft_slot_proposal', JSON.stringify(proposal), 'Pending dynamic slot proposal requiring admin approval');
+
+      res.json(proposal);
+    } catch (error: any) {
+      console.error("Error generating dynamic slots:", error);
+      res.status(500).json({ message: error.message || "Failed to generate dynamic slots" });
+    }
+  });
+
+  /**
+   * Get Current Draft Slot Proposal
+   */
+  app.get('/api/admin/scheduler/draft-proposal', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { getGlobalSetting } = await import("./adminUtils.js");
+      const proposalStr = await getGlobalSetting('draft_slot_proposal');
+      if (!proposalStr) {
+        return res.json({ proposal: null });
+      }
+      res.json({ proposal: JSON.parse(proposalStr) });
+    } catch (error) {
+      console.error("Error fetching draft proposal:", error);
+      res.status(500).json({ message: "Failed to fetch draft proposal" });
+    }
+  });
+
+  /**
+   * Reject / Cancel Draft Slot Proposal
+   */
+  app.delete('/api/admin/scheduler/draft-proposal', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { setGlobalSetting } = await import("./adminUtils.js");
+      await setGlobalSetting('draft_slot_proposal', '', 'Cleared draft proposal');
+      res.json({ success: true, message: "Draft proposal rejected and cleared." });
+    } catch (error) {
+      console.error("Error rejecting draft proposal:", error);
+      res.status(500).json({ message: "Failed to reject draft proposal" });
+    }
+  });
+
+  /**
+   * Approve & Commit Dynamic Slot Proposal
+   */
+  app.post('/api/admin/scheduler/approve-slots', isAuthenticated, isAdmin, async (req: any, res) => {
+    try {
+      const { getGlobalSetting, setGlobalSetting } = await import("./adminUtils.js");
+      const proposalStr = await getGlobalSetting('draft_slot_proposal');
+
+      if (!proposalStr) {
+        return res.status(400).json({ message: "No active draft proposal found to approve." });
+      }
+
+      const proposal = JSON.parse(proposalStr);
+      const slots = proposal.proposedSlots || [];
+
+      if (!Array.isArray(slots) || slots.length === 0) {
+        return res.status(400).json({ message: "Proposal contains no valid slots." });
+      }
+
+      let committedCount = 0;
+
+      for (const slot of slots) {
+        // 1. Update user slot date and times
+        await storage.updateUser(slot.studentId, {
+          slotDate: slot.slotDate,
+          slotStartTime: slot.slotStartTime,
+          slotEndTime: slot.slotEndTime,
+          slotStatus: 'active'
+        });
+
+        // 2. Create pending interview instance for the student
+        await storage.createInterview({
+          userId: slot.studentId,
+          type: slot.interviewType || 'technical',
+          types: Array.isArray(slot.types) && slot.types.length > 0 ? slot.types : [slot.interviewType || 'technical'],
+          difficulty: slot.difficulty || 'medium',
+          company: slot.company || undefined,
+          status: 'pending',
+          simulationMode: 'combined',
+          trendingEnabled: true
+        });
+
+        committedCount++;
+      }
+
+      // Clear draft proposal after successful commitment
+      await setGlobalSetting('draft_slot_proposal', '', 'Approved and committed');
+
+      res.json({
+        success: true,
+        committedCount,
+        message: `Successfully approved and created ${committedCount} student slots with interview instances.`
+      });
+    } catch (error: any) {
+      console.error("Error approving dynamic slots:", error);
+      res.status(500).json({ message: error.message || "Failed to approve dynamic slots" });
+    }
+  });
   app.get('/api/interview-slots', isAuthenticated, async (req: any, res) => {
     try {
       const { db } = await import("./db.js");
