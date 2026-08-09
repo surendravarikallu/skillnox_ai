@@ -270,59 +270,42 @@ export default function InterviewRoom() {
     }
   }, [micEnabled, startListening, stopListening]);
 
-  const [isTranscribingServer, setIsTranscribingServer] = useState(false);
-
   const handleSubmitAnswer = async () => {
     if (!questions) return;
     const qId = questions[currentQuestionIndex].id;
-    let answerText = transcript.trim();
+    const answerText = transcript.trim();
+    const finalAnswer = answerText || "(no answer recorded)";
 
-    // Always attempt server-side STT via MediaRecorder for accurate transcription
-    // This ensures we capture speech even when browser SpeechRecognition fails silently
-    try {
-      setIsTranscribingServer(true);
-      const audioBlob = await getRecordedAudio();
-      
+    // 1. Immediately submit candidate's answer & advance question in 400ms (0-second wait!)
+    submitAnswerMutation.mutate({ questionId: qId, answer: finalAnswer });
+
+    // 2. Non-blocking background STT refinement via Groq Cloud Whisper
+    getRecordedAudio().then(async (audioBlob) => {
       if (audioBlob && audioBlob.size > 500) {
-        console.log(`[InterviewRoom] Sending recorded audio (${audioBlob.size} bytes) to Groq Cloud Whisper...`);
-        toast({
-          title: "Processing Voice Recording",
-          description: "AI Server is transcribing your spoken response...",
-        });
+        try {
+          console.log(`[InterviewRoom] Background STT sending audio (${audioBlob.size} bytes)...`);
+          const formData = new FormData();
+          formData.append('file', audioBlob, 'recording.webm');
 
-        // Send as multipart/form-data so Python FastAPI can parse the 'file' field
-        const formData = new FormData();
-        formData.append('file', audioBlob, 'recording.webm');
-
-        const res = await fetch('/api/transcribe', {
-          method: 'POST',
-          body: formData,
-          credentials: 'include',
-        });
-        if (res.ok) {
-          const data = await res.json();
-          if (data.text && data.text.trim().length > 0) {
-            const serverText = data.text.trim();
-            console.log(`[InterviewRoom] Groq Cloud STT result: "${serverText}"`);
-            
-            // Use server transcription if it's more substantial than browser transcript
-            if (!answerText || serverText.length > answerText.length) {
-              answerText = serverText;
-              // Update the visible transcript so student sees what was captured
-              setTranscript(serverText);
+          const res = await fetch('/api/transcribe', {
+            method: 'POST',
+            body: formData,
+            credentials: 'include',
+          });
+          if (res.ok) {
+            const data = await res.json();
+            if (data.text && data.text.trim().length > answerText.length) {
+              const serverText = data.text.trim();
+              console.log(`[InterviewRoom] Background STT refined answer: "${serverText}"`);
+              // Update answer on server without interrupting student
+              await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: serverText });
             }
           }
+        } catch (bgErr) {
+          console.warn("[InterviewRoom] Non-blocking background STT error:", bgErr);
         }
       }
-    } catch (err) {
-      console.warn("[InterviewRoom] Server STT failed:", err);
-    } finally {
-      setIsTranscribingServer(false);
-    }
-
-    const finalAnswer = answerText || "(no answer recorded)";
-    submitAnswerMutation.mutate({ questionId: qId, answer: finalAnswer });
-    // clearTranscript is called in submitAnswerMutation.onSuccess to avoid premature clearing
+    }).catch(err => console.warn("[InterviewRoom] getRecordedAudio bg error:", err));
   };
 
   const handleComplete = () => completeInterviewMutation.mutate();
@@ -834,10 +817,10 @@ export default function InterviewRoom() {
                     "rounded-2xl h-14 px-10 font-black shadow-xl transition-all bg-primary hover:bg-primary/90 shadow-primary/20"
                   )}
                   onClick={handleSubmitAnswer}
-                  disabled={submitAnswerMutation.isPending || isTransitioning || isTranscribingServer}
+                  disabled={submitAnswerMutation.isPending || isTransitioning}
                 >
-                  {submitAnswerMutation.isPending || isTranscribingServer
-                    ? "AI Transcribing & Saving..."
+                  {submitAnswerMutation.isPending
+                    ? "Saving Answer..."
                     : transcript.trim()
                     ? (isLastQuestion ? "Submit Answer & Finalize" : "Submit Voice Answer →")
                     : (isLastQuestion ? "Finalize Interview" : "Submit Recorded Voice →")}
