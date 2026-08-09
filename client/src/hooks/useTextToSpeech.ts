@@ -67,15 +67,48 @@ export function useTextToSpeech(): UseTextToSpeechReturn {
   }, []);
 
   /**
-   * Speak text using server-side TTS.
-   * Fetches audio from /api/tts, plays via HTMLAudioElement.
+  /**
+   * Emergency fallback / primary instant speech: use browser speechSynthesis.
+   */
+  const speakWithBrowserTTS = useCallback((text: string, gen: number, cleanup: (g: number) => void) => {
+    if (!('speechSynthesis' in window)) {
+      cleanup(gen);
+      return;
+    }
+
+    try {
+      window.speechSynthesis.cancel();
+      const utterance = new SpeechSynthesisUtterance(text);
+      utterance.rate = 0.95;
+      utterance.lang = 'en-US';
+      utterance.onend = () => cleanup(gen);
+      utterance.onerror = () => cleanup(gen);
+
+      // Safety timeout
+      setTimeout(() => {
+        if (gen === generationRef.current) {
+          try { window.speechSynthesis.cancel(); } catch (e) {}
+          cleanup(gen);
+        }
+      }, 15000);
+
+      window.speechSynthesis.speak(utterance);
+      console.log("[TTS] Instant browser SpeechSynthesis started");
+    } catch (e) {
+      console.error("[TTS] Browser SpeechSynthesis failed:", e);
+      cleanup(gen);
+    }
+  }, []);
+
+  /**
+   * Speak text using zero-latency browser speech synthesis or server-side fallback.
    */
   const speak = useCallback((text: string): Promise<void> => {
     console.log(`[TTS] speak() requested (${text.length} chars): "${text.substring(0, 60)}..."`);
 
     const thisGen = ++generationRef.current;
 
-    // Stop any currently playing audio
+    // Stop any currently playing audio or speech
     if (audioRef.current) {
       try {
         audioRef.current.pause();
@@ -83,6 +116,9 @@ export function useTextToSpeech(): UseTextToSpeechReturn {
         audioRef.current.load();
       } catch (e) {}
       audioRef.current = null;
+    }
+    if ('speechSynthesis' in window) {
+      try { window.speechSynthesis.cancel(); } catch (e) {}
     }
 
     // Resolve any pending promise
@@ -105,7 +141,13 @@ export function useTextToSpeech(): UseTextToSpeechReturn {
         }
       };
 
-      // Fetch audio from server
+      // 1. Instant zero-latency Browser SpeechSynthesis (starts in 0ms locally!)
+      if ('speechSynthesis' in window) {
+        speakWithBrowserTTS(text, thisGen, cleanupForGen);
+        return;
+      }
+
+      // 2. Fallback: Fetch audio from server
       fetch('/api/tts', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -150,32 +192,18 @@ export function useTextToSpeech(): UseTextToSpeechReturn {
             cleanupForGen(thisGen);
           };
 
-          // Safety timeout: if audio doesn't finish in 30 seconds, force resolve
-          setTimeout(() => {
-            if (thisGen === generationRef.current && audioRef.current === audio) {
-              console.warn("[TTS] ⏰ Audio safety timeout (30s)");
-              try { audio.pause(); } catch (e) {}
-              URL.revokeObjectURL(audioUrl);
-              audioRef.current = null;
-              cleanupForGen(thisGen);
-            }
-          }, 30000);
-
-          audio.play().catch(playError => {
-            console.warn("[TTS] Audio play() rejected, trying browser fallback:", playError);
+          audio.play().catch(() => {
             URL.revokeObjectURL(audioUrl);
             audioRef.current = null;
-            // Fallback to browser speechSynthesis if audio play fails
-            fallbackBrowserTTS(text, thisGen, cleanupForGen);
+            cleanupForGen(thisGen);
           });
         })
         .catch(fetchError => {
-          console.warn("[TTS] Server TTS fetch failed, using browser fallback:", fetchError);
-          // Fallback to browser speechSynthesis
-          fallbackBrowserTTS(text, thisGen, cleanupForGen);
+          console.warn("[TTS] Server TTS fetch failed:", fetchError);
+          cleanupForGen(thisGen);
         });
     });
-  }, []);
+  }, [speakWithBrowserTTS]);
 
   /**
    * Emergency fallback: use browser speechSynthesis if server TTS fails.

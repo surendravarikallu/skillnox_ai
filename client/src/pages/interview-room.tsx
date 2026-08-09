@@ -156,29 +156,9 @@ export default function InterviewRoom() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/interviews', id, 'questions'] });
-      
-      if (questions && currentQuestionIndex < questions.length - 1) {
-        setIsTransitioning(true);
-        // Fast 400ms transition to next question
-        setTimeout(() => {
-          clearTranscript();
-          setCurrentQuestionIndex(prev => prev + 1);
-          setIsTransitioning(false);
-        }, 400);
-      } else if (isLastQuestion) {
-        if (interview?.simulationMode === 'full') {
-          setShowRoundSummary(true);
-        } else {
-          handleComplete();
-        }
-      }
     },
     onError: (error: any) => {
-      toast({
-        title: "Advancement Failed",
-        description: error?.message || "Please wait a moment for the AI to complete scoring.",
-        variant: "destructive"
-      });
+      console.warn("Background answer save error:", error);
     }
   });
 
@@ -276,14 +256,25 @@ export default function InterviewRoom() {
     const answerText = transcript.trim();
     const finalAnswer = answerText || "(no answer recorded)";
 
-    // 1. Immediately submit candidate's answer & advance question in 400ms (0-second wait!)
+    // 1. INSTANT ZERO-LATENCY UI SWITCH (0-second wait for student!)
+    clearTranscript();
+    if (currentQuestionIndex < questions.length - 1) {
+      setCurrentQuestionIndex(prev => prev + 1);
+    } else if (isLastQuestion) {
+      if (interview?.simulationMode === 'full') {
+        setShowRoundSummary(true);
+      } else {
+        handleComplete();
+      }
+    }
+
+    // 2. Submit candidate's answer asynchronously in background
     submitAnswerMutation.mutate({ questionId: qId, answer: finalAnswer });
 
-    // 2. Non-blocking background STT refinement via Groq Cloud Whisper
+    // 3. Non-blocking background STT refinement via Groq Cloud Whisper
     getRecordedAudio().then(async (audioBlob) => {
       if (audioBlob && audioBlob.size > 500) {
         try {
-          console.log(`[InterviewRoom] Background STT sending audio (${audioBlob.size} bytes)...`);
           const formData = new FormData();
           formData.append('file', audioBlob, 'recording.webm');
 
@@ -297,7 +288,6 @@ export default function InterviewRoom() {
             if (data.text && data.text.trim().length > answerText.length) {
               const serverText = data.text.trim();
               console.log(`[InterviewRoom] Background STT refined answer: "${serverText}"`);
-              // Update answer on server without interrupting student
               await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: serverText });
             }
           }
@@ -347,15 +337,13 @@ export default function InterviewRoom() {
         }, 500);
       };
       
-      // Brief 300ms delay to allow UI to render question
-      setTimeout(() => {
-        speakText(currentQuestion.question)
-          .then(restartMicAfterSpeech)
-          .catch(err => {
-            console.error("[InterviewRoom] Automatic speech failed:", err);
-            restartMicAfterSpeech();
-          });
-      }, 300);
+      // Speak text immediately as question appears
+      speakText(currentQuestion.question)
+        .then(restartMicAfterSpeech)
+        .catch(err => {
+          console.error("[InterviewRoom] Automatic speech failed:", err);
+          restartMicAfterSpeech();
+        });
     }
   }, [currentQuestion?.id, currentQuestion?.question, loadingQuestions, interview?.status, speakText, pauseListening, startListening, micEnabled]);
 

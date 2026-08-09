@@ -129,7 +129,40 @@ export default function InterviewResults() {
     );
   }
 
-  const improvements = interview.improvements || [];
+  // Dynamically collect improvements from interview.improvements, questions feedback, and metrics
+  const displayImprovements: string[] = [];
+
+  if (interview.improvements && Array.isArray(interview.improvements) && interview.improvements.length > 0) {
+    displayImprovements.push(...interview.improvements);
+  }
+
+  if (questions) {
+    questions.forEach(q => {
+      if (q.feedback && q.score !== null && q.score < 75) {
+        const hint = q.feedback.split('\n\nHow to answer:')[0].trim();
+        if (hint && !displayImprovements.includes(hint) && displayImprovements.length < 5) {
+          displayImprovements.push(hint);
+        }
+      }
+    });
+  }
+
+  if (displayImprovements.length === 0) {
+    if ((interview.technicalScore || 0) < 75) {
+      displayImprovements.push("Strengthen technical depth by explaining architecture choices, algorithmic logic, and real-world trade-offs.");
+    }
+    if ((interview.communicationScore || 0) < 75) {
+      displayImprovements.push("Structure answers using the STAR method (Situation, Task, Action, Result) with clear bullet points.");
+    }
+    if ((interview.voiceScore || 0) < 75) {
+      displayImprovements.push("Maintain steady vocal pacing and articulate key domain terms clearly with confidence.");
+    }
+    if (displayImprovements.length === 0) {
+      displayImprovements.push("Elaborate further on practical project experience and edge-case handling during technical questions.");
+      displayImprovements.push("Provide concrete numerical metrics (e.g., performance impact, accuracy gains) when summarizing achievements.");
+    }
+  }
+
   const answeredQuestions = questions?.filter(q => q.userAnswer) || [];
   const averageQuestionScore = answeredQuestions.length > 0
     ? answeredQuestions.reduce((acc, q) => acc + (q.score || 0), 0) / answeredQuestions.length
@@ -364,35 +397,12 @@ export default function InterviewResults() {
           </CardHeader>
           <CardContent>
             <ul className="space-y-3">
-              {improvements.length > 0 ? (
-                improvements.map((improvement, index) => (
-                  <li key={index} className="flex items-start gap-3">
-                    <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                    <span>{improvement}</span>
-                  </li>
-                ))
-              ) : (
-                <>
-                  {(interview.technicalScore || 0) < 70 && (
-                    <li className="flex items-start gap-3">
-                      <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                      <span>Strengthen technical concepts and coding skills</span>
-                    </li>
-                  )}
-                  {(interview.communicationScore || 0) < 70 && (
-                    <li className="flex items-start gap-3">
-                      <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                      <span>Practice structured responses using STAR method</span>
-                    </li>
-                  )}
-                  {(interview.voiceScore || 0) < 70 && (
-                    <li className="flex items-start gap-3">
-                      <AlertCircle className="w-5 h-5 text-yellow-500 shrink-0 mt-0.5" />
-                      <span>Work on voice clarity and speaking pace</span>
-                    </li>
-                  )}
-                </>
-              )}
+              {displayImprovements.map((improvement, index) => (
+                <li key={index} className="flex items-start gap-3">
+                  <AlertCircle className="w-5 h-5 text-amber-500 shrink-0 mt-0.5" />
+                  <span className="text-sm font-medium">{improvement}</span>
+                </li>
+              ))}
             </ul>
           </CardContent>
         </Card>
