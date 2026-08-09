@@ -258,6 +258,126 @@ export function buildMaintenanceUpdateEmail(data: MaintenanceEmailData): { subje
   };
 }
 
+// ─── Official Student Schedule & Credentials Email (No Maintenance Mention) ───
+export interface StudentScheduleCredentialsEmailData {
+  studentName: string;
+  rollNumber: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  department: string;
+}
+
+export function buildStudentScheduleCredentialsEmail(data: StudentScheduleCredentialsEmailData): { subject: string; html: string } {
+  const capsRoll = data.rollNumber.toUpperCase();
+
+  const body = `
+    <div style="background: linear-gradient(135deg, #312e81, #1e1b4b); border: 1px solid #4338ca; border-radius: 14px; padding: 22px 24px; margin-bottom: 24px; text-align: center;">
+      <p style="margin: 0 0 4px 0; font-size: 11px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 1.5px;">
+        COLLEGE T&amp;P CELL PRESENTS
+      </p>
+      <p style="margin: 0 0 6px 0; font-size: 22px; font-weight: 900; color: #ffffff; letter-spacing: -0.5px;">
+        CONLOQUIUM '26 &mdash; Campus Mock Interview Drive
+      </p>
+      <p style="margin: 0; font-size: 13px; color: #c7d2fe; line-height: 1.5;">
+        Your official AI-powered campus mock interview session has been scheduled. Please review your login credentials and assigned time slot details below.
+      </p>
+    </div>
+
+    <p style="font-size: 16px; color: #f1f5f9; margin: 0 0 8px 0;">Dear <strong>${data.studentName}</strong>,</p>
+    <p style="font-size: 14px; color: #94a3b8; line-height: 1.6; margin: 0 0 24px 0;">
+      As part of <strong>CONLOQUIUM '26</strong> (One-Week Campus Placement Preparation Drive), your AI mock interview session is scheduled for <strong>${data.scheduledDate}</strong>. Below are your portal access credentials and specific time slot details:
+    </p>
+
+    <!-- Credentials Box -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border: 1px solid #4338ca; border-radius: 14px; margin-bottom: 24px;">
+      <tr>
+        <td style="padding: 20px 24px;">
+          <p style="margin: 0 0 14px 0; font-size: 12px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 1px;">
+            🔑 Your Account Login Credentials
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #c7d2fe; width: 140px;">Portal Web URL</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #ffffff; font-weight: 700;">
+                <a href="${PLATFORM_URL}" style="color: #818cf8; text-decoration: none;">${PLATFORM_URL}</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #c7d2fe;">Username (Roll No)</td>
+              <td style="padding: 6px 0; font-size: 15px; color: #38bdf8; font-weight: 800; font-family: monospace;">${capsRoll}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #c7d2fe;">Password</td>
+              <td style="padding: 6px 0; font-size: 15px; color: #38bdf8; font-weight: 800; font-family: monospace;">${capsRoll}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Slot Details Box -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #1e293b; border: 1px solid #334155; border-radius: 14px; margin-bottom: 24px;">
+      <tr>
+        <td style="padding: 20px 24px;">
+          <p style="margin: 0 0 14px 0; font-size: 12px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">
+            📅 Interview Slot Details
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8; width: 140px;">Drive Event</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #38bdf8; font-weight: 700;">CONLOQUIUM '26</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Candidate Name</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #f1f5f9; font-weight: 600;">${data.studentName} (${capsRoll})</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Department</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #f1f5f9; font-weight: 600;">${data.department}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Scheduled Date</td>
+              <td style="padding: 6px 0; font-size: 15px; color: #818cf8; font-weight: 800;">${data.scheduledDate}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Scheduled Time</td>
+              <td style="padding: 6px 0; font-size: 15px; color: #818cf8; font-weight: 800;">${data.scheduledTime}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Interview Format</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #f1f5f9; font-weight: 600;">AI/ML Technical, HR & Communication</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Total Questions</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #f1f5f9; font-weight: 600;">15 Questions (20 Min Slot)</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Guidelines -->
+    <div style="background: #0f172a; border-radius: 12px; padding: 16px 20px; border: 1px solid #1e293b;">
+      <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: 700; color: #38bdf8;">📌 Instructions for Candidates:</p>
+      <ul style="margin: 0; padding: 0 0 0 16px; font-size: 13px; color: #94a3b8; line-height: 1.8;">
+        <li>Log in to <a href="${PLATFORM_URL}" style="color: #818cf8; text-decoration: none; font-weight: 600;">${PLATFORM_URL}</a> using your UPPERCASE Roll Number for both Username & Password.</li>
+        <li>Join the session 5 minutes prior to your scheduled time slot (${data.scheduledTime}).</li>
+        <li>Ensure you test your microphone and camera before starting the interview.</li>
+        <li>Use Google Chrome browser for optimal voice recognition performance.</li>
+      </ul>
+    </div>
+
+    <p style="font-size: 13px; color: #64748b; margin: 24px 0 0 0;">
+      Warm regards,<br />
+      <strong style="color: #94a3b8;">Skillnox AI Training & Placement Cell</strong>
+    </p>`;
+
+  return {
+    subject: `[Skillnox AI | CONLOQUIUM '26] Campus Interview Credentials & Slot Details - ${capsRoll}`,
+    html: baseLayout(`CONLOQUIUM '26 Credentials & Slot Details - Skillnox AI`, body),
+  };
+}
+
 // ─── Alumni / Senior Candidate Interview Invitation ───
 export interface AlumniInviteEmailData {
   candidateName: string;
@@ -701,3 +821,4 @@ export function buildAccountAndInterviewScheduleEmail(data: AccountAndScheduleEm
     html: baseLayout('Account Created & Interview Scheduled - Skillnox AI', body),
   };
 }
+

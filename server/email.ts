@@ -1,7 +1,10 @@
 import nodemailer from 'nodemailer';
+import dns from 'dns';
+
+dns.setDefaultResultOrder('ipv4first');
 
 const BREVO_API_KEY = process.env.BREVO_API_KEY || '';
-const SMTP_HOST = process.env.SMTP_HOST || 'smtp.brevo.com';
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp-relay.brevo.com';
 const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
 const SMTP_USER = process.env.SMTP_USER || 'no-reply@kitaghire.in';
 const SENDER_EMAIL = process.env.SENDER_EMAIL || 'no-reply@kitaghire.in';
@@ -25,18 +28,25 @@ export interface SendEmailOptions {
 }
 
 export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
+  const apiKey = process.env.BREVO_API_KEY || '';
+  const smtpHost = process.env.SMTP_HOST || 'smtp-relay.brevo.com';
+  const smtpPort = parseInt(process.env.SMTP_PORT || '587', 10);
+  const smtpUser = process.env.SMTP_USER || 'no-reply@kitaghire.in';
+  const senderEmail = process.env.SENDER_EMAIL || 'no-reply@kitaghire.in';
+  const senderName = process.env.SENDER_NAME || 'Skillnox AI (Kitaghire)';
+
   // Method 1: Brevo HTTP REST API (Primary)
-  if (BREVO_API_KEY) {
+  if (apiKey) {
     try {
       const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
         headers: {
           'Accept': 'application/json',
           'Content-Type': 'application/json',
-          'api-key': BREVO_API_KEY,
+          'api-key': apiKey,
         },
         body: JSON.stringify({
-          sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+          sender: { name: senderName, email: senderEmail },
           to: [{ email: options.to }],
           subject: options.subject,
           htmlContent: options.html,
@@ -57,12 +67,22 @@ export async function sendEmail(options: SendEmailOptions): Promise<boolean> {
 
   // Method 2: Nodemailer SMTP Fallback
   try {
-    const info = await transporter.sendMail({
-      from: `"${SENDER_NAME}" <${SENDER_EMAIL}>`,
+    const dynamicTransporter = nodemailer.createTransport({
+      host: smtpHost,
+      port: smtpPort,
+      secure: false,
+      auth: {
+        user: smtpUser,
+        pass: apiKey,
+      },
+    });
+
+    const info = await dynamicTransporter.sendMail({
+      from: `"${senderName}" <${senderEmail}>`,
       to: options.to,
       subject: options.subject,
       html: options.html,
-      text: options.text,
+      text: options.text || options.subject,
     });
     console.log(`[EMAIL SUCCESS via Nodemailer SMTP] Sent to ${options.to}, Message ID: ${info.messageId}`);
     return true;
