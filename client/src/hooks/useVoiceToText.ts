@@ -298,7 +298,15 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       if (!mediaStreamRef.current) {
         mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
-      const recorder = new MediaRecorder(mediaStreamRef.current);
+      let options: MediaRecorderOptions = { audioBitsPerSecond: 32000 };
+      if (typeof MediaRecorder.isTypeSupported === 'function') {
+        if (MediaRecorder.isTypeSupported('audio/webm;codecs=opus')) {
+          options.mimeType = 'audio/webm;codecs=opus';
+        } else if (MediaRecorder.isTypeSupported('audio/mp4')) {
+          options.mimeType = 'audio/mp4';
+        }
+      }
+      const recorder = new MediaRecorder(mediaStreamRef.current, options);
       recorder.ondataavailable = (event) => {
         if (event.data && event.data.size > 0) {
           audioChunksRef.current.push(event.data);
@@ -306,7 +314,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       };
       recorder.start(500); // 500ms chunks
       mediaRecorderRef.current = recorder;
-      console.log("[VoiceToText] MediaRecorder started fresh (chunks cleared)");
+      console.log("[VoiceToText] MediaRecorder started fresh with 32kbps Opus compression");
     } catch (e) {
       console.warn("[VoiceToText] Could not start MediaRecorder:", e);
     }
