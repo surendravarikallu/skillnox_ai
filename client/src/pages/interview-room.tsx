@@ -72,7 +72,7 @@ export default function InterviewRoom() {
     enabled: !!user && user.role !== 'admin',
   });
 
-  const { transcript, isListening, connectionState, startListening, stopListening, pauseListening, clearTranscript, hardResetTranscript, error: speechError, micTestResult, testMicrophone } = useVoiceToText();
+  const { transcript, isListening, connectionState, startListening, stopListening, pauseListening, clearTranscript, hardResetTranscript, setTranscript, error: speechError, micTestResult, testMicrophone, getRecordedAudio } = useVoiceToText();
   const { isSpeaking: isAISpeaking, speak: speakText, stop: stopSpeaking, primeAudio } = useTextToSpeech();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -156,17 +156,15 @@ export default function InterviewRoom() {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/interviews', id, 'questions'] });
-      hardResetTranscript();
       
       if (questions && currentQuestionIndex < questions.length - 1) {
         setIsTransitioning(true);
-        // Add a 2.5 second breathing gap before showing/speaking the next question
+        // Fast 400ms transition to next question
         setTimeout(() => {
+          clearTranscript();
           setCurrentQuestionIndex(prev => prev + 1);
-          setTimeout(() => {
-            setIsTransitioning(false);
-          }, 800);
-        }, 2500);
+          setIsTransitioning(false);
+        }, 400);
       } else if (isLastQuestion) {
         if (interview?.simulationMode === 'full') {
           setShowRoundSummary(true);
@@ -175,6 +173,13 @@ export default function InterviewRoom() {
         }
       }
     },
+    onError: (error: any) => {
+      toast({
+        title: "Advancement Failed",
+        description: error?.message || "Please wait a moment for the AI to complete scoring.",
+        variant: "destructive"
+      });
+    }
   });
 
   const completeInterviewMutation = useMutation({
@@ -195,6 +200,7 @@ export default function InterviewRoom() {
       if (interview?.status === 'pending') return;
 
       try {
+        // Try video + audio first
         const stream = await navigator.mediaDevices.getUserMedia({
           video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
           audio: ENHANCED_AUDIO_CONSTRAINTS
@@ -203,9 +209,22 @@ export default function InterviewRoom() {
         setStreamVersion(prev => prev + 1);
         if (videoRef.current) videoRef.current.srcObject = stream;
       } catch (error) {
-        console.error("Camera error:", error);
-        setCameraEnabled(false);
-        setMicEnabled(false);
+        console.warn("Camera+audio getUserMedia failed, trying video-only:", error);
+        // CRITICAL: Do NOT disable mic when camera fails!
+        // Try video-only as fallback
+        try {
+          const stream = await navigator.mediaDevices.getUserMedia({
+            video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+            audio: false
+          });
+          streamRef.current = stream;
+          setStreamVersion(prev => prev + 1);
+          if (videoRef.current) videoRef.current.srcObject = stream;
+        } catch (videoError) {
+          console.warn("Video-only also failed, disabling camera only:", videoError);
+          setCameraEnabled(false);
+          // NEVER set micEnabled(false) here — mic works independently via SpeechRecognition
+        }
       }
     };
 
@@ -251,15 +270,59 @@ export default function InterviewRoom() {
     }
   }, [micEnabled, startListening, stopListening]);
 
-  const handleSubmitAnswer = () => {
+  const [isTranscribingServer, setIsTranscribingServer] = useState(false);
+
+  const handleSubmitAnswer = async () => {
     if (!questions) return;
-    const answerText = transcript.trim();
-    if (!answerText) {
-      toast({ title: "Silence Detected", description: "Please speak your answer clearly before submitting.", variant: "destructive" });
-      return;
+    const qId = questions[currentQuestionIndex].id;
+    let answerText = transcript.trim();
+
+    // Always attempt server-side STT via MediaRecorder for accurate transcription
+    // This ensures we capture speech even when browser SpeechRecognition fails silently
+    try {
+      setIsTranscribingServer(true);
+      const audioBlob = await getRecordedAudio();
+      
+      if (audioBlob && audioBlob.size > 500) {
+        console.log(`[InterviewRoom] Sending recorded audio (${audioBlob.size} bytes) to Groq Cloud Whisper...`);
+        toast({
+          title: "Processing Voice Recording",
+          description: "AI Server is transcribing your spoken response...",
+        });
+
+        // Send as multipart/form-data so Python FastAPI can parse the 'file' field
+        const formData = new FormData();
+        formData.append('file', audioBlob, 'recording.webm');
+
+        const res = await fetch('/api/transcribe', {
+          method: 'POST',
+          body: formData,
+          credentials: 'include',
+        });
+        if (res.ok) {
+          const data = await res.json();
+          if (data.text && data.text.trim().length > 0) {
+            const serverText = data.text.trim();
+            console.log(`[InterviewRoom] Groq Cloud STT result: "${serverText}"`);
+            
+            // Use server transcription if it's more substantial than browser transcript
+            if (!answerText || serverText.length > answerText.length) {
+              answerText = serverText;
+              // Update the visible transcript so student sees what was captured
+              setTranscript(serverText);
+            }
+          }
+        }
+      }
+    } catch (err) {
+      console.warn("[InterviewRoom] Server STT failed:", err);
+    } finally {
+      setIsTranscribingServer(false);
     }
-    submitAnswerMutation.mutate({ questionId: questions[currentQuestionIndex].id, answer: answerText });
-    clearTranscript();
+
+    const finalAnswer = answerText || "(no answer recorded)";
+    submitAnswerMutation.mutate({ questionId: qId, answer: finalAnswer });
+    // clearTranscript is called in submitAnswerMutation.onSuccess to avoid premature clearing
   };
 
   const handleComplete = () => completeInterviewMutation.mutate();
@@ -280,28 +343,66 @@ export default function InterviewRoom() {
       
       console.log(`[InterviewRoom] Auto-speaking question (${qId}): "${currentQuestion.question.substring(0, 50)}..."`);
       
+      // Safety timeout: if TTS promise doesn't resolve within 8 seconds,
+      // forcibly restart the mic so the student isn't stuck in permanent silence.
+      let micRestarted = false;
+      const safetyTimer = setTimeout(() => {
+        if (!micRestarted) {
+          micRestarted = true;
+          console.warn("[InterviewRoom] ⏰ TTS safety timeout (8s). Force-restarting mic.");
+          startListening();
+        }
+      }, 8000);
+
+      const restartMicAfterSpeech = () => {
+        if (micRestarted) return;
+        micRestarted = true;
+        clearTimeout(safetyTimer);
+        console.log("[InterviewRoom] AI finished speaking, starting mic in 500ms...");
+        setTimeout(() => {
+          startListening();
+        }, 500);
+      };
+      
       // Brief 300ms delay to allow UI to render question
       setTimeout(() => {
         speakText(currentQuestion.question)
-          .then(() => {
-            console.log("[InterviewRoom] AI finished speaking, starting mic in 800ms...");
-            setTimeout(() => {
-              if (micEnabled) {
-                startListening();
-              }
-            }, 800);
-          })
+          .then(restartMicAfterSpeech)
           .catch(err => {
             console.error("[InterviewRoom] Automatic speech failed:", err);
-            setTimeout(() => {
-              if (micEnabled) {
-                startListening();
-              }
-            }, 800);
+            restartMicAfterSpeech();
           });
       }, 300);
     }
   }, [currentQuestion?.id, currentQuestion?.question, loadingQuestions, interview?.status, speakText, pauseListening, startListening, micEnabled]);
+
+  // MIC WATCHDOG: During an active interview, ensure mic is always running.
+  // If the mic drops for any reason (Chrome glitch, TTS race, etc.) and the student
+  // hasn't manually disabled it, auto-restart it every 5 seconds.
+  useEffect(() => {
+    if (interview?.status !== 'in_progress' || !micEnabled) return;
+
+    const watchdog = setInterval(() => {
+      if (micEnabled && !isListening && !isAISpeaking && interview?.status === 'in_progress') {
+        console.warn("[InterviewRoom] 🔧 Mic watchdog: mic not listening during active interview. Auto-restarting...");
+        startListening();
+      }
+    }, 5000);
+
+    return () => clearInterval(watchdog);
+  }, [interview?.status, micEnabled, isListening, isAISpeaking, startListening]);
+
+  // Ctrl+Enter keyboard shortcut to submit answer
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'Enter' && interview?.status === 'in_progress' && transcript.trim() && !submitAnswerMutation.isPending) {
+        e.preventDefault();
+        handleSubmitAnswer();
+      }
+    };
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [interview?.status, transcript, submitAnswerMutation.isPending]);
 
   if (loadingInterview) return <div className="flex items-center justify-center h-[80vh]"><Zap className="w-12 h-12 text-primary animate-pulse" /></div>;
 
@@ -669,14 +770,42 @@ export default function InterviewRoom() {
             
             <div className="flex-1 p-6 flex flex-col" ref={scrollRef}>
               <div
-                className="w-full h-full min-h-[160px] bg-transparent font-medium text-lg leading-relaxed text-foreground overflow-y-auto whitespace-pre-wrap select-none"
+                className="w-full h-full min-h-[160px] bg-transparent font-medium text-lg leading-relaxed text-foreground overflow-y-auto whitespace-pre-wrap select-none pointer-events-none"
               >
-                {transcript || (
-                  <span className="text-muted-foreground/40 italic">
-                    {isListening
-                      ? "🎙️ Listening... Speak your answer clearly into the microphone."
-                      : "Click 'Start Listening' above to begin recording your answer via microphone."}
-                  </span>
+                {transcript ? (
+                  <div className="space-y-3">
+                    <p>{transcript}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-xs text-muted-foreground font-bold">
+                        {transcript.split(/\s+/).filter(Boolean).length} words captured
+                      </span>
+                      {isListening && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-500 font-bold animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          Recording...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <span className="text-muted-foreground/60 italic block">
+                      {isListening
+                        ? "🎙️ Microphone Active — Speak your answer clearly. Your speech text will appear here in real-time."
+                        : "Click 'Start Listening' above to begin recording your voice response."}
+                    </span>
+                    {isListening && (
+                      <div className="space-y-2">
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-bold animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          Recording Audio — Your voice will be transcribed by AI when you submit
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          💡 Even if text doesn't appear here live, your voice is being recorded and will be transcribed accurately by Groq Cloud Whisper AI on submit.
+                        </p>
+                      </div>
+                    )}
+                  </div>
                 )}
               </div>
             </div>
@@ -702,13 +831,16 @@ export default function InterviewRoom() {
                 <Button 
                   size="lg" 
                   className={cn(
-                    "rounded-2xl h-14 px-10 font-black shadow-xl transition-all",
-                    !transcript.trim() ? "bg-muted text-muted-foreground/50 cursor-not-allowed" : "bg-primary hover:bg-primary/90 shadow-primary/20"
+                    "rounded-2xl h-14 px-10 font-black shadow-xl transition-all bg-primary hover:bg-primary/90 shadow-primary/20"
                   )}
                   onClick={handleSubmitAnswer}
-                  disabled={submitAnswerMutation.isPending || isTransitioning || !transcript.trim()}
+                  disabled={submitAnswerMutation.isPending || isTransitioning || isTranscribingServer}
                 >
-                  {submitAnswerMutation.isPending ? "Validating..." : isLastQuestion ? "Finalize Interview" : "Proceed to Next"}
+                  {submitAnswerMutation.isPending || isTranscribingServer
+                    ? "AI Transcribing & Saving..."
+                    : transcript.trim()
+                    ? (isLastQuestion ? "Submit Answer & Finalize" : "Submit Voice Answer →")
+                    : (isLastQuestion ? "Finalize Interview" : "Submit Recorded Voice →")}
                   <ChevronRight className="w-5 h-5 ml-2" />
                 </Button>
               </div>

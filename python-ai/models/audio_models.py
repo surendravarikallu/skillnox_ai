@@ -157,7 +157,7 @@ class AudioTranscriber:
                 compute_type = "float16" if self.device == "cuda" else "int8"
                 print(f"Loading Whisper model: {self.model_size} with compute_type={compute_type}")
                 self.model = WhisperModel(self.model_size, device=self.device, compute_type=compute_type)
-                print("✓ Whisper model loaded successfully")
+                print("[OK] Whisper model loaded successfully")
             except Exception as e:
                 print(f"Error loading Whisper model: {e}")
                 # Fallback to smaller model if large-v3-turbo fails
@@ -167,7 +167,7 @@ class AudioTranscriber:
                         from faster_whisper import WhisperModel
                         self.model_size = "small.en"
                         self.model = WhisperModel("small.en", device=self.device, compute_type="int8")
-                        print("✓ Fallback Whisper model loaded")
+                        print("[OK] Fallback Whisper model loaded")
                     except Exception as e2:
                         print(f"Fallback also failed: {e2}")
 

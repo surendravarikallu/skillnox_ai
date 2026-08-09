@@ -127,7 +127,7 @@ export default function Layout({ children }: LayoutProps) {
                           data-testid={`nav-${item.title.toLowerCase().replace(/\s+/g, '-')}`}
                         >
                           <Link href={item.path} className="flex items-center gap-3 w-full group-data-[collapsible=icon]:justify-center">
-                            <item.icon className={cn("w-4 h-4 shrink-0", active && "animate-pulse")} />
+                            <item.icon className={cn("w-4 h-4 shrink-0", active ? "text-primary fill-primary/20" : "")} />
                             <span className="font-medium group-data-[collapsible=icon]:hidden">{item.title}</span>
                           </Link>
                         </SidebarMenuButton>

@@ -4,7 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { useToast } from "@/hooks/use-toast";
-import { Brain, ArrowLeft, ShieldCheck, Zap, Eye, EyeOff } from "lucide-react";
+import { Brain, ArrowLeft, ShieldCheck, Zap, Eye, EyeOff, Loader2 } from "lucide-react";
 import { motion } from "framer-motion";
 import { BorderBeam } from "@/components/ui/border-beam";
 
@@ -87,7 +87,7 @@ export default function Login() {
                   <Input
                     id="identifier"
                     type="text"
-                    placeholder="Enter your email"
+                    placeholder="Email or Roll Number (e.g. 23JK1A0535)"
                     required
                     className="h-14 bg-muted/30 border-border rounded-2xl focus:ring-primary focus:border-primary px-6 font-medium"
                     value={formData.identifier}
@@ -126,7 +126,7 @@ export default function Login() {
               <Button type="submit" className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-sm font-bold shadow-lg shadow-primary/20 transition-all active:scale-[0.98]" disabled={isLoading}>
                 {isLoading ? (
                   <div className="flex items-center gap-2">
-                    <Zap className="w-4 h-4 animate-spin" />
+                    <Loader2 className="w-4 h-4 animate-spin" />
                     <span>Signing in...</span>
                   </div>
                 ) : "Sign In"}

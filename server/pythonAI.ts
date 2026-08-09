@@ -269,3 +269,113 @@ export async function generateFollowUpQuestion(
   return sanitizeGeneratedQuestion(result?.question);
 }
 
+/**
+ * Server-side Text-to-Speech using NVIDIA NIM / edge-tts.
+ * Returns raw audio bytes (WAV or MP3).
+ */
+export async function textToSpeech(text: string): Promise<Buffer | null> {
+  const url = `${PYTHON_AI_SERVICE_URL}/api/tts`;
+  try {
+    const headers: Record<string, string> = {
+      'Content-Type': 'application/json',
+    };
+    if (AI_SERVICE_API_KEY) {
+      headers['X-API-Key'] = AI_SERVICE_API_KEY;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ text }),
+      signal: AbortSignal.timeout(20000),
+    });
+
+    if (!response.ok) {
+      console.error(`[TTS] Python TTS error: ${response.status}`);
+      return null;
+    }
+
+    const arrayBuffer = await response.arrayBuffer();
+    const buffer = Buffer.from(arrayBuffer);
+    console.log(`[TTS] Generated audio: ${buffer.length} bytes for text: "${text.substring(0, 40)}..."`);
+    return buffer;
+  } catch (error) {
+    console.error(`[TTS] Error calling TTS service:`, error);
+    return null;
+  }
+}
+
+/**
+ * Server-side Speech-to-Text using NVIDIA Canary / Faster-Whisper.
+ * Returns transcribed text.
+ */
+export async function transcribeAudio(audioData: Buffer, contentType: string = 'audio/webm'): Promise<string> {
+  const url = `${PYTHON_AI_SERVICE_URL}/api/transcribe`;
+  try {
+    // @ts-ignore - FormData available in Node.js 18+
+    const formData = new FormData();
+    // @ts-ignore
+    const blob = new Blob([audioData], { type: contentType });
+    formData.append('file', blob, 'recording.webm');
+
+    const headers: Record<string, string> = {};
+    if (AI_SERVICE_API_KEY) {
+      headers['X-API-Key'] = AI_SERVICE_API_KEY;
+    }
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers,
+      body: formData,
+      signal: AbortSignal.timeout(30000),
+    });
+
+    if (!response.ok) {
+      console.error(`[STT] Python STT error: ${response.status}`);
+      return '';
+    }
+
+    const data = await response.json() as { success: boolean; text: string };
+    console.log(`[STT] Transcribed: "${(data.text || '').substring(0, 60)}..."`);
+    return data.text || '';
+  } catch (error) {
+    console.error(`[STT] Error calling STT service:`, error);
+    return '';
+  }
+}
+
+export async function generateInterviewFeedback(data: {
+  studentName: string;
+  interviewTypes: string[];
+  difficulty: string;
+  overallScore: number;
+  technicalScore: number;
+  communicationScore: number;
+  emotionScore: number;
+  voiceScore: number;
+  questionsAndAnswers?: Array<{ question: string; answer: string; score?: string }>;
+}): Promise<{ feedback: string; improvements: string[] }> {
+  try {
+    const result = await callPythonService('/api/llm/generate-feedback', 'POST', {
+      student_name: data.studentName,
+      interview_types: data.interviewTypes,
+      difficulty: data.difficulty,
+      overall_score: data.overallScore,
+      technical_score: data.technicalScore,
+      communication_score: data.communicationScore,
+      emotion_score: data.emotionScore,
+      voice_score: data.voiceScore,
+      questions_and_answers: data.questionsAndAnswers || [],
+    });
+    return {
+      feedback: result?.feedback || 'Your interview performance has been evaluated.',
+      improvements: result?.improvements || ['Continue practicing to improve your skills.'],
+    };
+  } catch (error) {
+    console.error('[AI Feedback] Error generating feedback:', error);
+    return {
+      feedback: 'Your interview performance has been evaluated by our AI assessment engine.',
+      improvements: ['Continue practicing with mock interviews to improve your skills.'],
+    };
+  }
+}

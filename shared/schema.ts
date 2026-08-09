@@ -16,12 +16,12 @@ import { z } from "zod";
 
 // Enums
 export const userRoleEnum = pgEnum('user_role', ['student', 'admin']);
-export const interviewTypeEnum = pgEnum('interview_type', ['technical', 'hr', 'behavioral', 'company', 'gd', 'project', 'communication']);
+export const interviewTypeEnum = pgEnum('interview_type', ['technical', 'hr', 'behavioral', 'company', 'gd', 'project', 'communication', 'resume_based', 'system_design']);
 export const interviewStatusEnum = pgEnum('interview_status', ['pending', 'in_progress', 'completed', 'cancelled']);
 export const difficultyEnum = pgEnum('difficulty', ['easy', 'medium', 'hard']);
 export const genderEnum = pgEnum('gender', ['male', 'female']);
 export const personalityDimensionEnum = pgEnum('personality_dimension', ['introvert', 'extrovert', 'thinker', 'feeler', 'logical', 'creative', 'planner', 'spontaneous']);
-export const interviewRoundEnum = pgEnum('interview_round', ['aptitude', 'technical', 'hr', 'behavioral', 'coding', 'managerial', 'gd']);
+export const interviewRoundEnum = pgEnum('interview_round', ['aptitude', 'technical', 'hr', 'behavioral', 'coding', 'managerial', 'gd', 'resume_based', 'system_design']);
 export const simulationModeEnum = pgEnum('simulation_mode', ['full', 'combined']);
 
 // Session storage table (kept for compatibility, but not used with JWT auth)

@@ -86,6 +86,15 @@ export default function InterviewResults() {
 
   const { data: interview, isLoading: loadingInterview } = useQuery<Interview>({
     queryKey: ['/api/interviews', id],
+    // Poll every 3s while scores are still 0 (last answer being evaluated)
+    refetchInterval: (query) => {
+      const data = query.state.data as Interview | undefined;
+      if (!data) return false;
+      if (data.status === 'completed' && (data.overallScore === null || data.overallScore === 0)) {
+        return 3000; // Keep polling every 3s
+      }
+      return false; // Stop polling once scores are populated
+    },
   });
 
   const { data: questions, isLoading: loadingQuestions } = useQuery<InterviewQuestion[]>({

@@ -417,8 +417,9 @@ export default function Landing() {
             © {new Date().getFullYear()} Training & Placement Cell. Built for student excellence.
           </p>
           <div className="flex justify-center gap-6 text-sm text-muted-foreground">
-            <a href="#" className="hover:text-primary transition-colors">T&P Guidelines</a>
-            <a href="#" className="hover:text-primary transition-colors">Support Helpdesk</a>
+            <span>T&P Guidelines</span>
+            <span>•</span>
+            <span>Support: skillnoxai@college.edu</span>
           </div>
         </div>
       </footer>

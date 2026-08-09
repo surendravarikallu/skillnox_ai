@@ -26,6 +26,7 @@ const AdminAssignPage = lazy(() => import("@/pages/admin-assign"));
 const AIStatusPage = lazy(() => import("@/pages/ai-status"));
 const Settings = lazy(() => import("@/pages/settings"));
 const AdminScheduler = lazy(() => import("@/pages/admin-scheduler"));
+const AdminAnalyticsPage = lazy(() => import("@/pages/admin-analytics"));
 const SharedReport = lazy(() => import("@/pages/shared-report"));
 
 // Loading fallback component
@@ -64,7 +65,7 @@ function AuthenticatedRoutes() {
           <Route path="/admin/students" component={AdminStudentsPage} />
           <Route path="/admin/assign" component={AdminAssignPage} />
           <Route path="/admin/scheduler" component={AdminScheduler} />
-          <Route path="/admin/analytics" component={AdminPage} />
+          <Route path="/admin/analytics" component={AdminAnalyticsPage} />
           <Route path="/ai-status" component={AIStatusPage} />
           <Route path="/settings" component={Settings} />
           <Route component={NotFound} />

@@ -69,3 +69,25 @@ scratch/
 # Kaggle Output compiled cache & temporary push directory
 python-ai/training/kaggle_output/unsloth_compiled_cache/
 python-ai/datasets/kaggle_push/
+
+# Test audio & datasets
+*.xlsx
+*.webm
+*.tmp
+python-ai/inspect_*.py
+python-ai/patch_*.py
+python-ai/rebuild_*.py
+python-ai/reexport_*.py
+python-ai/convert_*.py
+python-ai/debug_*.py
+python-ai/benchmark_*.py
+python-ai/adapter_config_tmp.json
+python-ai/safetensors_index.json
+python-ai/test_*.py
+python-ai/models/download_*.py
+python-ai/models/test_*.py
+python-ai/models/patch_*.py
+python-ai/models/analyze_*.py
+python-ai/fix_gguf.py
+python-ai/modal_inference_app.py
+

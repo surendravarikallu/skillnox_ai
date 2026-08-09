@@ -18,11 +18,15 @@ interface UseVoiceToTextReturn {
   error: string | null;
   micTestResult: MicTestResult;
   testMicrophone: () => Promise<boolean>;
+  getRecordedAudio: () => Promise<Blob | null>;
 }
 
 export function useVoiceToText(): UseVoiceToTextReturn {
   const [transcript, setTranscriptState] = useState("");
   const [isListening, setIsListening] = useState(false);
+  const mediaRecorderRef = useRef<MediaRecorder | null>(null);
+  const audioChunksRef = useRef<Blob[]>([]);
+  const mediaStreamRef = useRef<MediaStream | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [micTestResult, setMicTestResult] = useState<MicTestResult>("untested");
@@ -61,15 +65,63 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     "rest api": "REST API",
     "json": "JSON",
     "html": "HTML",
-    "css": "CSS"
+    "css": "CSS",
+    // Common misheard roll number patterns (Indian college IDs)
+    "23 jk": "23JK",
+    "twenty three jk": "23JK",
+    "23 j k": "23JK",
+    "24 jk": "24JK",
+    "twenty four jk": "24JK",
+    "1a": "1A",
+    "one a": "1A",
+    "05 h4": "05H4",
+    "05 i7": "05I7",
+    "05 h 4": "05H4",
+    "05 i 7": "05I7",
+    "zero five": "05",
+    "o five": "05",
+    // Common tech terms said with Indian accent
+    "my sequel": "MySQL",
+    "no js": "Node.js",
+    "express js": "Express.js",
+    "next js": "Next.js",
+    "react js": "React.js",
+    "angular js": "AngularJS",
+    "mongo db": "MongoDB",
+    "no sequel": "NoSQL",
+    "github": "GitHub",
+    "gitlab": "GitLab",
+    "vs code": "VS Code",
+    "c++": "C++",
+    "c sharp": "C#"
+  };
+
+  /**
+   * Normalize roll numbers spoken as separate characters back into
+   * a contiguous alphanumeric string. Handles patterns like:
+   *   "23 JK 1A 05 H4" → "23JK1A05H4"
+   *   "twenty three JK one A zero five I seven" → "23JK1A05I7"
+   */
+  const normalizeRollNumbers = (text: string): string => {
+    // Pattern: sequences of 2-digit numbers and 1-2 char alpha groups that look like roll numbers
+    // Match "23 JK 1A 05 H4" style fragmented roll numbers
+    return text.replace(
+      /\b(2[34])\s*([Jj][Kk])\s*(1\s*[Aa])\s*(0\s*[0-9])\s*([A-Za-z]\s*[0-9A-Za-z]?)\b/g,
+      (_, yr, jk, oneA, twoDigit, tail) => {
+        return (yr + jk + oneA + twoDigit + tail).replace(/\s+/g, '').toUpperCase();
+      }
+    );
   };
 
   const cleanupTranscript = (text: string) => {
     let cleaned = text;
+    // 1. Apply term map substitutions
     Object.entries(TECH_TERM_MAP).forEach(([misheard, correct]) => {
       const regex = new RegExp(`\\b${misheard}\\b`, 'gi');
       cleaned = cleaned.replace(regex, correct);
     });
+    // 2. Normalize fragmented roll numbers
+    cleaned = normalizeRollNumbers(cleaned);
     return cleaned;
   };
 
@@ -88,14 +140,13 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       return;
     }
 
-    // Clean up existing instance
+    // Clean up existing instance (do NOT call .abort() on ended instances as it deadlocks Chrome IPC)
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onend = null;
         recognitionRef.current.onerror = null;
         recognitionRef.current.onresult = null;
         recognitionRef.current.onstart = null;
-        recognitionRef.current.abort();
       } catch (e) {
         // ignore
       }
@@ -107,7 +158,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
 
     recognition.continuous = true;
     recognition.interimResults = true;
-    recognition.lang = "en-US";
+    recognition.lang = "en-IN";
     if ("maxAlternatives" in recognition) {
       (recognition as any).maxAlternatives = 1;
     }
@@ -125,24 +176,21 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       consecutiveEmptyRestartsRef.current = 0;
       restartDelayRef.current = 300;
 
-      let interimTranscript = "";
-      for (let i = event.resultIndex; i < event.results.length; i++) {
+      let currentFinal = "";
+      let currentInterim = "";
+
+      for (let i = 0; i < event.results.length; i++) {
         const result = event.results[i];
         const transcriptText = result[0].transcript;
         if (result.isFinal) {
-          let processed = transcriptText.trim();
-          if (processed.length > 0) {
-            processed = processed.charAt(0).toUpperCase() + processed.slice(1);
-            if (!/[.!?]$/.test(processed)) processed += ".";
-            finalTranscriptRef.current += processed + " ";
-          }
+          currentFinal += transcriptText + " ";
         } else {
-          interimTranscript += transcriptText;
+          currentInterim += transcriptText + " ";
         }
       }
-      const cleanFinal = finalTranscriptRef.current.replace(/\s+/g, ' ').trim();
-      const rawFull = (cleanFinal + " " + interimTranscript).trim();
-      const fullTranscript = cleanupTranscript(rawFull);
+
+      const combined = (finalTranscriptRef.current + " " + currentFinal + " " + currentInterim).replace(/\s+/g, ' ').trim();
+      const fullTranscript = cleanupTranscript(combined);
       setTranscriptState(fullTranscript);
     };
 
@@ -184,39 +232,33 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       console.log(`[VoiceToText] recognition ended. autoRestart=${autoRestartRef.current}, paused=${pausedRef.current}`);
 
       if (pausedRef.current) {
-        // Paused for AI speech – keep state as "connected" so UI doesn't flicker
-        // but don't restart until resumeListening is called
+        // Paused for AI speech – don't restart until resumeListening is called
+        // Keep isListening FALSE so watchdog doesn't interfere
         setIsListening(false);
         return;
       }
 
       if (autoRestartRef.current) {
         consecutiveEmptyRestartsRef.current++;
+        noSpeechRestartRef.current = false;
 
-        // If this was a no-speech restart, use minimal 100ms delay for instant recovery
-        let delay: number;
-        if (noSpeechRestartRef.current) {
-          delay = 100;
-          noSpeechRestartRef.current = false;
-        } else {
-          // Exponential backoff: 300ms → 600ms → 1200ms → cap at 1500ms (was 3000ms)
-          delay = Math.min(restartDelayRef.current, 1500);
-          restartDelayRef.current = Math.min(delay * 2, 1500);
-        }
-
-        // Even after many empty restarts, keep trying (the student may start speaking later)
-        // but use the max backoff delay
-        if (consecutiveEmptyRestartsRef.current > MAX_EMPTY_RESTARTS) {
-          restartDelayRef.current = 1500;
-        }
+        // CRITICAL: Keep isListening=true during fast-restart so:
+        //  1. UI doesn't flicker the "Start Listening" button
+        //  2. Watchdog doesn't fire a duplicate restart racing with this one
+        // We only set it false if we're truly stopping.
+        // setIsListening stays true – will be confirmed by onstart of new instance
 
         setConnectionState("reconnecting");
         clearRestartTimer();
         restartTimerRef.current = setTimeout(() => {
           if (autoRestartRef.current && !pausedRef.current) {
             createAndStartRecognition();
+          } else {
+            // We were stopped while waiting – now truly set listening to false
+            setIsListening(false);
+            setConnectionState("disconnected");
           }
-        }, delay);
+        }, 50); // 50ms instant restart – Chrome needs a micro-tick between stop & start
       } else {
         setIsListening(false);
         setConnectionState("disconnected");
@@ -239,6 +281,72 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     }
   }, []);
 
+  const startMediaRecorder = useCallback(async () => {
+    try {
+      // If already recording, don't restart or clear chunks
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
+        return;
+      }
+      // If recorder exists but is paused, just resume it (preserving chunks)
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "paused") {
+        mediaRecorderRef.current.resume();
+        console.log("[VoiceToText] MediaRecorder resumed (chunks preserved)");
+        return;
+      }
+      // Only clear chunks when creating a truly new recording session
+      audioChunksRef.current = [];
+      if (!mediaStreamRef.current) {
+        mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
+      }
+      const recorder = new MediaRecorder(mediaStreamRef.current);
+      recorder.ondataavailable = (event) => {
+        if (event.data && event.data.size > 0) {
+          audioChunksRef.current.push(event.data);
+        }
+      };
+      recorder.start(500); // 500ms chunks
+      mediaRecorderRef.current = recorder;
+      console.log("[VoiceToText] MediaRecorder started fresh (chunks cleared)");
+    } catch (e) {
+      console.warn("[VoiceToText] Could not start MediaRecorder:", e);
+    }
+  }, []);
+
+  const stopMediaRecorder = useCallback(() => {
+    return new Promise<void>((resolve) => {
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+        try {
+          const recorder = mediaRecorderRef.current;
+          // Wait for the 'stop' event which fires AFTER final 'dataavailable'
+          recorder.addEventListener('stop', () => resolve(), { once: true });
+          recorder.stop();
+          // Safety timeout in case 'stop' event doesn't fire
+          setTimeout(resolve, 500);
+        } catch (e) {
+          resolve();
+        }
+      } else {
+        resolve();
+      }
+    });
+  }, []);
+
+  const getRecordedAudio = useCallback(async (): Promise<Blob | null> => {
+    // Wait for MediaRecorder to fully stop and flush its final data chunk
+    await stopMediaRecorder();
+    // Small delay to ensure ondataavailable has fired
+    await new Promise(r => setTimeout(r, 100));
+    
+    console.log("[VoiceToText] getRecordedAudio: chunks available:", audioChunksRef.current.length, 
+      "total size:", audioChunksRef.current.reduce((sum, c) => sum + c.size, 0), "bytes");
+    
+    if (audioChunksRef.current.length === 0) return null;
+    const type = mediaRecorderRef.current?.mimeType || "audio/webm";
+    const blob = new Blob(audioChunksRef.current, { type });
+    console.log("[VoiceToText] Assembled audio blob:", blob.size, "bytes, type:", blob.type);
+    return blob;
+  }, [stopMediaRecorder]);
+
   const startListening = useCallback(() => {
     setError(null);
     pausedRef.current = false;
@@ -246,13 +354,15 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     consecutiveEmptyRestartsRef.current = 0;
     restartDelayRef.current = 300;
     setConnectionState("connecting");
+    startMediaRecorder();
     createAndStartRecognition();
-  }, [createAndStartRecognition]);
+  }, [createAndStartRecognition, startMediaRecorder]);
 
   const stopListening = useCallback(() => {
     autoRestartRef.current = false;
     pausedRef.current = false;
     clearRestartTimer();
+    stopMediaRecorder();
     if (recognitionRef.current) {
       try {
         recognitionRef.current.onend = null; // prevent auto-restart from firing
@@ -264,7 +374,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     }
     setIsListening(false);
     setConnectionState("disconnected");
-  }, []);
+  }, [stopMediaRecorder]);
 
   /**
    * Temporarily pause speech recognition (e.g. while AI is speaking).
@@ -291,14 +401,24 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     consecutiveEmptyRestartsRef.current = 0;
     restartDelayRef.current = 300;
     setConnectionState("connecting");
+    startMediaRecorder();
     createAndStartRecognition();
-  }, [createAndStartRecognition]);
+  }, [createAndStartRecognition, startMediaRecorder]);
 
   const clearTranscript = useCallback(() => {
     setTranscriptState("");
     finalTranscriptRef.current = "";
     lastProcessedIndexRef.current = 0;
-  }, []);
+    // Clear audio chunks so next question starts with fresh recording
+    audioChunksRef.current = [];
+    // Stop and recreate MediaRecorder for clean next-question recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
+    }
+    mediaRecorderRef.current = null;
+    // Start fresh recording immediately
+    startMediaRecorder();
+  }, [startMediaRecorder]);
 
   const hardResetTranscript = useCallback(() => {
     // Fully stop and clear everything
@@ -307,10 +427,14 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     clearRestartTimer();
     if (recognitionRef.current) {
       try {
+        // Detach all handlers FIRST, then stop (not abort – avoids Chrome IPC deadlock)
         recognitionRef.current.onend = null;
-        recognitionRef.current.abort();
+        recognitionRef.current.onerror = null;
+        recognitionRef.current.onresult = null;
+        recognitionRef.current.onstart = null;
+        recognitionRef.current.stop();
       } catch (e) {
-        console.error("Error aborting recognition:", e);
+        // ignore – instance may already be stopped
       }
       recognitionRef.current = null;
     }
@@ -408,10 +532,63 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [createAndStartRecognition]);
 
+  // 3-Second Active Watchdog Heartbeat for Chrome Auto-Recovery
+  // Only fires if isListening is false AND autoRestart is true AND we're not paused.
+  // Since onend now keeps isListening=true during fast-restart, this only fires
+  // when Chrome truly dropped the connection silently (no onend fired at all).
+  const watchdogRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  useEffect(() => {
+    if (watchdogRef.current) clearInterval(watchdogRef.current);
+    watchdogRef.current = setInterval(() => {
+      if (autoRestartRef.current && !pausedRef.current && !isListening && !restartTimerRef.current) {
+        console.log("[VoiceToText Watchdog] Mic connection lost silently. Auto-reviving...");
+        try {
+          createAndStartRecognition();
+        } catch (e) {
+          // ignore
+        }
+      }
+    }, 3000);
+
+    return () => {
+      if (watchdogRef.current) clearInterval(watchdogRef.current);
+    };
+  }, [isListening, createAndStartRecognition]);
+
+  // Overall hook unmount cleanup
+  useEffect(() => {
+    return () => {
+      autoRestartRef.current = false;
+      pausedRef.current = false;
+      if (restartTimerRef.current) {
+        clearTimeout(restartTimerRef.current);
+        restartTimerRef.current = null;
+      }
+      if (watchdogRef.current) {
+        clearInterval(watchdogRef.current);
+        watchdogRef.current = null;
+      }
+      if (recognitionRef.current) {
+        try {
+          recognitionRef.current.onend = null;
+          recognitionRef.current.onerror = null;
+          recognitionRef.current.onresult = null;
+          recognitionRef.current.onstart = null;
+          recognitionRef.current.stop();
+        } catch (e) {}
+        recognitionRef.current = null;
+      }
+      if (mediaRecorderRef.current && mediaRecorderRef.current.state !== 'inactive') {
+        try { mediaRecorderRef.current.stop(); } catch (e) {}
+        mediaRecorderRef.current = null;
+      }
+    };
+  }, []);
+
   return {
     transcript,
     isListening,
-    isSupported,
+    isSupported: true,
     connectionState,
     startListening,
     stopListening,
@@ -423,6 +600,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     error,
     micTestResult,
     testMicrophone,
+    getRecordedAudio,
   };
 }
 

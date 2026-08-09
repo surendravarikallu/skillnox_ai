@@ -258,6 +258,136 @@ export function buildMaintenanceUpdateEmail(data: MaintenanceEmailData): { subje
   };
 }
 
+// ─── Alumni / Senior Candidate Interview Invitation ───
+export interface AlumniInviteEmailData {
+  candidateName: string;
+  username: string;
+  password: string;
+  scheduledDate: string;
+  scheduledTime: string;
+  interviewFormat: string;
+  questionCount: number;
+  difficulty: string;
+}
+
+export function buildAlumniInviteEmail(data: AlumniInviteEmailData): { subject: string; html: string } {
+  const body = `
+    <!-- Welcome Banner -->
+    <div style="background: linear-gradient(135deg, #065f46, #064e3b); border: 1px solid #10b981; border-radius: 14px; padding: 20px 24px; margin-bottom: 24px; text-align: center;">
+      <p style="margin: 0 0 6px 0; font-size: 22px; font-weight: 800; color: #6ee7b7;">
+        🎓 Alumni Interview Invitation
+      </p>
+      <p style="margin: 0; font-size: 13px; color: #a7f3d0; line-height: 1.5;">
+        You have been personally invited to participate in an AI-powered mock interview session on the Skillnox AI platform.
+      </p>
+    </div>
+
+    <p style="font-size: 16px; color: #f1f5f9; margin: 0 0 8px 0;">Dear <strong>${data.candidateName}</strong>,</p>
+    <p style="font-size: 14px; color: #94a3b8; line-height: 1.7; margin: 0 0 24px 0;">
+      Greetings from the <strong style="color: #a5b4fc;">Skillnox AI Training & Placement Cell</strong>! As a valued alumni and experienced professional, we are excited to invite you to our AI-powered interview assessment platform. This session is designed to evaluate and benchmark your professional skills through an immersive, voice-based AI interview experience.
+    </p>
+
+    <!-- Credentials Box -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: linear-gradient(135deg, #1e1b4b, #312e81); border: 1px solid #4338ca; border-radius: 14px; margin-bottom: 24px;">
+      <tr>
+        <td style="padding: 22px 24px;">
+          <p style="margin: 0 0 14px 0; font-size: 12px; font-weight: 800; color: #a5b4fc; text-transform: uppercase; letter-spacing: 1px;">
+            🔑 Your Login Credentials
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 8px 0; font-size: 13px; color: #c7d2fe; width: 140px;">Portal URL</td>
+              <td style="padding: 8px 0; font-size: 14px; font-weight: 700;">
+                <a href="${PLATFORM_URL}" style="color: #818cf8; text-decoration: none;">${PLATFORM_URL}</a>
+              </td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-size: 13px; color: #c7d2fe;">Username</td>
+              <td style="padding: 8px 0; font-size: 16px; color: #38bdf8; font-weight: 800; font-family: monospace;">${data.username}</td>
+            </tr>
+            <tr>
+              <td style="padding: 8px 0; font-size: 13px; color: #c7d2fe;">Password</td>
+              <td style="padding: 8px 0; font-size: 16px; color: #38bdf8; font-weight: 800; font-family: monospace;">${data.password}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- Slot Details -->
+    <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="background: #1e293b; border: 1px solid #334155; border-radius: 14px; margin-bottom: 24px;">
+      <tr>
+        <td style="padding: 22px 24px;">
+          <p style="margin: 0 0 14px 0; font-size: 12px; font-weight: 800; color: #94a3b8; text-transform: uppercase; letter-spacing: 1px;">
+            📅 Interview Schedule
+          </p>
+          <table role="presentation" width="100%" cellpadding="0" cellspacing="0">
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8; width: 150px;">Candidate</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #f1f5f9; font-weight: 600;">${data.candidateName}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Date</td>
+              <td style="padding: 6px 0; font-size: 15px; color: #818cf8; font-weight: 800;">${data.scheduledDate}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Time</td>
+              <td style="padding: 6px 0; font-size: 15px; color: #818cf8; font-weight: 800;">${data.scheduledTime}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Interview Format</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #f1f5f9; font-weight: 600;">${data.interviewFormat}</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Total Questions</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #f1f5f9; font-weight: 600;">${data.questionCount} Questions</td>
+            </tr>
+            <tr>
+              <td style="padding: 6px 0; font-size: 13px; color: #94a3b8;">Difficulty Level</td>
+              <td style="padding: 6px 0; font-size: 14px; color: #fbbf24; font-weight: 700;">${data.difficulty}</td>
+            </tr>
+          </table>
+        </td>
+      </tr>
+    </table>
+
+    <!-- How It Works -->
+    <div style="background: linear-gradient(135deg, #0c4a6e, #0e7490); border: 1px solid #22d3ee; border-radius: 14px; padding: 18px 22px; margin-bottom: 24px;">
+      <p style="margin: 0 0 10px 0; font-size: 13px; font-weight: 700; color: #67e8f9;">🎙️ How the AI Interview Works:</p>
+      <ul style="margin: 0; padding: 0 0 0 16px; font-size: 13px; color: #cffafe; line-height: 2.0;">
+        <li>The AI interviewer will ask questions <strong>via voice</strong> — you respond by <strong>speaking into your microphone</strong>.</li>
+        <li>Your answers are transcribed in real-time using speech recognition.</li>
+        <li>Each answer is evaluated by AI for <strong>Technical Accuracy, Communication Clarity, and Behavioral Competency</strong>.</li>
+        <li>You will receive a <strong>detailed scorecard and feedback</strong> after the session.</li>
+      </ul>
+    </div>
+
+    <!-- Instructions -->
+    <div style="background: #0f172a; border-radius: 12px; padding: 16px 20px; border: 1px solid #1e293b;">
+      <p style="margin: 0 0 8px 0; font-size: 13px; font-weight: 700; color: #38bdf8;">📌 Before You Begin:</p>
+      <ul style="margin: 0; padding: 0 0 0 16px; font-size: 13px; color: #94a3b8; line-height: 1.9;">
+        <li>Use <strong style="color: #f1f5f9;">Google Chrome</strong> browser for optimal speech recognition.</li>
+        <li>Grant <strong>microphone permission</strong> when prompted by the browser.</li>
+        <li>Sit in a quiet environment with a stable internet connection.</li>
+        <li>Log in at the scheduled time and complete the mic test before starting.</li>
+      </ul>
+    </div>
+
+    <p style="font-size: 13px; color: #94a3b8; line-height: 1.6; margin: 24px 0 0 0;">
+      We look forward to your participation! Your feedback on the platform experience will be invaluable.
+    </p>
+    <p style="font-size: 13px; color: #64748b; margin: 16px 0 0 0;">
+      Warm regards,<br />
+      <strong style="color: #94a3b8;">Skillnox AI Training & Placement Cell</strong><br />
+      <span style="font-size: 11px; color: #475569;">KITS Akshar | Kitaghire</span>
+    </p>`;
+
+  return {
+    subject: `[Skillnox AI] Alumni Interview Invitation — ${data.candidateName} | ${data.scheduledDate}`,
+    html: baseLayout('Alumni Interview Invitation - Skillnox AI', body),
+  };
+}
+
 // ─── Interview Completed & Results Report ───
 export interface ResultsEmailData {
   studentName: string;

@@ -5,8 +5,11 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import { useToast } from "@/hooks/use-toast";
 import { apiRequest, queryClient } from "@/lib/queryClient";
+import { motion, AnimatePresence } from "framer-motion";
+import { BorderBeam } from "@/components/ui/border-beam";
 import {
   Calendar,
   Trash2,
@@ -15,422 +18,597 @@ import {
   Users,
   Activity,
   CheckCircle,
-  Clock
+  Clock,
+  Zap,
+  CheckCheck,
+  X,
+  AlertTriangle,
+  Layers,
+  Sparkles,
+  Search
 } from "lucide-react";
-import type { ScheduledCampaign } from "@shared/schema";
+import type { ScheduledCampaign, User } from "@shared/schema";
+import { COMPANIES } from "@shared/schema";
 
-const COMPANIES = [
-  'TCS', 'Infosys', 'Wipro', 'Accenture', 'Cognizant', 'Capgemini', 'HCL', 
-  'Tech Mahindra', 'L&T Infotech', 'Mindtree', 'Zoho', 'Google', 'Microsoft', 
-  'Amazon', 'Meta', 'IBM', 'Flipkart', 'Paytm', 'Razorpay', 'Freshworks', 
-  'CRED', 'Goldman Sachs', 'Deloitte'
+const INTERVIEW_TYPES = [
+  { value: 'technical', label: 'Technical Interview' },
+  { value: 'hr', label: 'HR / Behavioral Interview' },
+  { value: 'behavioral', label: 'Behavioral & Leadership' },
+  { value: 'company', label: 'Company-Specific Drive' },
+  { value: 'gd', label: 'Group Discussion (GD)' },
+  { value: 'project', label: 'System Design / Project' },
+  { value: 'resume_based', label: 'Resume Based Interview' },
+  { value: 'system_design', label: 'System Architecture' },
 ];
 
 export default function AdminScheduler() {
   const { toast } = useToast();
-  const [title, setTitle] = useState("");
-  const [company, setCompany] = useState<string>("none");
-  const [difficulty, setDifficulty] = useState("medium");
-  const [simulationMode, setSimulationMode] = useState("combined");
-  const [branch, setBranch] = useState("all");
-  const [scheduledAt, setScheduledAt] = useState("");
 
-  const { data: campaigns, isLoading } = useQuery<ScheduledCampaign[]>({
+  // Dynamic Slot Generator State
+  const [targetType, setTargetType] = useState<'branch' | 'custom_students' | 'all'>('branch');
+  const [selectedBranch, setSelectedBranch] = useState<string>("all");
+  const [selectedStudentIds, setSelectedStudentIds] = useState<string[]>([]);
+  const [selectedInterviewTypes, setSelectedInterviewTypes] = useState<string[]>(["technical"]);
+  const [company, setCompany] = useState<string>("none");
+  const [studentSearch, setStudentSearch] = useState<string>("");
+  const [difficulty, setDifficulty] = useState<string>("medium");
+  const [startDate, setStartDate] = useState<string>("");
+  const [endDate, setEndDate] = useState<string>("");
+  const [dailyStartTime, setDailyStartTime] = useState<string>("09:00");
+  const [dailyEndTime, setDailyEndTime] = useState<string>("17:00");
+  const [slotDurationMinutes, setSlotDurationMinutes] = useState<number>(30);
+  const [breakMinutes, setBreakMinutes] = useState<number>(5);
+
+  // Queries
+  const { data: students } = useQuery<User[]>({
+    queryKey: ['/api/admin/students'],
+  });
+
+  const { data: draftData, isLoading: loadingDraft } = useQuery<{ proposal: any }>({
+    queryKey: ['/api/admin/scheduler/draft-proposal'],
+  });
+
+  const { data: campaigns, isLoading: loadingCampaigns } = useQuery<ScheduledCampaign[]>({
     queryKey: ['/api/admin/scheduler'],
   });
 
-  // Fetch student departments/branches to populate select
-  const { data: students } = useQuery<any[]>({
-    queryKey: ['/api/admin/students'],
-  });
+  const draftProposal = draftData?.proposal;
 
   const branchOptions = Array.from(
     new Set((students || []).map((s) => s.department).filter(Boolean))
   ) as string[];
 
-  const createCampaignMutation = useMutation({
-    mutationFn: async (data: any) => {
-      const response = await apiRequest('POST', '/api/admin/scheduler', data);
+  // Dynamic Slot Generator Mutation
+  const generateSlotsMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('POST', '/api/admin/scheduler/generate-dynamic-slots', {
+        targetType,
+        branch: selectedBranch,
+        studentIds: selectedStudentIds,
+        startDate,
+        endDate,
+        dailyStartTime,
+        dailyEndTime,
+        slotDurationMinutes,
+        breakMinutes,
+        interviewType: selectedInterviewTypes[0] || 'technical',
+        types: selectedInterviewTypes,
+        company: company === 'none' ? null : company,
+        difficulty
+      });
       return await response.json();
     },
     onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduler'] });
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduler/draft-proposal'] });
       toast({
-        title: "Campaign Scheduled",
-        description: "Your interview campaign has been successfully scheduled.",
+        title: "Dynamic Slot Schedule Generated!",
+        description: "Schedule draft created. Please review and click 'Approve & Commit' to publish slots.",
       });
-      // Reset form
-      setTitle("");
-      setCompany("none");
-      setDifficulty("medium");
-      setSimulationMode("combined");
-      setBranch("all");
-      setScheduledAt("");
     },
     onError: (err: any) => {
       toast({
-        title: "Failed to schedule",
-        description: err.message || "An error occurred.",
+        title: "Generation Failed",
+        description: err.message || "Failed to generate slots.",
         variant: "destructive"
       });
     }
   });
 
-  const deleteCampaignMutation = useMutation({
-    mutationFn: async (id: string) => {
-      await apiRequest('DELETE', `/api/admin/scheduler/${id}`);
-    },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduler'] });
-      toast({
-        title: "Campaign Cancelled",
-        description: "The scheduled campaign has been deleted.",
-      });
-    }
-  });
-
-  const handleScheduleCampaign = (e: React.FormEvent) => {
-    e.preventDefault();
-    if (!title.trim() || !scheduledAt) {
-      toast({
-        title: "Missing fields",
-        description: "Please fill in the campaign title and schedule time.",
-        variant: "destructive"
-      });
-      return;
-    }
-
-    createCampaignMutation.mutate({
-      title,
-      company: company === "none" ? null : company,
-      difficulty,
-      simulationMode,
-      branch: branch === "all" ? null : branch,
-      scheduledAt: new Date(scheduledAt).toISOString(),
-    });
-  };
-
-  // Student slot allotment state
-  const [slotStudentId, setSlotStudentId] = useState<string>("");
-  const [slotDate, setSlotDate] = useState<string>("");
-  const [slotStartTime, setSlotStartTime] = useState<string>("09:30 AM");
-  const [slotEndTime, setSlotEndTime] = useState<string>("10:30 AM");
-
-  const allotSlotMutation = useMutation({
+  // Approve Draft Mutation
+  const approveSlotsMutation = useMutation({
     mutationFn: async () => {
-      if (!slotStudentId || !slotDate) {
-        throw new Error("Please select a student and slot date");
-      }
-      const response = await apiRequest('PATCH', `/api/admin/students/${slotStudentId}`, {
-        slotDate,
-        slotStartTime,
-        slotEndTime,
-        slotStatus: 'scheduled',
-      });
+      const response = await apiRequest('POST', '/api/admin/scheduler/approve-slots', {});
       return await response.json();
     },
-    onSuccess: () => {
+    onSuccess: (res: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduler/draft-proposal'] });
       queryClient.invalidateQueries({ queryKey: ['/api/admin/students'] });
       toast({
-        title: "Slot Allotted Successfully",
-        description: "The interview slot has been assigned to the student.",
+        title: "Slots Approved & Committed!",
+        description: res.message || "Student slots have been activated.",
       });
-      setSlotStudentId("");
-      setSlotDate("");
     },
     onError: (err: any) => {
       toast({
-        title: "Failed to allot slot",
-        description: err.message || "An error occurred.",
+        title: "Approval Failed",
+        description: err.message || "Failed to approve slots.",
         variant: "destructive"
       });
     }
   });
 
-  const handleAllotSlot = (e: React.FormEvent) => {
-    e.preventDefault();
-    allotSlotMutation.mutate();
+  // Reject Draft Mutation
+  const rejectDraftMutation = useMutation({
+    mutationFn: async () => {
+      const response = await apiRequest('DELETE', '/api/admin/scheduler/draft-proposal');
+      return await response.json();
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['/api/admin/scheduler/draft-proposal'] });
+      toast({
+        title: "Draft Proposal Cleared",
+        description: "The unapproved schedule draft has been discarded.",
+      });
+    }
+  });
+
+  const toggleStudentSelect = (id: string) => {
+    setSelectedStudentIds(prev =>
+      prev.includes(id) ? prev.filter(x => x !== id) : [...prev, id]
+    );
+  };
+
+  const selectAllBranchStudents = () => {
+    const branchStudents = (students || []).filter(s => selectedBranch === 'all' || s.department === selectedBranch);
+    setSelectedStudentIds(branchStudents.map(s => s.id));
   };
 
   return (
     <div className="space-y-8 max-w-[1600px] mx-auto pb-20">
-      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6 mb-2">
+      {/* Page Header */}
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-6">
         <div>
-          <h1 className="text-5xl font-black tracking-tight mb-3 bg-gradient-to-r from-foreground to-foreground/70 bg-clip-text text-transparent">
-            Interview Scheduler & Slot Allotment
-          </h1>
+          <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest mb-4">
+            <Calendar className="w-3 h-3" />
+            Dynamic Campaign Engine
+          </div>
+          <h1 className="text-4xl font-black tracking-tight mb-2">Dynamic Interview Scheduler</h1>
           <p className="text-muted-foreground text-lg max-w-2xl">
-            Schedule automated placement drives and assign individual date/time slots to students.
+            Auto-generate consecutive-day slot schedules for entire branches with an explicit admin approval workflow.
           </p>
         </div>
       </div>
 
-      <div className="grid md:grid-cols-3 gap-8">
-        {/* Left Column: Forms */}
-        <div className="md:col-span-1 space-y-6">
-          {/* Day & Slot Allotment Card */}
-          <Card className="rounded-[1.5rem] border border-primary/20 bg-primary/5 shadow-md">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2 text-primary">
-                <Calendar className="w-5 h-5" />
-                Student Slot Allotment
-              </CardTitle>
-              <CardDescription>Assign specific day & time window to a student</CardDescription>
-            </CardHeader>
-            <CardContent>
-              <form onSubmit={handleAllotSlot} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Student</label>
-                  <Select value={slotStudentId} onValueChange={setSlotStudentId}>
-                    <SelectTrigger className="rounded-xl bg-background">
-                      <SelectValue placeholder="Choose Student" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {(students || []).map((s: any) => (
-                        <SelectItem key={s.id} value={s.id}>
-                          {s.firstName || s.email?.split('@')[0]} {s.lastName || ''} ({s.rollNumber || s.department || 'Student'})
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
+      {/* DRAFT PROPOSAL REVIEW CARD (IF ACTIVE DRAFT EXISTS) */}
+      <AnimatePresence>
+        {draftProposal && (
+          <motion.div
+            initial={{ opacity: 0, y: -20, scale: 0.98 }}
+            animate={{ opacity: 1, y: 0, scale: 1 }}
+            exit={{ opacity: 0, y: -20, scale: 0.98 }}
+          >
+            <Card className="rounded-[2rem] border-2 border-amber-500/50 bg-amber-500/5 shadow-2xl relative overflow-hidden">
+              <CardHeader className="p-8 pb-4">
+                <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
+                  <div>
+                    <Badge className="bg-amber-500 text-black font-black uppercase text-[10px] tracking-widest mb-2">
+                      ⚠️ Pending Admin Approval
+                    </Badge>
+                    <CardTitle className="text-2xl font-black tracking-tight text-foreground flex items-center gap-2">
+                      Proposed Dynamic Schedule Draft
+                    </CardTitle>
+                    <p className="text-sm text-muted-foreground mt-1">
+                      Target: <span className="font-bold text-foreground">{draftProposal.branch}</span> · {draftProposal.scheduledCount} Students Scheduled · {draftProposal.startDate} to {draftProposal.endDate}
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Button
+                      variant="ghost"
+                      onClick={() => rejectDraftMutation.mutate()}
+                      disabled={rejectDraftMutation.isPending}
+                      className="rounded-xl font-bold text-destructive hover:bg-destructive/10"
+                    >
+                      <X className="w-4 h-4 mr-2" />
+                      Discard Draft
+                    </Button>
+                    <Button
+                      onClick={() => approveSlotsMutation.mutate()}
+                      disabled={approveSlotsMutation.isPending}
+                      className="rounded-xl px-6 h-12 bg-emerald-600 hover:bg-emerald-700 font-bold shadow-lg shadow-emerald-600/20 text-white"
+                    >
+                      <CheckCheck className="w-5 h-5 mr-2" />
+                      {approveSlotsMutation.isPending ? "Committing Slots..." : "Approve & Commit Slots"}
+                    </Button>
+                  </div>
+                </div>
+              </CardHeader>
+              <CardContent className="p-8 pt-2 space-y-6">
+                {/* Proposal Summary Metrics */}
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4 p-4 rounded-2xl bg-background/80 border border-border">
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Total Target</span>
+                    <span className="text-2xl font-black">{draftProposal.studentCount} Students</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Slots Assigned</span>
+                    <span className="text-2xl font-black text-emerald-500">{draftProposal.scheduledCount}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Unassigned</span>
+                    <span className="text-2xl font-black text-amber-500">{draftProposal.unassignedCount}</span>
+                  </div>
+                  <div>
+                    <span className="text-[10px] font-black uppercase tracking-widest text-muted-foreground block mb-1">Daily Operating Window</span>
+                    <span className="text-sm font-bold block mt-1">{draftProposal.dailyStartTime} - {draftProposal.dailyEndTime} ({draftProposal.slotDurationMinutes}m slots)</span>
+                  </div>
                 </div>
 
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Slot Date</label>
+                {/* Proposed Slots Table */}
+                <div className="space-y-3">
+                  <h4 className="text-xs font-black uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                    <Clock className="w-4 h-4 text-amber-500" /> Proposed Student Slot Allotments Preview ({draftProposal.proposedSlots?.length || 0})
+                  </h4>
+                  <div className="max-h-72 overflow-y-auto rounded-2xl border border-border/80 bg-background/50 divide-y divide-border/60">
+                    {draftProposal.proposedSlots?.map((slot: any, idx: number) => (
+                      <div key={idx} className="p-3.5 flex items-center justify-between gap-4 text-xs">
+                        <div className="flex items-center gap-3">
+                          <div className="w-8 h-8 rounded-lg bg-primary/10 flex items-center justify-center font-bold text-primary shrink-0">
+                            {idx + 1}
+                          </div>
+                          <div>
+                            <span className="font-bold text-sm block">{slot.studentName}</span>
+                            <span className="text-muted-foreground">{slot.department} · {slot.rollNumber} · {slot.email}</span>
+                          </div>
+                        </div>
+                        <div className="text-right">
+                          <Badge className="bg-primary/20 text-primary border-primary/30 font-bold mb-1">
+                            📅 {slot.slotDate} | ⏰ {slot.slotStartTime} - {slot.slotEndTime}
+                          </Badge>
+                          <span className="text-[10px] text-muted-foreground uppercase font-bold block capitalize">{slot.interviewType} Round</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </CardContent>
+              <BorderBeam size={250} duration={8} />
+            </Card>
+          </motion.div>
+        )}
+      </AnimatePresence>
+
+      <div className="grid lg:grid-cols-3 gap-8">
+        {/* LEFT COLUMN: DYNAMIC SLOT GENERATOR FORM */}
+        <Card className="lg:col-span-1 rounded-[2rem] glass-card overflow-hidden relative">
+          <CardHeader className="p-8 pb-4">
+            <CardTitle className="text-2xl font-black tracking-tight flex items-center gap-2">
+              <Sparkles className="w-6 h-6 text-primary" />
+              Generate Dynamic Slots
+            </CardTitle>
+            <CardDescription>Configure target group, consecutive date range, and daily time window</CardDescription>
+          </CardHeader>
+          <CardContent className="p-8 pt-2 space-y-6">
+            {/* Target Type Selector */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase tracking-wider text-muted-foreground block">1. Select Target Candidates</label>
+              <div className="grid grid-cols-3 gap-2">
+                <Button
+                  type="button"
+                  variant={targetType === 'branch' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTargetType('branch')}
+                  className="rounded-xl text-xs font-bold"
+                >
+                  By Branch
+                </Button>
+                <Button
+                  type="button"
+                  variant={targetType === 'custom_students' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTargetType('custom_students')}
+                  className="rounded-xl text-xs font-bold"
+                >
+                  Custom List
+                </Button>
+                <Button
+                  type="button"
+                  variant={targetType === 'all' ? 'default' : 'outline'}
+                  size="sm"
+                  onClick={() => setTargetType('all')}
+                  className="rounded-xl text-xs font-bold"
+                >
+                  All Campus
+                </Button>
+              </div>
+            </div>
+
+            {/* Branch Dropdown (if Branch targeted) */}
+            {targetType === 'branch' && (
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Select Department / Branch</label>
+                <Select value={selectedBranch} onValueChange={setSelectedBranch}>
+                  <SelectTrigger className="rounded-xl bg-background">
+                    <SelectValue placeholder="Choose Branch" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="all">All Departments ({students?.length || 0} students)</SelectItem>
+                    {branchOptions.map(b => (
+                      <SelectItem key={b} value={b}>
+                        {b} ({(students || []).filter(s => s.department === b).length} students)
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
+
+            {/* Custom Student Selector (if Custom targeted) */}
+            {targetType === 'custom_students' && (
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Select Students ({selectedStudentIds.length} chosen)</label>
+                  <Button type="button" variant="ghost" size="sm" onClick={selectAllBranchStudents} className="text-[10px] font-bold p-0 h-auto">
+                    Select All
+                  </Button>
+                </div>
+                <div className="relative mb-2">
+                  <Search className="absolute left-3 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted-foreground" />
+                  <Input
+                    placeholder="Search by name, roll number, or branch..."
+                    value={studentSearch}
+                    onChange={(e) => setStudentSearch(e.target.value)}
+                    className="pl-9 rounded-xl bg-background text-xs h-9"
+                  />
+                </div>
+                <div className="max-h-48 overflow-y-auto p-3 rounded-xl bg-background border border-border space-y-2">
+                  {(students || []).filter(s => {
+                    if (!studentSearch.trim()) return true;
+                    const q = studentSearch.toLowerCase();
+                    return (
+                      (s.firstName || '').toLowerCase().includes(q) ||
+                      (s.lastName || '').toLowerCase().includes(q) ||
+                      (s.rollNumber || '').toLowerCase().includes(q) ||
+                      (s.department || '').toLowerCase().includes(q) ||
+                      (s.email || '').toLowerCase().includes(q)
+                    );
+                  }).map(s => (
+                    <div key={s.id} className="flex items-center gap-2 text-xs">
+                      <Checkbox
+                        id={`st_${s.id}`}
+                        checked={selectedStudentIds.includes(s.id)}
+                        onCheckedChange={() => toggleStudentSelect(s.id)}
+                      />
+                      <label htmlFor={`st_${s.id}`} className="cursor-pointer truncate">
+                        {s.firstName || s.email?.split('@')[0]} · {s.rollNumber || ''} ({s.department || 'Student'})
+                      </label>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Interview Types (Multi-Select) */}
+            <div className="space-y-2">
+              <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">2. Interview Types ({selectedInterviewTypes.length} selected)</label>
+              <div className="grid grid-cols-2 md:grid-cols-3 gap-2 p-3 rounded-xl bg-background border border-border">
+                {INTERVIEW_TYPES.map(t => (
+                  <div key={t.value} className="flex items-center gap-2 text-xs">
+                    <Checkbox
+                      id={`type_${t.value}`}
+                      checked={selectedInterviewTypes.includes(t.value)}
+                      onCheckedChange={(checked) => {
+                        setSelectedInterviewTypes(prev =>
+                          checked
+                            ? [...prev, t.value]
+                            : prev.filter(v => v !== t.value)
+                        );
+                      }}
+                    />
+                    <label htmlFor={`type_${t.value}`} className="cursor-pointer text-xs font-medium truncate">
+                      {t.label}
+                    </label>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {/* Company & Difficulty */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Target Company</label>
+                <Select value={company} onValueChange={setCompany}>
+                  <SelectTrigger className="rounded-xl bg-background">
+                    <SelectValue placeholder="Company" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="none">Standard Pattern</SelectItem>
+                    {COMPANIES.map(c => (
+                      <SelectItem key={c} value={c}>{c}</SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Difficulty Level</label>
+                <Select value={difficulty} onValueChange={setDifficulty}>
+                  <SelectTrigger className="rounded-xl bg-background">
+                    <SelectValue placeholder="Difficulty" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="easy">Easy</SelectItem>
+                    <SelectItem value="medium">Medium</SelectItem>
+                    <SelectItem value="hard">Hard</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Consecutive Date Range */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase tracking-wider text-muted-foreground block">3. Consecutive Date Range</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] text-muted-foreground block mb-1">Start Date</span>
                   <Input
                     type="date"
-                    value={slotDate}
-                    onChange={(e) => setSlotDate(e.target.value)}
-                    className="rounded-xl bg-background"
+                    value={startDate}
+                    onChange={(e) => setStartDate(e.target.value)}
+                    className="rounded-xl bg-background text-xs"
                   />
                 </div>
-
-                <div className="grid grid-cols-2 gap-3">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Start Time</label>
-                    <Input
-                      placeholder="09:30 AM"
-                      value={slotStartTime}
-                      onChange={(e) => setSlotStartTime(e.target.value)}
-                      className="rounded-xl bg-background text-sm"
-                    />
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">End Time</label>
-                    <Input
-                      placeholder="10:30 AM"
-                      value={slotEndTime}
-                      onChange={(e) => setSlotEndTime(e.target.value)}
-                      className="rounded-xl bg-background text-sm"
-                    />
-                  </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground block mb-1">End Date</span>
+                  <Input
+                    type="date"
+                    value={endDate}
+                    onChange={(e) => setEndDate(e.target.value)}
+                    className="rounded-xl bg-background text-xs"
+                  />
                 </div>
+              </div>
+            </div>
 
-                <Button
-                  type="submit"
-                  className="w-full rounded-xl font-bold mt-2"
-                  disabled={allotSlotMutation.isPending}
-                >
-                  {allotSlotMutation.isPending ? "Allotting Slot..." : "Allot Slot to Student"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
+            {/* Daily Time Range */}
+            <div className="space-y-2">
+              <label className="text-xs font-black uppercase tracking-wider text-muted-foreground block">4. Daily Operating Time Window</label>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <span className="text-[10px] text-muted-foreground block mb-1">Daily Start Time</span>
+                  <Input
+                    type="time"
+                    value={dailyStartTime}
+                    onChange={(e) => setDailyStartTime(e.target.value)}
+                    className="rounded-xl bg-background text-xs"
+                  />
+                </div>
+                <div>
+                  <span className="text-[10px] text-muted-foreground block mb-1">Daily End Time</span>
+                  <Input
+                    type="time"
+                    value={dailyEndTime}
+                    onChange={(e) => setDailyEndTime(e.target.value)}
+                    className="rounded-xl bg-background text-xs"
+                  />
+                </div>
+              </div>
+            </div>
 
-          {/* Scheduler Form Card */}
-          <Card className="rounded-[1.5rem] border border-border shadow-md">
-            <CardHeader>
-              <CardTitle className="text-lg flex items-center gap-2">
-                <Plus className="w-5 h-5 text-primary" />
-                New Drive Campaign
+            {/* Slot Duration & Break */}
+            <div className="grid grid-cols-2 gap-4">
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Slot Duration</label>
+                <Select value={String(slotDurationMinutes)} onValueChange={(v) => setSlotDurationMinutes(Number(v))}>
+                  <SelectTrigger className="rounded-xl bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="15">15 Minutes</SelectItem>
+                    <SelectItem value="30">30 Minutes</SelectItem>
+                    <SelectItem value="45">45 Minutes</SelectItem>
+                    <SelectItem value="60">60 Minutes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="space-y-2">
+                <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground block">Break Interval</label>
+                <Select value={String(breakMinutes)} onValueChange={(v) => setBreakMinutes(Number(v))}>
+                  <SelectTrigger className="rounded-xl bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="0">No Break</SelectItem>
+                    <SelectItem value="5">5 Minutes</SelectItem>
+                    <SelectItem value="10">10 Minutes</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            </div>
+
+            {/* Submit Action */}
+            <Button
+              onClick={() => generateSlotsMutation.mutate()}
+              disabled={generateSlotsMutation.isPending || !startDate || !endDate}
+              className="w-full rounded-2xl h-14 font-black bg-primary hover:bg-primary/90 shadow-xl shadow-primary/20 text-white"
+            >
+              <Zap className="w-4 h-4 mr-2" />
+              {generateSlotsMutation.isPending ? "Generating Draft Schedule..." : "Generate Dynamic Slot Schedule"}
+            </Button>
+          </CardContent>
+        </Card>
+
+        {/* RIGHT COLUMN: CURRENTLY ACTIVE SLOTS & CAMPAIGNS */}
+        <div className="lg:col-span-2 space-y-8">
+          {/* Active Student Slot Allotments */}
+          <Card className="rounded-[2rem] glass-card overflow-hidden">
+            <CardHeader className="p-8 pb-4">
+              <CardTitle className="text-2xl font-black tracking-tight flex items-center gap-3">
+                <Users className="w-6 h-6 text-primary" />
+                Active Student Slot Allotments
               </CardTitle>
-              <CardDescription>Setup details for automated multi-student drives</CardDescription>
+              <CardDescription>Live database view of all currently assigned student slots</CardDescription>
             </CardHeader>
-            <CardContent>
-              <form onSubmit={handleScheduleCampaign} className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Campaign Title</label>
-                  <Input
-                    placeholder="e.g. CS Google Placement Drive"
-                    value={title}
-                    onChange={(e) => setTitle(e.target.value)}
-                    className="rounded-xl"
-                  />
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Target Company</label>
-                  <Select value={company} onValueChange={setCompany}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="Select Company" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="none">Standard Interview (No Company)</SelectItem>
-                      {COMPANIES.map(c => (
-                        <SelectItem key={c} value={c}>{c}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Difficulty</label>
-                    <Select value={difficulty} onValueChange={setDifficulty}>
-                      <SelectTrigger className="rounded-xl">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="easy">Easy</SelectItem>
-                        <SelectItem value="medium">Medium</SelectItem>
-                        <SelectItem value="hard">Hard</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-
-                  <div className="space-y-1">
-                    <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Simulation</label>
-                    <Select value={simulationMode} onValueChange={setSimulationMode}>
-                      <SelectTrigger className="rounded-xl">
-                        <SelectValue placeholder="Select" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="combined">Combined</SelectItem>
-                        <SelectItem value="full">Full Multi-Round</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Target Branch</label>
-                  <Select value={branch} onValueChange={setBranch}>
-                    <SelectTrigger className="rounded-xl">
-                      <SelectValue placeholder="Select Branch" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="all">All Departments / Students</SelectItem>
-                      {branchOptions.map(b => (
-                        <SelectItem key={b} value={b}>{b}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-bold uppercase tracking-wider text-muted-foreground">Launch Date & Time</label>
-                  <Input
-                    type="datetime-local"
-                    value={scheduledAt}
-                    onChange={(e) => setScheduledAt(e.target.value)}
-                    className="rounded-xl"
-                  />
-                </div>
-
-                <Button
-                  type="submit"
-                  className="w-full rounded-xl font-bold mt-4"
-                  disabled={createCampaignMutation.isPending}
-                >
-                  {createCampaignMutation.isPending ? "Scheduling..." : "Schedule Campaign"}
-                </Button>
-              </form>
-            </CardContent>
-          </Card>
-        </div>
-
-        {/* Scheduled Campaigns & Allotted Slots List */}
-        <Card className="md:col-span-2 rounded-[1.5rem] border border-border shadow-md">
-          <CardHeader>
-            <CardTitle className="text-lg flex items-center gap-2">
-              <Calendar className="w-5 h-5 text-primary" />
-              Scheduled Drives & Student Slots
-            </CardTitle>
-            <CardDescription>View upcoming automated interview drives and individual student slot allotments</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-6">
-            {/* Student Slots Summary */}
-            <div>
-              <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                <Users className="w-4 h-4 text-primary" /> Student Slot Allotments
-              </h3>
+            <CardContent className="p-8 pt-2">
               {!(students || []).filter((s: any) => s.slotDate).length ? (
-                <div className="text-xs text-muted-foreground italic bg-muted/20 p-4 rounded-2xl border border-dashed text-center">
-                  No individual student slots allotted yet. Use the allotment panel on the left or Student Management directory.
+                <div className="text-center py-12 text-muted-foreground italic bg-muted/20 rounded-2xl border border-dashed p-6">
+                  No active student slots found in the database. Use the Dynamic Slot Generator on the left to create and approve new slots.
                 </div>
               ) : (
-                <div className="grid gap-3">
+                <div className="space-y-3 max-h-96 overflow-y-auto">
                   {(students || []).filter((s: any) => s.slotDate).map((s: any) => (
-                    <div key={s.id} className="p-3.5 border rounded-2xl bg-card flex items-center justify-between gap-4">
+                    <div key={s.id} className="p-4 rounded-2xl bg-muted/30 border border-border/60 flex items-center justify-between gap-4">
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-bold text-sm">{s.firstName || s.email?.split('@')[0]} {s.lastName || ''}</span>
-                          <Badge variant="outline" className="text-[10px]">{s.department || s.rollNumber || 'Student'}</Badge>
+                          <Badge variant="outline" className="text-[10px] font-bold">{s.department || s.rollNumber || 'Student'}</Badge>
                         </div>
-                        <p className="text-xs text-muted-foreground mt-0.5">
-                          📅 {s.slotDate} | ⏰ {s.slotStartTime || '09:00 AM'} - {s.slotEndTime || '10:00 AM'}
+                        <p className="text-xs text-muted-foreground mt-1">
+                          📅 <span className="font-bold text-foreground">{s.slotDate}</span> | ⏰ {s.slotStartTime || '09:00'} - {s.slotEndTime || '17:00'}
                         </p>
                       </div>
-                      <Badge className={s.slotStatus === "completed" ? "bg-emerald-500" : "bg-primary"}>
-                        {s.slotStatus || "scheduled"}
+                      <Badge className={s.slotStatus === "completed" ? "bg-emerald-500" : "bg-primary font-bold"}>
+                        {s.slotStatus || "active"}
                       </Badge>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
+            </CardContent>
+          </Card>
 
-            <div className="border-t border-border pt-4">
-              <h3 className="text-sm font-bold uppercase tracking-wider text-muted-foreground mb-3 flex items-center gap-2">
-                <Briefcase className="w-4 h-4 text-orange-500" /> Automated Drive Campaigns
-              </h3>
-              {isLoading ? (
-                <div className="text-sm text-muted-foreground">Loading campaigns...</div>
-              ) : !campaigns?.length ? (
-                <div className="text-sm text-muted-foreground py-6 text-center italic border border-dashed rounded-2xl p-4">
-                  No drive campaigns scheduled yet. Create one on the left panel.
+          {/* Drive Campaigns */}
+          <Card className="rounded-[2rem] glass-card overflow-hidden">
+            <CardHeader className="p-8 pb-4">
+              <CardTitle className="text-xl font-black tracking-tight flex items-center gap-2">
+                <Briefcase className="w-5 h-5 text-orange-500" />
+                Placement Drive Campaigns
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="p-8 pt-2">
+              {!campaigns?.length ? (
+                <div className="text-center py-8 text-muted-foreground text-sm italic border border-dashed rounded-2xl p-4">
+                  No multi-student drive campaigns registered.
                 </div>
               ) : (
-                <div className="space-y-4">
+                <div className="space-y-3">
                   {campaigns.map((c) => (
-                    <div key={c.id} className="p-4 border rounded-2xl bg-card/50 flex flex-col sm:flex-row justify-between sm:items-center gap-4 transition-all hover:bg-card">
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 flex-wrap">
+                    <div key={c.id} className="p-4 rounded-2xl border border-border/60 bg-card/50 flex flex-col sm:flex-row justify-between sm:items-center gap-4">
+                      <div>
+                        <div className="flex items-center gap-2">
                           <h4 className="font-bold text-sm">{c.title}</h4>
-                          <Badge variant={c.status === "completed" ? "default" : c.status === "active" ? "secondary" : "outline"} className={c.status === "completed" ? "bg-emerald-500 hover:bg-emerald-600 font-bold" : "font-bold"}>
-                            {c.status}
-                          </Badge>
-                          <Badge variant="outline" className="text-[10px] capitalize">{c.difficulty} Difficulty</Badge>
-                          {c.simulationMode === "full" && (
-                            <Badge className="bg-purple-500 hover:bg-purple-600 text-[10px] uppercase font-bold py-0.5 px-2">Multi-Round</Badge>
-                          )}
+                          <Badge variant="outline" className="text-[10px]">{c.difficulty}</Badge>
                         </div>
-                        
-                        <div className="grid grid-cols-2 gap-x-4 gap-y-1 text-xs text-muted-foreground">
-                          <span className="flex items-center gap-1"><Briefcase className="w-3.5 h-3.5" /> Company: {c.company || 'Standard'}</span>
-                          <span className="flex items-center gap-1"><Users className="w-3.5 h-3.5" /> Target: {c.branch || 'All Branches'}</span>
-                          <span className="flex items-center gap-1 col-span-2 mt-1"><Clock className="w-3.5 h-3.5 text-primary" /> Scheduled At: {new Date(c.scheduledAt).toLocaleString()}</span>
-                        </div>
+                        <p className="text-xs text-muted-foreground mt-1">
+                          Target: {c.branch || 'All Branches'} · Scheduled: {new Date(c.scheduledAt).toLocaleString()}
+                        </p>
                       </div>
-
-                      {c.status === "pending" && (
-                        <Button
-                          size="icon"
-                          variant="ghost"
-                          onClick={() => deleteCampaignMutation.mutate(c.id)}
-                          disabled={deleteCampaignMutation.isPending}
-                          className="rounded-xl hover:bg-destructive/10 hover:text-destructive self-end sm:self-center"
-                        >
-                          <Trash2 className="w-4 h-4" />
-                        </Button>
-                      )}
+                      <Badge className="bg-emerald-500/20 text-emerald-500 border-0">{c.status}</Badge>
                     </div>
                   ))}
                 </div>
               )}
-            </div>
-          </CardContent>
-        </Card>
+            </CardContent>
+          </Card>
+        </div>
       </div>
     </div>
   );

@@ -22,13 +22,14 @@ declare module "http" {
 
 app.use(
   express.json({
+    limit: '50mb',
     verify: (req, _res, buf) => {
       req.rawBody = buf;
     },
   }),
 );
 
-app.use(express.urlencoded({ extended: false }));
+app.use(express.urlencoded({ limit: '50mb', extended: true }));
 app.use(cookieParser());
 
 // Enable gzip compression for all responses
@@ -78,9 +79,8 @@ app.use((req, res, next) => {
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
     const message = err.message || "Internal Server Error";
-
+    console.error(`[ErrorHandler] ${status}: ${message}`, err.stack || err);
     res.status(status).json({ message });
-    throw err;
   });
 
   // importantly only setup vite in development and after
@@ -156,7 +156,14 @@ app.use((req, res, next) => {
     }, CHECK_INTERVAL_MS);
   };
 
-  startCampaignSchedulerWorker();
+  // Only run campaign scheduler on a single cluster worker to prevent duplicate interviews
+  const instanceId = process.env.NODE_APP_INSTANCE || '0';
+  if (instanceId === '0') {
+    startCampaignSchedulerWorker();
+    log('Campaign scheduler started on primary worker (instance 0)');
+  } else {
+    log(`Skipping campaign scheduler on worker instance ${instanceId}`);
+  }
 
   const gracefulShutdown = () => {
     log("Shutting down server gracefully...");
