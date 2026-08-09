@@ -462,6 +462,28 @@ async def text_to_speech(request: TTSRequest):
         raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
 
 
+# Rate Limiter Semaphore for Groq STT (max 10 parallel API requests)
+groq_stt_semaphore = asyncio.Semaphore(10)
+_groq_key_idx = 0
+
+def get_groq_keys() -> List[str]:
+    keys_str = os.environ.get("GROQ_API_KEYS", "")
+    if keys_str:
+        keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+        if keys:
+            return keys
+    single_key = os.environ.get("GROQ_API_KEY", "").strip()
+    return [single_key] if single_key else []
+
+def get_next_groq_key() -> str:
+    global _groq_key_idx
+    keys = get_groq_keys()
+    if not keys:
+        return ""
+    key = keys[_groq_key_idx % len(keys)]
+    _groq_key_idx += 1
+    return key
+
 # ---------------------------------------------------------------------------
 # STT — Speech-to-Text / Transcribe (Groq Cloud Whisper → Faster-Whisper fallback)
 # ---------------------------------------------------------------------------
@@ -470,8 +492,8 @@ async def text_to_speech(request: TTSRequest):
 async def transcribe_audio(file: UploadFile = File(...)):
     """Transcribe audio file to text.
     Uses Groq Cloud Whisper-large-v3 API (0.15s ultra-fast LPU inference) first.
+    Protected by Concurrency Semaphore (max 10 parallel requests) & 429 Rate Limit Retries.
     Falls back to local Faster-Whisper.
-    Accepts any audio format (WebM, WAV, MP3, OGG).
     """
     try:
         audio_data = await file.read()
@@ -480,29 +502,40 @@ async def transcribe_audio(file: UploadFile = File(...)):
 
         print(f"[STT] Transcribe request received: {len(audio_data)} bytes, type: {file.content_type}")
 
-        groq_key = os.environ.get("GROQ_API_KEY")
+        groq_keys = get_groq_keys()
 
-        # --- Attempt 1: Groq Cloud Whisper API (Ultra-Fast ~0.15s LPU Inference) ---
-        if groq_key:
-            try:
-                import httpx
-                url = "https://api.groq.com/openai/v1/audio/transcriptions"
-                headers = {"Authorization": f"Bearer {groq_key}"}
-                filename = file.filename or "recording.webm"
-                files = {"file": (filename, audio_data, file.content_type or "audio/webm")}
-                data = {"model": "whisper-large-v3", "language": "en"}
-                
-                async with httpx.AsyncClient(timeout=15.0) as client:
-                    resp = await client.post(url, headers=headers, files=files, data=data)
-                    if resp.status_code == 200:
-                        result = resp.json()
-                        text = result.get("text", "").strip()
-                        if text:
-                            print(f"[STT Groq Cloud Whisper] Transcribed text ({len(text)} chars): '{text[:60]}...'")
-                            return {"success": True, "text": text}
-                    print(f"[STT] Groq Cloud API status {resp.status_code}: {resp.text[:100]}")
-            except Exception as e:
-                print(f"[STT] Groq Cloud STT error: {e}, falling back to local Whisper...")
+        # --- Attempt 1: Groq Cloud Whisper API with Concurrency Throttling & 429 Retry ---
+        if groq_keys:
+            async with groq_stt_semaphore:
+                for attempt in range(3):  # Retry up to 3 times on 429 Rate Limit
+                    groq_key = get_next_groq_key()
+                    if not groq_key:
+                        break
+                    try:
+                        import httpx
+                        url = "https://api.groq.com/openai/v1/audio/transcriptions"
+                        headers = {"Authorization": f"Bearer {groq_key}"}
+                        filename = file.filename or "recording.webm"
+                        files = {"file": (filename, audio_data, file.content_type or "audio/webm")}
+                        data = {"model": "whisper-large-v3", "language": "en"}
+
+                        async with httpx.AsyncClient(timeout=15.0) as client:
+                            resp = await client.post(url, headers=headers, files=files, data=data)
+                            if resp.status_code == 200:
+                                result = resp.json()
+                                text = result.get("text", "").strip()
+                                if text:
+                                    print(f"[STT Groq Cloud Whisper] Transcribed text ({len(text)} chars): '{text[:60]}...'")
+                                    return {"success": True, "text": text}
+                            elif resp.status_code == 429:
+                                backoff_time = (attempt + 1) * 1.0  # 1.0s, 2.0s, 3.0s
+                                print(f"[STT] Groq 429 Rate Limit (Attempt {attempt+1}/3). Retrying in {backoff_time}s...")
+                                await asyncio.sleep(backoff_time)
+                                continue
+                            print(f"[STT] Groq Cloud API status {resp.status_code}: {resp.text[:100]}")
+                    except Exception as e:
+                        print(f"[STT] Groq Cloud STT error (Attempt {attempt+1}/3): {e}")
+                        await asyncio.sleep(0.5)
 
         # --- Attempt 2: Local Faster-Whisper CPU Fallback ---
         import tempfile
