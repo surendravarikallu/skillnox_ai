@@ -425,13 +425,10 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     lastProcessedIndexRef.current = 0;
     // Clear audio chunks so next question starts with fresh recording
     audioChunksRef.current = [];
-    // Stop and recreate MediaRecorder for clean next-question recording
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try { mediaRecorderRef.current.stop(); } catch (e) {}
+    // Keep active MediaRecorder running cleanly without stopping/destroying instance
+    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") {
+      startMediaRecorder();
     }
-    mediaRecorderRef.current = null;
-    // Start fresh recording immediately
-    startMediaRecorder();
   }, [startMediaRecorder]);
 
   const hardResetTranscript = useCallback(() => {
