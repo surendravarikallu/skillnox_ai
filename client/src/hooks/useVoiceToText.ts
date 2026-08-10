@@ -295,7 +295,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       }
       // Only clear chunks when creating a truly new recording session
       audioChunksRef.current = [];
-      if (!mediaStreamRef.current) {
+      if (!mediaStreamRef.current || !mediaStreamRef.current.active || mediaStreamRef.current.getAudioTracks().length === 0 || mediaStreamRef.current.getAudioTracks()[0].readyState !== 'live') {
         mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       let options: MediaRecorderOptions = { audioBitsPerSecond: 32000 };
@@ -343,21 +343,23 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     try {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
         mediaRecorderRef.current.requestData();
+      } else if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") {
+        await startMediaRecorder();
       }
     } catch (e) {}
 
     // Micro-delay for ondataavailable event to push final chunk
-    await new Promise(r => setTimeout(r, 80));
+    await new Promise(r => setTimeout(r, 100));
 
     if (audioChunksRef.current.length === 0) return null;
     const type = mediaRecorderRef.current?.mimeType || "audio/webm";
     const blob = new Blob(audioChunksRef.current, { type });
 
-    // Atomically reset audio chunks array for next question while keeping recorder ALIVE!
+    // Clear chunks for clean next question recording
     audioChunksRef.current = [];
-    console.log("[VoiceToText] ✅ Instant audio blob extracted for Groq STT:", blob.size, "bytes");
+    console.log("[VoiceToText] Instant audio blob extracted for Groq STT:", blob.size, "bytes");
     return blob;
-  }, []);
+  }, [startMediaRecorder]);
 
   const startListening = useCallback(() => {
     setError(null);
