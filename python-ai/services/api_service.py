@@ -517,7 +517,8 @@ async def transcribe_audio(file: UploadFile = File(...)):
                         headers = {"Authorization": f"Bearer {groq_key}"}
                         filename = file.filename or "recording.webm"
                         files = {"file": (filename, audio_data, file.content_type or "audio/webm")}
-                        data = {"model": "whisper-large-v3", "language": "en"}
+                        stt_model = os.environ.get("GROQ_STT_MODEL", "whisper-large-v3-turbo")
+                        data = {"model": stt_model, "language": "en"}
 
                         async with httpx.AsyncClient(timeout=15.0) as client:
                             resp = await client.post(url, headers=headers, files=files, data=data)
