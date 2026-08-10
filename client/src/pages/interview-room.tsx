@@ -79,6 +79,7 @@ export default function InterviewRoom() {
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingAnswerPromisesRef = useRef<Promise<any>[]>([]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -256,28 +257,38 @@ export default function InterviewRoom() {
     }
   }, [micEnabled, startListening, stopListening]);
 
+  const handleComplete = async () => {
+    if (pendingAnswerPromisesRef.current.length > 0) {
+      toast({
+        title: "Finalizing Session...",
+        description: "Saving and evaluating your transcriptions for complete report accuracy...",
+      });
+      try {
+        await Promise.all(pendingAnswerPromisesRef.current);
+      } catch (e) {
+        console.warn("[InterviewRoom] Warning awaiting pending answer saves:", e);
+      }
+    }
+    completeInterviewMutation.mutate();
+  };
+
   const handleSubmitAnswer = async () => {
     if (!questions) return;
     const qId = questions[currentQuestionIndex].id;
     const fallbackText = transcript.trim();
+    const isLast = currentQuestionIndex === questions.length - 1;
 
     // 1. Instantly extract candidate's recorded audio blob (~20ms)
     const audioBlob = await getRecordedAudio();
 
-    // 2. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION (0-second wait for candidate!)
+    // 2. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION
     clearTranscript();
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
-    } else if (isLastQuestion) {
-      if (interview?.simulationMode === 'full') {
-        setShowRoundSummary(true);
-      } else {
-        handleComplete();
-      }
     }
 
-    // 3. Process Groq Cloud Whisper AI STT in background worker (non-blocking)
-    (async () => {
+    // 3. Process Groq Cloud Whisper AI STT and track promise
+    const savePromise = (async () => {
       let groqTranscript = fallbackText;
       if (audioBlob && audioBlob.size > 500) {
         try {
@@ -303,11 +314,19 @@ export default function InterviewRoom() {
 
       // Save the official Groq Whisper AI transcription directly to database
       const finalSaveAnswer = groqTranscript || "(no answer recorded)";
-      await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: finalSaveAnswer });
+      return await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: finalSaveAnswer });
     })();
-  };
 
-  const handleComplete = () => completeInterviewMutation.mutate();
+    pendingAnswerPromisesRef.current.push(savePromise);
+
+    if (isLast) {
+      if (interview?.simulationMode === 'full') {
+        setShowRoundSummary(true);
+      } else {
+        await handleComplete();
+      }
+    }
+  };
 
   const currentQuestion = questions?.[currentQuestionIndex];
   const progress = questions ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;
