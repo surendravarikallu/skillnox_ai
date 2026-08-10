@@ -7,7 +7,6 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Progress } from "@/components/ui/progress";
 import { Skeleton } from "@/components/ui/skeleton";
-import { Textarea } from "@/components/ui/textarea";
 import {
   Camera,
   CameraOff,
@@ -24,7 +23,11 @@ import {
   Terminal,
   MessageSquare,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  BrainCircuit,
+  Loader2,
+  Sparkles,
+  FileText
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -60,7 +63,16 @@ export default function InterviewRoom() {
 
   const [showRoundSummary, setShowRoundSummary] = useState(false);
   const [micTested, setMicTested] = useState(false);
-  const [manualAnswerText, setManualAnswerText] = useState("");
+  const [isAnalyzingReport, setIsAnalyzingReport] = useState(false);
+  const [reportStepIndex, setReportStepIndex] = useState(0);
+
+  const reportSteps = [
+    "Processing Audio Transcripts & Candidate Responses...",
+    "Evaluating Technical Accuracy & Problem-Solving Approach...",
+    "Assessing Communication Clarity & Structured Responses...",
+    "Calculating Domain Scores & Candidate Performance Index...",
+    "Generating Comprehensive Assessment & Feedback Report..."
+  ];
 
   // Check student slot status for WaitingRoom gate
   const { data: slotInfo } = useQuery<{
@@ -81,6 +93,7 @@ export default function InterviewRoom() {
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
+  const pendingAnswerPromisesRef = useRef<Promise<any>[]>([]);
 
   useEffect(() => {
     if (scrollRef.current) {
@@ -258,31 +271,66 @@ export default function InterviewRoom() {
     }
   }, [micEnabled, startListening, stopListening]);
 
+  const handleComplete = async () => {
+    setIsAnalyzingReport(true);
+    setReportStepIndex(0);
+
+    stopListening();
+    stopSpeaking();
+
+    const interval = setInterval(() => {
+      setReportStepIndex(prev => {
+        if (prev < reportSteps.length - 1) return prev + 1;
+        return prev;
+      });
+    }, 1400);
+
+    try {
+      if (pendingAnswerPromisesRef.current.length > 0) {
+        await Promise.all(pendingAnswerPromisesRef.current);
+      }
+
+      await completeInterviewMutation.mutateAsync();
+
+      await queryClient.invalidateQueries({ queryKey: ['/api/interviews', id] });
+      await queryClient.invalidateQueries({ queryKey: ['/api/interviews', id, 'questions'] });
+
+      // Hold analyzing screen for a clean visual transition
+      await new Promise(r => setTimeout(r, 3000));
+
+      clearInterval(interval);
+      navigate(`/interview/${id}/results`);
+    } catch (e) {
+      console.error("[InterviewRoom] Error finalizing report:", e);
+      clearInterval(interval);
+      setIsAnalyzingReport(false);
+      toast({
+        title: "Evaluation Issue",
+        description: "Failed to generate report. Please refresh and retry.",
+        variant: "destructive"
+      });
+    }
+  };
+
   const handleSubmitAnswer = async () => {
     if (!questions) return;
     const qId = questions[currentQuestionIndex].id;
-    const fallbackText = (manualAnswerText || transcript || "").trim();
+    const fallbackText = transcript.trim();
+    const isLast = currentQuestionIndex === questions.length - 1;
 
     // 1. Instantly extract candidate's recorded audio blob (~20ms)
     const audioBlob = await getRecordedAudio();
 
-    // 2. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION (0-second wait for candidate!)
+    // 2. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION
     clearTranscript();
-    setManualAnswerText("");
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
-    } else if (isLastQuestion) {
-      if (interview?.simulationMode === 'full') {
-        setShowRoundSummary(true);
-      } else {
-        handleComplete();
-      }
     }
 
-    // 3. Process Groq Cloud Whisper AI STT in background worker (non-blocking)
-    (async () => {
-      let groqTranscript = "";
-      if (audioBlob && audioBlob.size > 300) {
+    // 3. Process Groq Cloud Whisper AI STT and track promise
+    const savePromise = (async () => {
+      let groqTranscript = fallbackText;
+      if (audioBlob && audioBlob.size > 500) {
         try {
           const formData = new FormData();
           formData.append('file', audioBlob, 'recording.webm');
@@ -305,15 +353,20 @@ export default function InterviewRoom() {
       }
 
       // Save the official Groq Whisper AI transcription directly to database
-      let finalSaveAnswer = groqTranscript || fallbackText;
-      if (!finalSaveAnswer || finalSaveAnswer.trim().length === 0) {
-        finalSaveAnswer = "(no answer recorded)";
-      }
-      await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: finalSaveAnswer });
+      const finalSaveAnswer = groqTranscript || "(no answer recorded)";
+      return await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: finalSaveAnswer });
     })();
-  };
 
-  const handleComplete = () => completeInterviewMutation.mutate();
+    pendingAnswerPromisesRef.current.push(savePromise);
+
+    if (isLast) {
+      if (interview?.simulationMode === 'full') {
+        setShowRoundSummary(true);
+      } else {
+        await handleComplete();
+      }
+    }
+  };
 
   const currentQuestion = questions?.[currentQuestionIndex];
   const progress = questions ? ((currentQuestionIndex + 1) / questions.length) * 100 : 0;
@@ -484,6 +537,48 @@ export default function InterviewRoom() {
             </Button>
           </div>
           <BorderBeam size={400} duration={12} />
+        </Card>
+      </div>
+    );
+  }
+
+  if (isAnalyzingReport) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6 relative overflow-hidden">
+        {/* Subtle Background Gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-primary/5 opacity-80" />
+
+        <Card className="max-w-xl w-full rounded-[2.5rem] glass-card p-10 text-center space-y-8 relative z-10 border-primary/20 shadow-2xl overflow-hidden">
+          {/* Animated Spinner Radar */}
+          <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin [animation-duration:1.5s]" />
+            <FileText className="w-9 h-9 text-primary animate-pulse" />
+          </div>
+
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/15 text-primary text-xs font-bold uppercase tracking-wider">
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+              Performance Evaluation Active
+            </div>
+            
+            <h2 className="text-2xl font-bold tracking-tight">Evaluating Candidate Responses</h2>
+            
+            <p className="text-xs font-semibold text-muted-foreground min-h-[2rem] transition-all duration-300 px-4">
+              {reportSteps[reportStepIndex]}
+            </p>
+
+            {/* Clean Progress Bar */}
+            <div className="w-full bg-muted/60 h-2.5 rounded-full overflow-hidden p-0.5 border border-border shadow-inner max-w-md mx-auto">
+              <div 
+                className="bg-primary h-full rounded-full transition-all duration-700 ease-out" 
+                style={{ width: `${Math.min(100, ((reportStepIndex + 1) / reportSteps.length) * 100)}%` }}
+              />
+            </div>
+
+            <p className="text-[11px] text-muted-foreground font-medium pt-1">
+              Please wait while your evaluation report is being generated...
+            </p>
+          </div>
         </Card>
       </div>
     );
@@ -754,32 +849,45 @@ export default function InterviewRoom() {
               </div>
             )}
             
-            <div className="flex-1 p-6 flex flex-col space-y-3" ref={scrollRef}>
-              <Textarea
-                value={manualAnswerText || transcript}
-                onChange={(e) => setManualAnswerText(e.target.value)}
-                placeholder={
-                  isListening
-                    ? "🎙️ Voice Recording Active — Speak your response clearly, or type/edit here..."
-                    : "Speak or type your answer here..."
-                }
-                className="w-full flex-1 min-h-[140px] bg-transparent font-medium text-base leading-relaxed text-foreground border-0 focus-visible:ring-0 resize-none p-0"
-              />
-              <div className="flex items-center justify-between pt-2 border-t border-border/40 text-xs text-muted-foreground font-semibold">
-                <div className="flex items-center gap-2">
-                  <span>
-                    {(manualAnswerText || transcript).trim() ? (manualAnswerText || transcript).trim().split(/\s+/).filter(Boolean).length : 0} words
-                  </span>
-                  {isListening && (
-                    <span className="inline-flex items-center gap-1.5 text-emerald-500 font-bold animate-pulse">
-                      <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                      Live Audio Stream Active
+            <div className="flex-1 p-6 flex flex-col" ref={scrollRef}>
+              <div
+                className="w-full h-full min-h-[160px] bg-transparent font-medium text-lg leading-relaxed text-foreground overflow-y-auto whitespace-pre-wrap select-none pointer-events-none"
+              >
+                {transcript ? (
+                  <div className="space-y-3">
+                    <p>{transcript}</p>
+                    <div className="flex items-center gap-3 mt-2">
+                      <span className="text-xs text-muted-foreground font-bold">
+                        {transcript.split(/\s+/).filter(Boolean).length} words captured
+                      </span>
+                      {isListening && (
+                        <span className="inline-flex items-center gap-1.5 text-xs text-emerald-500 font-bold animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          Recording...
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <span className="text-muted-foreground/60 italic block">
+                      {isListening
+                        ? "🎙️ Microphone Active — Speak your answer clearly. Your speech text will appear here in real-time."
+                        : "Click 'Start Listening' above to begin recording your voice response."}
                     </span>
-                  )}
-                </div>
-                <p className="text-[10px] text-muted-foreground opacity-75">
-                  💡 Voice is automatically transcribed by Groq AI. You may also edit or type directly above.
-                </p>
+                    {isListening && (
+                      <div className="space-y-2">
+                        <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-bold animate-pulse">
+                          <span className="w-2 h-2 rounded-full bg-emerald-500" />
+                          Recording Audio — Your voice will be transcribed by AI when you submit
+                        </div>
+                        <p className="text-xs text-muted-foreground">
+                          💡 Even if text doesn't appear here live, your voice is being recorded and will be transcribed accurately by Groq Cloud Whisper AI on submit.
+                        </p>
+                      </div>
+                    )}
+                  </div>
+                )}
               </div>
             </div>
 

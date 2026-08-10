@@ -295,7 +295,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       }
       // Only clear chunks when creating a truly new recording session
       audioChunksRef.current = [];
-      if (!mediaStreamRef.current || !mediaStreamRef.current.active || mediaStreamRef.current.getAudioTracks().length === 0 || mediaStreamRef.current.getAudioTracks()[0].readyState !== 'live') {
+      if (!mediaStreamRef.current) {
         mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       let options: MediaRecorderOptions = { audioBitsPerSecond: 32000 };
@@ -343,20 +343,30 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     try {
       if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
         mediaRecorderRef.current.requestData();
-      } else if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") {
-        await startMediaRecorder();
       }
     } catch (e) {}
 
     // Micro-delay for ondataavailable event to push final chunk
-    await new Promise(r => setTimeout(r, 100));
+    await new Promise(r => setTimeout(r, 60));
 
     if (audioChunksRef.current.length === 0) return null;
     const type = mediaRecorderRef.current?.mimeType || "audio/webm";
     const blob = new Blob(audioChunksRef.current, { type });
 
-    // Clear chunks for clean next question recording
+    // Stop existing recorder & clear chunks so Chrome cleanly resets stream encoder
     audioChunksRef.current = [];
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try {
+        mediaRecorderRef.current.stop();
+      } catch (e) {}
+      mediaRecorderRef.current = null;
+    }
+
+    // Immediately start a fresh MediaRecorder session for the next question
+    setTimeout(() => {
+      startMediaRecorder();
+    }, 50);
+
     console.log("[VoiceToText] Instant audio blob extracted for Groq STT:", blob.size, "bytes");
     return blob;
   }, [startMediaRecorder]);
@@ -425,10 +435,13 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     lastProcessedIndexRef.current = 0;
     // Clear audio chunks so next question starts with fresh recording
     audioChunksRef.current = [];
-    // Keep active MediaRecorder running cleanly without stopping/destroying instance
-    if (!mediaRecorderRef.current || mediaRecorderRef.current.state === "inactive") {
-      startMediaRecorder();
+    // Stop and recreate MediaRecorder for clean next-question recording
+    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
+      try { mediaRecorderRef.current.stop(); } catch (e) {}
     }
+    mediaRecorderRef.current = null;
+    // Start fresh recording immediately
+    startMediaRecorder();
   }, [startMediaRecorder]);
 
   const hardResetTranscript = useCallback(() => {
