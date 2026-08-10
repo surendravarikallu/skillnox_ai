@@ -2920,6 +2920,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
                 feedbackSummary = aiFeedback.feedback;
                 improvements = aiFeedback.improvements;
                 console.log(`[AI Feedback] Generated personalized feedback for ${studentFullName}`);
+                // Persist AI-generated improvements to database so Web UI results reflect full report
+                await storage.updateInterview(interviewId, { improvements });
               }
             } catch (fbErr) {
               console.error('[AI Feedback] Failed, using fallback:', fbErr);

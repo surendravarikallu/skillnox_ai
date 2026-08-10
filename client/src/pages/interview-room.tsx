@@ -236,6 +236,12 @@ export default function InterviewRoom() {
     return () => { if (timerRef.current) clearInterval(timerRef.current); };
   }, [interview?.status]);
 
+  useEffect(() => {
+    return () => {
+      stopSpeaking();
+    };
+  }, [stopSpeaking]);
+
   const toggleCamera = useCallback(() => {
     setCameraEnabled(prev => !prev);
   }, []);
