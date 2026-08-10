@@ -23,7 +23,10 @@ import {
   Terminal,
   MessageSquare,
   ShieldCheck,
-  ChevronRight
+  ChevronRight,
+  BrainCircuit,
+  Loader2,
+  Sparkles
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -59,6 +62,16 @@ export default function InterviewRoom() {
 
   const [showRoundSummary, setShowRoundSummary] = useState(false);
   const [micTested, setMicTested] = useState(false);
+  const [isAnalyzingReport, setIsAnalyzingReport] = useState(false);
+  const [reportStepIndex, setReportStepIndex] = useState(0);
+
+  const reportSteps = [
+    "Finalizing Voice Transcriptions & Micro-Signals...",
+    "Evaluating Technical Accuracy & Concept Depth...",
+    "Benchmarking Communication Structure & Soft Skills...",
+    "Calculating Overall Performance Score & Placement Potential...",
+    "Compiling Comprehensive Talent Assessment Report..."
+  ];
 
   // Check student slot status for WaitingRoom gate
   const { data: slotInfo } = useQuery<{
@@ -258,18 +271,44 @@ export default function InterviewRoom() {
   }, [micEnabled, startListening, stopListening]);
 
   const handleComplete = async () => {
-    if (pendingAnswerPromisesRef.current.length > 0) {
-      toast({
-        title: "Finalizing Session...",
-        description: "Saving and evaluating your transcriptions for complete report accuracy...",
+    setIsAnalyzingReport(true);
+    setReportStepIndex(0);
+
+    stopListening();
+    stopSpeaking();
+
+    const interval = setInterval(() => {
+      setReportStepIndex(prev => {
+        if (prev < reportSteps.length - 1) return prev + 1;
+        return prev;
       });
-      try {
+    }, 1400);
+
+    try {
+      if (pendingAnswerPromisesRef.current.length > 0) {
         await Promise.all(pendingAnswerPromisesRef.current);
-      } catch (e) {
-        console.warn("[InterviewRoom] Warning awaiting pending answer saves:", e);
       }
+
+      await completeInterviewMutation.mutateAsync();
+
+      await queryClient.invalidateQueries({ queryKey: ['/api/interviews', id] });
+      await queryClient.invalidateQueries({ queryKey: ['/api/interviews', id, 'questions'] });
+
+      // Hold analyzing screen for a clean visual transition
+      await new Promise(r => setTimeout(r, 3000));
+
+      clearInterval(interval);
+      navigate(`/interview/${id}/results`);
+    } catch (e) {
+      console.error("[InterviewRoom] Error finalizing report:", e);
+      clearInterval(interval);
+      setIsAnalyzingReport(false);
+      toast({
+        title: "Evaluation Issue",
+        description: "Failed to generate report. Please refresh and retry.",
+        variant: "destructive"
+      });
     }
-    completeInterviewMutation.mutate();
   };
 
   const handleSubmitAnswer = async () => {
@@ -497,6 +536,54 @@ export default function InterviewRoom() {
             </Button>
           </div>
           <BorderBeam size={400} duration={12} />
+        </Card>
+      </div>
+    );
+  }
+
+  if (isAnalyzingReport) {
+    return (
+      <div className="min-h-screen bg-background flex items-center justify-center p-6 relative overflow-hidden">
+        {/* Futuristic Background Gradients */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-primary/5 opacity-80" />
+        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/20 rounded-full blur-[120px] pointer-events-none" />
+
+        <Card className="max-w-xl w-full rounded-[2.5rem] glass-card p-10 text-center space-y-8 relative z-10 border-primary/20 shadow-2xl overflow-hidden">
+          {/* Animated Spinner Radar */}
+          <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
+            <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin [animation-duration:1.5s]" />
+            <div className="absolute inset-3 rounded-full border-2 border-dashed border-primary/40 animate-spin [animation-duration:8s] [animation-direction:reverse]" />
+            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
+              <BrainCircuit className="w-9 h-9 text-primary animate-pulse" />
+            </div>
+          </div>
+
+          <div className="space-y-4">
+            <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/15 text-primary text-xs font-bold uppercase tracking-wider">
+              <Loader2 className="w-4 h-4 animate-spin text-primary" />
+              AI Evaluation Engine Active
+            </div>
+            
+            <h2 className="text-3xl font-black tracking-tight">Analyzing Your Responses</h2>
+            
+            <p className="text-sm font-semibold text-primary/90 min-h-[2rem] transition-all duration-300 px-4">
+              {reportSteps[reportStepIndex]}
+            </p>
+
+            {/* Glowing Animated Progress Bar */}
+            <div className="w-full bg-muted/60 h-3 rounded-full overflow-hidden p-0.5 border border-border shadow-inner max-w-md mx-auto">
+              <div 
+                className="bg-gradient-to-r from-primary via-emerald-400 to-primary h-full rounded-full transition-all duration-700 ease-out" 
+                style={{ width: `${Math.min(100, ((reportStepIndex + 1) / reportSteps.length) * 100)}%` }}
+              />
+            </div>
+
+            <p className="text-xs text-muted-foreground font-medium pt-2">
+              Generating clean performance analytics, technical scoring & detailed feedback report...
+            </p>
+          </div>
+
+          <BorderBeam size={350} duration={10} />
         </Card>
       </div>
     );
