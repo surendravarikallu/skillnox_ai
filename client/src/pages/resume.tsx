@@ -58,12 +58,18 @@ export default function ResumePage() {
         body: formData,
         credentials: 'include',
       });
-      if (!response.ok) throw new Error('Upload failed');
+      if (!response.ok) {
+        const errData = await response.json().catch(() => ({}));
+        throw new Error(errData.message || 'Upload failed');
+      }
       return response.json();
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['/api/resume'] });
       toast({ title: "Intelligence Synced", description: "Your resume has been analyzed by our AI models." });
+    },
+    onError: (error: Error) => {
+      toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
     },
   });
 

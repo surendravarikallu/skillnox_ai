@@ -39,6 +39,8 @@ import {
 } from "./interview-patterns";
 
 import mammoth from "mammoth";
+// @ts-ignore
+import pdfParse from "pdf-parse/lib/pdf-parse.js";
 
 
 // Use pdfjs-dist directly (more stable than recent pdf-parse ESM/CJS exports)
@@ -125,9 +127,20 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
   try {
     const isPdf = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
     if (isPdf) {
+      // Primary Layer: pdf-parse (Fastest & most accurate text extraction for Node.js)
+      try {
+        const parsed = await pdfParse(file.buffer);
+        if (parsed && parsed.text && parsed.text.trim().length > 15) {
+          console.log(`[PDF Extraction] Successfully extracted ${parsed.text.trim().length} characters via pdf-parse`);
+          return parsed.text.trim();
+        }
+      } catch (pdfParseErr) {
+        console.warn("[PDF Extraction] pdf-parse failed, trying pdfjs-dist fallback:", pdfParseErr);
+      }
+
+      // Secondary Layer: pdfjs-dist fallback
       try {
         const pdfjs = await getPdfJs();
-        // pdfjs expects a Uint8Array, not a Node Buffer
         const loadingTask = pdfjs.getDocument({
           data: new Uint8Array(file.buffer),
           standardFontDataUrl: path.resolve(process.cwd(), "node_modules/pdfjs-dist/standard_fonts/")
@@ -142,10 +155,12 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
           fullText += pageText + "\n";
         }
         const cleaned = fullText.trim();
-        if (cleaned.length > 0) return cleaned;
+        if (cleaned.length > 15) {
+          console.log(`[PDF Extraction] Successfully extracted ${cleaned.length} characters via pdfjs-dist`);
+          return cleaned;
+        }
       } catch (pdfError) {
-        console.error("PDF parsing failed, falling back to text extraction:", pdfError);
-        // Fall through to UTF-8 fallback
+        console.error("[PDF Extraction] pdfjs-dist parsing failed:", pdfError);
       }
     }
 
@@ -157,15 +172,19 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
         const text = result.value.trim();
         if (text.length > 0) return text;
       } catch (docxError) {
-        console.error("DOCX parsing failed, falling back to text extraction:", docxError);
+        console.error("DOCX parsing failed:", docxError);
       }
     }
 
-    // Fallback for non-PDF/DOCX or failed parse
-    return file.buffer.toString('utf8');
+    // Fallback for TXT or non-PDF/DOCX
+    const rawUtf8 = file.buffer.toString('utf8');
+    if (rawUtf8.startsWith('%PDF-') || rawUtf8.includes('/XObject') || rawUtf8.includes('/Font')) {
+      console.warn("[PDF Extraction] File is binary PDF with no extractable text stream.");
+      return "";
+    }
+    return rawUtf8.trim();
   } catch (error) {
     console.error("Error extracting text from file:", error);
-    // Fallback to UTF-8 text extraction
     return file.buffer.toString('utf8');
   }
 }
@@ -1359,14 +1378,13 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       }
 
       const rawText = await extractTextFromFile(file);
-      const layoutIssues = detectLayoutIssues(rawText);
-      if (layoutIssues.hasIssue) {
-        return res.status(422).json({
-          message: "Resume formatting issue detected. Please fix spacing/alignment and re-upload.",
-          reasons: layoutIssues.reasons,
-          code: "RESUME_FORMATTING"
+      if (!rawText || rawText.trim().length < 15) {
+        return res.status(400).json({
+          message: "Unable to extract text from your resume PDF. Please ensure the document is a text-based PDF/DOCX file and not an image-only scan."
         });
       }
+
+      const layoutIssues = detectLayoutIssues(rawText);
       const sanitizedFullText = sanitizeText(rawText);
 
       if (rawText.length > PDF_CONTENT_WARNING_LENGTH) {
