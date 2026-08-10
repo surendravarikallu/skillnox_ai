@@ -293,8 +293,18 @@ export function useVoiceToText(): UseVoiceToTextReturn {
         console.log("[VoiceToText] MediaRecorder resumed (chunks preserved)");
         return;
       }
-      // Only clear chunks when creating a truly new recording session
+      // Fresh recording session — clear any stale chunks
       audioChunksRef.current = [];
+
+      // Validate audio stream — Chrome can silently end tracks
+      if (mediaStreamRef.current) {
+        const tracks = mediaStreamRef.current.getAudioTracks();
+        if (tracks.length === 0 || tracks.some(t => t.readyState === 'ended')) {
+          console.log("[VoiceToText] Audio stream track ended, acquiring new stream");
+          mediaStreamRef.current = null;
+        }
+      }
+
       if (!mediaStreamRef.current) {
         mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
@@ -340,34 +350,65 @@ export function useVoiceToText(): UseVoiceToTextReturn {
   }, []);
 
   const getRecordedAudio = useCallback(async (): Promise<Blob | null> => {
-    try {
-      if (mediaRecorderRef.current && mediaRecorderRef.current.state === "recording") {
-        mediaRecorderRef.current.requestData();
-      }
-    } catch (e) {}
+    const recorder = mediaRecorderRef.current;
 
-    // Micro-delay for ondataavailable event to push final chunk
-    await new Promise(r => setTimeout(r, 60));
-
-    if (audioChunksRef.current.length === 0) return null;
-    const type = mediaRecorderRef.current?.mimeType || "audio/webm";
-    const blob = new Blob(audioChunksRef.current, { type });
-
-    // Stop existing recorder & clear chunks so Chrome cleanly resets stream encoder
-    audioChunksRef.current = [];
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {}
-      mediaRecorderRef.current = null;
+    // Nothing to extract if recorder is not active
+    if (!recorder || recorder.state === "inactive") {
+      console.warn("[VoiceToText] getRecordedAudio: no active recorder, returning null");
+      return null;
     }
 
-    // Immediately start a fresh MediaRecorder session for the next question
-    setTimeout(() => {
-      startMediaRecorder();
-    }, 50);
+    const mimeType = recorder.mimeType || "audio/webm";
 
-    console.log("[VoiceToText] Instant audio blob extracted for Groq STT:", blob.size, "bytes");
+    // STOP the recorder cleanly — this guarantees Chrome fires the final
+    // 'dataavailable' event with ALL remaining buffered audio, followed by 'stop'.
+    // This is the ONLY reliable way to flush all audio data.
+    await new Promise<void>((resolve) => {
+      let resolved = false;
+      const done = () => {
+        if (resolved) return;
+        resolved = true;
+        resolve();
+      };
+
+      recorder.addEventListener('stop', done, { once: true });
+
+      try {
+        recorder.stop();
+      } catch (e) {
+        console.warn("[VoiceToText] getRecordedAudio: recorder.stop() error:", e);
+        done();
+        return;
+      }
+
+      // Safety timeout — if 'stop' event never fires (Chrome glitch), resolve anyway
+      setTimeout(done, 300);
+    });
+
+    // At this point, all ondataavailable events have fired and chunks are complete
+    const chunks = audioChunksRef.current;
+    console.log(`[VoiceToText] getRecordedAudio: ${chunks.length} chunks collected`);
+
+    if (chunks.length === 0) {
+      // No audio data — immediately start fresh recorder for next question
+      mediaRecorderRef.current = null;
+      audioChunksRef.current = [];
+      startMediaRecorder();
+      return null;
+    }
+
+    const blob = new Blob(chunks, { type: mimeType });
+    console.log(`[VoiceToText] getRecordedAudio: blob created (${blob.size} bytes, ${mimeType})`);
+
+    // Clear chunks and null out old recorder reference
+    audioChunksRef.current = [];
+    mediaRecorderRef.current = null;
+
+    // Immediately start a fresh MediaRecorder for the NEXT question
+    // This runs async but we don't need to await it — it just needs to be recording
+    // by the time the user starts speaking for the next question
+    startMediaRecorder();
+
     return blob;
   }, [startMediaRecorder]);
 
@@ -433,16 +474,10 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     setTranscriptState("");
     finalTranscriptRef.current = "";
     lastProcessedIndexRef.current = 0;
-    // Clear audio chunks so next question starts with fresh recording
-    audioChunksRef.current = [];
-    // Stop and recreate MediaRecorder for clean next-question recording
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try { mediaRecorderRef.current.stop(); } catch (e) {}
-    }
-    mediaRecorderRef.current = null;
-    // Start fresh recording immediately
-    startMediaRecorder();
-  }, [startMediaRecorder]);
+    // NOTE: Audio chunks and MediaRecorder are managed by getRecordedAudio()
+    // which does a proper stop-flush-restart cycle. Do NOT clear chunks here
+    // to avoid race conditions with the recorder's ondataavailable events.
+  }, []);
 
   const hardResetTranscript = useCallback(() => {
     // Fully stop and clear everything

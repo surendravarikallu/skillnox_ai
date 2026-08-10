@@ -313,13 +313,20 @@ export default function InterviewRoom() {
   };
 
   const handleSubmitAnswer = async () => {
-    if (!questions) return;
+    console.log(`[InterviewRoom] 🔵 handleSubmitAnswer CALLED | currentQuestionIndex=${currentQuestionIndex} | questions.length=${questions?.length}`);
+    if (!questions) {
+      console.error("[InterviewRoom] ❌ handleSubmitAnswer BAILED: questions is null/undefined");
+      return;
+    }
     const qId = questions[currentQuestionIndex].id;
     const fallbackText = transcript.trim();
     const isLast = currentQuestionIndex === questions.length - 1;
 
+    console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1}/${questions.length} | qId=${qId} | isLast=${isLast} | fallbackText.length=${fallbackText.length}`);
+
     // 1. Instantly extract candidate's recorded audio blob (~20ms)
     const audioBlob = await getRecordedAudio();
+    console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} audioBlob: ${audioBlob ? audioBlob.size + ' bytes' : 'NULL'}`);
 
     // 2. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION
     clearTranscript();
@@ -327,31 +334,40 @@ export default function InterviewRoom() {
       setCurrentQuestionIndex(prev => prev + 1);
     }
 
-    // 3. Process Groq Cloud Whisper AI STT and track promise
+    // 3. Process Groq Cloud Whisper AI STT and save answer
     const savePromise = (async () => {
       let groqTranscript = fallbackText;
       if (audioBlob && audioBlob.size > 500) {
         try {
+          const token = localStorage.getItem("token");
+          console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} sending ${audioBlob.size} bytes to /api/transcribe...`);
           const res = await fetch('/api/transcribe', {
             method: 'POST',
-            headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
+            headers: {
+              'Content-Type': audioBlob.type || 'audio/webm',
+              ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
+            },
             body: audioBlob,
             credentials: 'include',
           });
+          console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} transcribe response status: ${res.status}`);
           if (res.ok) {
             const data = await res.json();
             if (data.text && data.text.trim().length > 0) {
               groqTranscript = data.text.trim();
-              console.log(`[InterviewRoom] ✅ Groq Cloud Whisper AI transcribed (${groqTranscript.length} chars): "${groqTranscript.substring(0, 60)}..."`);
+              console.log(`[InterviewRoom] ✅ Q${currentQuestionIndex + 1} Groq transcribed (${groqTranscript.length} chars): "${groqTranscript.substring(0, 60)}..."`);
             }
           }
         } catch (err) {
-          console.warn("[InterviewRoom] Background Groq Whisper STT error:", err);
+          console.warn(`[InterviewRoom] ⚠️ Q${currentQuestionIndex + 1} Groq Whisper STT error:`, err);
         }
+      } else {
+        console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} skipping transcribe (blob too small or null)`);
       }
 
       // Save the official Groq Whisper AI transcription directly to database
       const finalSaveAnswer = groqTranscript || "(no answer recorded)";
+      console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} saving answer (${finalSaveAnswer.length} chars): "${finalSaveAnswer.substring(0, 60)}..."`);
       return await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: finalSaveAnswer });
     })();
 
