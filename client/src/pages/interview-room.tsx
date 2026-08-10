@@ -377,41 +377,17 @@ export default function InterviewRoom() {
     if (qId && !loadingQuestions && interview?.status === 'in_progress' && spokenQuestionIdRef.current !== qId) {
       spokenQuestionIdRef.current = qId;
       
-      // Pause mic while AI speaks
-      pauseListening(); 
+      // Ensure mic is active & listening immediately on question change
+      startListening();
       
       console.log(`[InterviewRoom] Auto-speaking question (${qId}): "${currentQuestion.question.substring(0, 50)}..."`);
       
-      // Safety timeout: if TTS promise doesn't resolve within 8 seconds,
-      // forcibly restart the mic so the student isn't stuck in permanent silence.
-      let micRestarted = false;
-      const safetyTimer = setTimeout(() => {
-        if (!micRestarted) {
-          micRestarted = true;
-          console.warn("[InterviewRoom] ⏰ TTS safety timeout (8s). Force-restarting mic.");
-          startListening();
-        }
-      }, 8000);
-
-      const restartMicAfterSpeech = () => {
-        if (micRestarted) return;
-        micRestarted = true;
-        clearTimeout(safetyTimer);
-        console.log("[InterviewRoom] AI finished speaking, starting mic in 500ms...");
-        setTimeout(() => {
-          startListening();
-        }, 500);
-      };
-      
-      // Speak text immediately as question appears
-      speakText(currentQuestion.question)
-        .then(restartMicAfterSpeech)
-        .catch(err => {
-          console.error("[InterviewRoom] Automatic speech failed:", err);
-          restartMicAfterSpeech();
-        });
+      // Speak question text in background without locking/muting microphone
+      speakText(currentQuestion.question).catch(err => {
+        console.error("[InterviewRoom] Automatic question speech failed:", err);
+      });
     }
-  }, [currentQuestion?.id, currentQuestion?.question, loadingQuestions, interview?.status, speakText, pauseListening, startListening, micEnabled]);
+  }, [currentQuestion?.id, currentQuestion?.question, loadingQuestions, interview?.status, speakText, startListening]);
 
   // MIC WATCHDOG: During an active interview, ensure mic is always running.
   // If the mic drops for any reason (Chrome glitch, TTS race, etc.) and the student
@@ -420,14 +396,14 @@ export default function InterviewRoom() {
     if (interview?.status !== 'in_progress' || !micEnabled) return;
 
     const watchdog = setInterval(() => {
-      if (micEnabled && !isListening && !isAISpeaking && interview?.status === 'in_progress') {
+      if (micEnabled && !isListening && interview?.status === 'in_progress') {
         console.warn("[InterviewRoom] 🔧 Mic watchdog: mic not listening during active interview. Auto-restarting...");
         startListening();
       }
-    }, 5000);
+    }, 3000);
 
     return () => clearInterval(watchdog);
-  }, [interview?.status, micEnabled, isListening, isAISpeaking, startListening]);
+  }, [interview?.status, micEnabled, isListening, startListening]);
 
   // Ctrl+Enter keyboard shortcut to submit answer
   useEffect(() => {
