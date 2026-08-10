@@ -347,29 +347,17 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     } catch (e) {}
 
     // Micro-delay for ondataavailable event to push final chunk
-    await new Promise(r => setTimeout(r, 60));
+    await new Promise(r => setTimeout(r, 80));
 
     if (audioChunksRef.current.length === 0) return null;
     const type = mediaRecorderRef.current?.mimeType || "audio/webm";
     const blob = new Blob(audioChunksRef.current, { type });
 
-    // Stop existing recorder & clear chunks so Chrome cleanly resets stream encoder
+    // Atomically reset audio chunks array for next question while keeping recorder ALIVE!
     audioChunksRef.current = [];
-    if (mediaRecorderRef.current && mediaRecorderRef.current.state !== "inactive") {
-      try {
-        mediaRecorderRef.current.stop();
-      } catch (e) {}
-      mediaRecorderRef.current = null;
-    }
-
-    // Immediately start a fresh MediaRecorder session for the next question
-    setTimeout(() => {
-      startMediaRecorder();
-    }, 50);
-
-    console.log("[VoiceToText] Instant audio blob extracted for Groq STT:", blob.size, "bytes");
+    console.log("[VoiceToText] ✅ Instant audio blob extracted for Groq STT:", blob.size, "bytes");
     return blob;
-  }, [startMediaRecorder]);
+  }, []);
 
   const startListening = useCallback(() => {
     setError(null);

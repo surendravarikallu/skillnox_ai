@@ -330,7 +330,7 @@ export default function InterviewRoom() {
     // 3. Process Groq Cloud Whisper AI STT and track promise
     const savePromise = (async () => {
       let groqTranscript = fallbackText;
-      if (audioBlob && audioBlob.size > 500) {
+      if (audioBlob && audioBlob.size > 50) {
         try {
           const formData = new FormData();
           formData.append('file', audioBlob, 'recording.webm');
