@@ -332,12 +332,10 @@ export default function InterviewRoom() {
       let groqTranscript = fallbackText;
       if (audioBlob && audioBlob.size > 500) {
         try {
-          const formData = new FormData();
-          formData.append('file', audioBlob, 'recording.webm');
-
           const res = await fetch('/api/transcribe', {
             method: 'POST',
-            body: formData,
+            headers: { 'Content-Type': audioBlob.type || 'audio/webm' },
+            body: audioBlob,
             credentials: 'include',
           });
           if (res.ok) {

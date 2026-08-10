@@ -2063,57 +2063,25 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   // Speech-to-Text: Transcribes uploaded audio (accepts multipart/form-data or raw body)
   app.post('/api/transcribe', isAuthenticated, async (req: any, res) => {
     try {
-      let audioBuffer: Buffer;
-      let contentType: string = 'audio/webm';
-
-      // Check if this is a multipart form upload
-      if (req.headers['content-type']?.includes('multipart/form-data')) {
-        // Forward the entire request to Python service as multipart
+      let audioBuffer: Buffer = req.rawBody;
+      if (!audioBuffer || audioBuffer.length === 0) {
         const chunks: Buffer[] = [];
         for await (const chunk of req) {
           chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
         }
-        const rawBody = Buffer.concat(chunks);
-
-        // Forward multipart request directly to Python service
-        const pythonUrl = `${process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8060'}/api/transcribe`;
-        const headers: Record<string, string> = {
-          'content-type': req.headers['content-type'],
-        };
-        if (process.env.AI_SERVICE_API_KEY) {
-          headers['x-api-key'] = process.env.AI_SERVICE_API_KEY;
-        }
-
-        const pyRes = await fetch(pythonUrl, {
-          method: 'POST',
-          headers,
-          body: rawBody,
-          signal: AbortSignal.timeout(30000),
-        });
-
-        if (pyRes.ok) {
-          const data = await pyRes.json() as { success: boolean; text: string };
-          console.log(`[STT Route] Groq/Whisper transcription: "${(data.text || '').substring(0, 60)}..."`);
-          return res.json({ success: true, text: data.text || '' });
-        } else {
-          console.error(`[STT Route] Python STT error: ${pyRes.status}`);
-          return res.json({ success: true, text: '' });
-        }
+        audioBuffer = Buffer.concat(chunks);
       }
-
-      // Fallback: read raw body
-      const chunks: Buffer[] = [];
-      for await (const chunk of req) {
-        chunks.push(Buffer.isBuffer(chunk) ? chunk : Buffer.from(chunk));
-      }
-      audioBuffer = Buffer.concat(chunks);
 
       if (audioBuffer.length < 100) {
+        console.warn(`[STT Route] Warning: Audio buffer received is too small (${audioBuffer?.length || 0} bytes)`);
         return res.json({ success: true, text: "" });
       }
 
-      contentType = req.headers['content-type'] || 'audio/webm';
+      const contentType = req.headers['content-type'] || 'audio/webm';
+      console.log(`[STT Route] Processing ${audioBuffer.length} bytes of ${contentType} audio for transcription...`);
+
       const transcript = await pythonAI.transcribeAudio(audioBuffer, contentType);
+      console.log(`[STT Route] Transcription successful (${transcript.length} chars): "${transcript.substring(0, 60)}..."`);
       res.json({ success: true, text: transcript });
     } catch (error: any) {
       console.error("[STT Route] Error:", error);
