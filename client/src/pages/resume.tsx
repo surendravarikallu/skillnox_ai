@@ -8,6 +8,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { Textarea } from "@/components/ui/textarea";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { Dialog, DialogContent, DialogHeader, DialogTitle, DialogDescription } from "@/components/ui/dialog";
 import {
   FileText,
   Upload,
@@ -26,7 +27,11 @@ import {
   ShieldCheck,
   Loader2,
   BrainCircuit,
-  Cpu
+  Cpu,
+  Eye,
+  Download,
+  Copy,
+  ExternalLink
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -76,13 +81,14 @@ export default function ResumePage() {
     },
   });
 
+  const [viewResumeModalOpen, setViewResumeModalOpen] = useState(false);
   const [analyzingStepIndex, setAnalyzingStepIndex] = useState(0);
 
   const analyzingSteps = [
-    "⚡ Extracting PDF Vector Structure & Text Streams...",
-    "🔍 Deconstructing Skills, Projects & Professional Experience...",
-    "🤖 Evaluating Neural ATS Score & Market Alignment...",
-    "📊 Generating HackerRank Hiring Agent Assessment Report..."
+    "Parsing Document Structure & Content Streams...",
+    "Extracting Technical Competencies & Career Highlights...",
+    "Evaluating ATS Compliance & Format Alignment...",
+    "Generating Performance Index & Talent Analytics Report..."
   ];
 
   useEffect(() => {
@@ -163,45 +169,68 @@ export default function ResumePage() {
             <CardContent className="p-8">
               {uploadResumeMutation.isPending ? (
                 <div className="p-10 text-center space-y-6 relative overflow-hidden rounded-[2rem] bg-gradient-to-b from-primary/10 via-primary/5 to-transparent border border-primary/20 shadow-2xl">
-                  <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                  <div className="relative w-20 h-20 mx-auto flex items-center justify-center">
                     <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
-                    <div className="absolute inset-2 rounded-full border-2 border-dashed border-primary/40 animate-spin [animation-duration:6s] [animation-direction:reverse]" />
-                    <BrainCircuit className="w-10 h-10 text-primary animate-pulse" />
+                    <FileText className="w-8 h-8 text-primary animate-pulse" />
                   </div>
                   <div className="space-y-3 max-w-md mx-auto">
-                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/20 text-primary text-xs font-black uppercase tracking-widest animate-pulse">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/15 text-primary text-[11px] font-bold uppercase tracking-wider">
                       <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                      AI Decomposition Active
+                      Document Processing Active
                     </div>
-                    <h3 className="text-2xl font-black tracking-tight">Analyzing Resume Payload</h3>
-                    <p className="text-sm font-bold text-primary/90 min-h-[1.5rem] transition-all duration-300">
+                    <h3 className="text-xl font-bold tracking-tight">Analyzing Resume Document</h3>
+                    <p className="text-xs font-semibold text-muted-foreground min-h-[1.5rem] transition-all duration-300">
                       {analyzingSteps[analyzingStepIndex]}
                     </p>
-                    <div className="w-full bg-muted/60 h-2.5 rounded-full overflow-hidden p-0.5 border border-border shadow-inner">
+                    <div className="w-full bg-muted/60 h-2 rounded-full overflow-hidden p-0.5 border border-border shadow-inner">
                       <div 
-                        className="bg-gradient-to-r from-primary via-emerald-400 to-primary h-full rounded-full transition-all duration-500 animate-pulse" 
+                        className="bg-primary h-full rounded-full transition-all duration-500" 
                         style={{ width: `${Math.min(100, ((analyzingStepIndex + 1) / analyzingSteps.length) * 100)}%` }}
                       />
                     </div>
-                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-70">Please hold while neural models score your profile...</p>
+                    <p className="text-[10px] font-medium text-muted-foreground opacity-70">Please wait while your document is being processed...</p>
                   </div>
-                  <BorderBeam size={300} duration={8} />
                 </div>
               ) : loadingResume ? (
                 <div className="space-y-6"><Skeleton className="h-40 rounded-3xl" /><Skeleton className="h-6 w-1/2" /></div>
               ) : hasResume ? (
                 <div className="space-y-8">
-                  <div className="flex items-center gap-6 p-6 rounded-3xl bg-muted/50 border border-border group hover:border-primary/30 transition-all">
-                    <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center group-hover:scale-110 transition-transform">
-                      <FileText className="w-8 h-8 text-primary" />
+                  <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4 p-6 rounded-3xl bg-muted/50 border border-border group hover:border-primary/30 transition-all">
+                    <div className="flex items-center gap-4 min-w-0">
+                      <div className="w-14 h-14 rounded-2xl bg-primary/10 flex items-center justify-center shrink-0">
+                        <FileText className="w-7 h-7 text-primary" />
+                      </div>
+                      <div className="min-w-0">
+                        <p className="font-bold text-base truncate">{resume.fileName}</p>
+                        <p className="text-xs text-muted-foreground">Uploaded: {new Date(resume.createdAt!).toLocaleDateString()}</p>
+                      </div>
                     </div>
-                    <div className="flex-1 min-w-0">
-                      <p className="font-bold text-lg truncate">{resume.fileName}</p>
-                      <p className="text-xs text-muted-foreground uppercase font-black tracking-widest opacity-60">System Synchronized: {new Date(resume.createdAt!).toLocaleDateString()}</p>
+                    
+                    <div className="flex items-center gap-2 w-full sm:w-auto shrink-0">
+                      <Button 
+                        variant="outline" 
+                        size="sm" 
+                        onClick={() => setViewResumeModalOpen(true)}
+                        className="rounded-xl flex-1 sm:flex-none gap-2 font-semibold text-xs border-primary/30 hover:bg-primary/10 hover:text-primary"
+                      >
+                        <Eye className="w-4 h-4 text-primary" />
+                        View Resume
+                      </Button>
+
+                      {resume.fileUrl && (
+                        <Button 
+                          variant="secondary" 
+                          size="sm" 
+                          asChild
+                          className="rounded-xl flex-1 sm:flex-none gap-2 font-semibold text-xs"
+                        >
+                          <a href={resume.fileUrl} target="_blank" rel="noopener noreferrer" download>
+                            <Download className="w-4 h-4" />
+                            Download PDF
+                          </a>
+                        </Button>
+                      )}
                     </div>
-                    <Button variant="ghost" size="icon" className="rounded-xl hover:bg-primary/10 hover:text-primary">
-                      <ArrowUpRight className="w-5 h-5" />
-                    </Button>
                   </div>
 
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
@@ -506,6 +535,98 @@ export default function ResumePage() {
           )}
         </div>
       </div>
+
+      {/* Interactive Resume View Dialog */}
+      <Dialog open={viewResumeModalOpen} onOpenChange={setViewResumeModalOpen}>
+        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto rounded-[2rem] p-8">
+          <DialogHeader className="space-y-2">
+            <div className="flex items-center justify-between">
+              <Badge variant="outline" className="text-xs font-bold px-3 py-1 border-primary/30 text-primary">
+                Active Document Record
+              </Badge>
+              {resume?.fileUrl && (
+                <Button variant="ghost" size="sm" asChild className="gap-2 text-xs font-bold text-primary">
+                  <a href={resume.fileUrl} target="_blank" rel="noopener noreferrer">
+                    <ExternalLink className="w-3.5 h-3.5" />
+                    Open Original PDF
+                  </a>
+                </Button>
+              )}
+            </div>
+            <DialogTitle className="text-2xl font-bold">{resume?.fileName || "Uploaded Resume"}</DialogTitle>
+            <DialogDescription className="text-xs text-muted-foreground">
+              Extracted content and parsed skills for {user?.firstName || "Candidate"} ({user?.rollNumber || ""})
+            </DialogDescription>
+          </DialogHeader>
+
+          {resume && (
+            <div className="space-y-6 pt-4">
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-2xl bg-muted/40 border border-border text-center">
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">ATS Alignment Score</p>
+                  <p className="text-2xl font-black text-primary">{Math.round(resume.overallScore || 0)}%</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Extracted Skills</p>
+                  <p className="text-2xl font-black text-emerald-500">{skills.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Work History</p>
+                  <p className="text-2xl font-black">{experience.length}</p>
+                </div>
+                <div>
+                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Education</p>
+                  <p className="text-2xl font-black">{education.length}</p>
+                </div>
+              </div>
+
+              {/* Skills List */}
+              {skills.length > 0 && (
+                <div className="space-y-2">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                    <Code className="w-4 h-4 text-primary" />
+                    Extracted Technical Skills ({skills.length})
+                  </h4>
+                  <div className="flex flex-wrap gap-2 p-4 rounded-2xl bg-muted/30 border border-border">
+                    {skills.map((skill, i) => (
+                      <Badge key={i} variant="secondary" className="px-3 py-1 text-xs font-semibold rounded-lg bg-primary/10 text-primary border-0">
+                        {skill}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              {/* Parsed Raw Document Text */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                    <FileText className="w-4 h-4 text-primary" />
+                    Extracted Resume Text Content
+                  </h4>
+                  {parsedData?.raw && (
+                    <Button 
+                      variant="ghost" 
+                      size="sm" 
+                      onClick={() => {
+                        navigator.clipboard.writeText(parsedData.raw);
+                        toast({ title: "Copied!", description: "Resume text copied to clipboard." });
+                      }}
+                      className="h-8 text-xs font-semibold gap-1.5"
+                    >
+                      <Copy className="w-3.5 h-3.5" />
+                      Copy Raw Text
+                    </Button>
+                  )}
+                </div>
+                <div className="p-5 rounded-2xl bg-slate-950 text-slate-100 font-mono text-xs leading-relaxed max-h-[350px] overflow-y-auto whitespace-pre-wrap border border-slate-800 shadow-inner">
+                  {parsedData?.raw || "No raw text extracted."}
+                </div>
+              </div>
+            </div>
+          )}
+        </DialogContent>
+      </Dialog>
     </div>
   );
 }

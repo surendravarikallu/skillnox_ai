@@ -2,6 +2,8 @@ import type { Express } from "express";
 import type { Server } from "http";
 import { randomUUID } from "crypto";
 import path from "path";
+import fs from "fs";
+import express from "express";
 
 import { storage } from "./storage";
 import { sendEmail } from "./email";
@@ -1368,6 +1370,27 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
     }
   });
 
+  // Serve uploaded resume files statically
+  app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+
+  app.get('/api/resume/download', isAuthenticated, async (req: any, res) => {
+    try {
+      const userId = req.userId;
+      const resume = await storage.getResumeByUserId(userId);
+      if (!resume || !resume.fileUrl) {
+        return res.status(404).json({ message: "No stored resume file found" });
+      }
+      const absolutePath = path.resolve(process.cwd(), resume.fileUrl.replace(/^\//, ''));
+      if (fs.existsSync(absolutePath)) {
+        return res.sendFile(absolutePath);
+      }
+      res.status(404).json({ message: "File not found on server disk" });
+    } catch (err) {
+      console.error("Download error:", err);
+      res.status(500).json({ message: "Failed to download resume" });
+    }
+  });
+
   app.post('/api/resume/upload', isAuthenticated, upload.single('resume'), async (req: any, res) => {
     try {
       const userId = req.userId;
@@ -1515,9 +1538,25 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         });
       }
 
+      // Persist original uploaded file to disk for instant viewing/downloading
+      let fileUrl = "";
+      try {
+        const uploadDir = path.resolve(process.cwd(), 'uploads', 'resumes');
+        if (!fs.existsSync(uploadDir)) {
+          fs.mkdirSync(uploadDir, { recursive: true });
+        }
+        const safeFileName = `${userId}-${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+        const filePath = path.join(uploadDir, safeFileName);
+        fs.writeFileSync(filePath, file.buffer);
+        fileUrl = `/uploads/resumes/${safeFileName}`;
+      } catch (fileErr) {
+        console.warn("Could not save resume file to disk:", fileErr);
+      }
+
       const resume = await storage.createResume({
         userId,
         fileName: file.originalname,
+        fileUrl,
         parsedData: {
           raw: sanitizedFullText.substring(0, RAW_RESUME_STORE_LENGTH),
           aiAnalysis: aiAnalysis?.analysis || null,
