@@ -26,7 +26,8 @@ import {
   ChevronRight,
   BrainCircuit,
   Loader2,
-  Sparkles
+  Sparkles,
+  FileText
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -66,11 +67,11 @@ export default function InterviewRoom() {
   const [reportStepIndex, setReportStepIndex] = useState(0);
 
   const reportSteps = [
-    "Finalizing Voice Transcriptions & Micro-Signals...",
-    "Evaluating Technical Accuracy & Concept Depth...",
-    "Benchmarking Communication Structure & Soft Skills...",
-    "Calculating Overall Performance Score & Placement Potential...",
-    "Compiling Comprehensive Talent Assessment Report..."
+    "Processing Audio Transcripts & Candidate Responses...",
+    "Evaluating Technical Accuracy & Problem-Solving Approach...",
+    "Assessing Communication Clarity & Structured Responses...",
+    "Calculating Domain Scores & Candidate Performance Index...",
+    "Generating Comprehensive Assessment & Feedback Report..."
   ];
 
   // Check student slot status for WaitingRoom gate
@@ -544,46 +545,40 @@ export default function InterviewRoom() {
   if (isAnalyzingReport) {
     return (
       <div className="min-h-screen bg-background flex items-center justify-center p-6 relative overflow-hidden">
-        {/* Futuristic Background Gradients */}
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/10 via-background to-primary/5 opacity-80" />
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-96 h-96 bg-primary/20 rounded-full blur-[120px] pointer-events-none" />
+        {/* Subtle Background Gradient */}
+        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-background to-primary/5 opacity-80" />
 
         <Card className="max-w-xl w-full rounded-[2.5rem] glass-card p-10 text-center space-y-8 relative z-10 border-primary/20 shadow-2xl overflow-hidden">
           {/* Animated Spinner Radar */}
-          <div className="relative w-28 h-28 mx-auto flex items-center justify-center">
+          <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
             <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin [animation-duration:1.5s]" />
-            <div className="absolute inset-3 rounded-full border-2 border-dashed border-primary/40 animate-spin [animation-duration:8s] [animation-direction:reverse]" />
-            <div className="w-16 h-16 rounded-2xl bg-primary/10 flex items-center justify-center">
-              <BrainCircuit className="w-9 h-9 text-primary animate-pulse" />
-            </div>
+            <FileText className="w-9 h-9 text-primary animate-pulse" />
           </div>
 
           <div className="space-y-4">
             <div className="inline-flex items-center gap-2 px-4 py-1.5 rounded-full bg-primary/15 text-primary text-xs font-bold uppercase tracking-wider">
-              <Loader2 className="w-4 h-4 animate-spin text-primary" />
-              AI Evaluation Engine Active
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-primary" />
+              Performance Evaluation Active
             </div>
             
-            <h2 className="text-3xl font-black tracking-tight">Analyzing Your Responses</h2>
+            <h2 className="text-2xl font-bold tracking-tight">Evaluating Candidate Responses</h2>
             
-            <p className="text-sm font-semibold text-primary/90 min-h-[2rem] transition-all duration-300 px-4">
+            <p className="text-xs font-semibold text-muted-foreground min-h-[2rem] transition-all duration-300 px-4">
               {reportSteps[reportStepIndex]}
             </p>
 
-            {/* Glowing Animated Progress Bar */}
-            <div className="w-full bg-muted/60 h-3 rounded-full overflow-hidden p-0.5 border border-border shadow-inner max-w-md mx-auto">
+            {/* Clean Progress Bar */}
+            <div className="w-full bg-muted/60 h-2.5 rounded-full overflow-hidden p-0.5 border border-border shadow-inner max-w-md mx-auto">
               <div 
-                className="bg-gradient-to-r from-primary via-emerald-400 to-primary h-full rounded-full transition-all duration-700 ease-out" 
+                className="bg-primary h-full rounded-full transition-all duration-700 ease-out" 
                 style={{ width: `${Math.min(100, ((reportStepIndex + 1) / reportSteps.length) * 100)}%` }}
               />
             </div>
 
-            <p className="text-xs text-muted-foreground font-medium pt-2">
-              Generating clean performance analytics, technical scoring & detailed feedback report...
+            <p className="text-[11px] text-muted-foreground font-medium pt-1">
+              Please wait while your evaluation report is being generated...
             </p>
           </div>
-
-          <BorderBeam size={350} duration={10} />
         </Card>
       </div>
     );
