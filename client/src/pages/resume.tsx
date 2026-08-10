@@ -23,7 +23,10 @@ import {
   Sparkles,
   Zap,
   ArrowUpRight,
-  ShieldCheck
+  ShieldCheck,
+  Loader2,
+  BrainCircuit,
+  Cpu
 } from "lucide-react";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
@@ -72,6 +75,28 @@ export default function ResumePage() {
       toast({ title: "Upload Failed", description: error.message, variant: "destructive" });
     },
   });
+
+  const [analyzingStepIndex, setAnalyzingStepIndex] = useState(0);
+
+  const analyzingSteps = [
+    "⚡ Extracting PDF Vector Structure & Text Streams...",
+    "🔍 Deconstructing Skills, Projects & Professional Experience...",
+    "🤖 Evaluating Neural ATS Score & Market Alignment...",
+    "📊 Generating HackerRank Hiring Agent Assessment Report..."
+  ];
+
+  useEffect(() => {
+    let interval: any;
+    if (uploadResumeMutation.isPending) {
+      setAnalyzingStepIndex(0);
+      interval = setInterval(() => {
+        setAnalyzingStepIndex(prev => (prev + 1) % analyzingSteps.length);
+      }, 1200);
+    }
+    return () => {
+      if (interval) clearInterval(interval);
+    };
+  }, [uploadResumeMutation.isPending]);
 
   const addJdMutation = useMutation({
     mutationFn: async (data: { title: string; company: string; description: string }) => {
@@ -136,7 +161,33 @@ export default function ResumePage() {
               </div>
             </CardHeader>
             <CardContent className="p-8">
-              {loadingResume ? (
+              {uploadResumeMutation.isPending ? (
+                <div className="p-10 text-center space-y-6 relative overflow-hidden rounded-[2rem] bg-gradient-to-b from-primary/10 via-primary/5 to-transparent border border-primary/20 shadow-2xl">
+                  <div className="relative w-24 h-24 mx-auto flex items-center justify-center">
+                    <div className="absolute inset-0 rounded-full border-4 border-primary/20 border-t-primary animate-spin" />
+                    <div className="absolute inset-2 rounded-full border-2 border-dashed border-primary/40 animate-spin [animation-duration:6s] [animation-direction:reverse]" />
+                    <BrainCircuit className="w-10 h-10 text-primary animate-pulse" />
+                  </div>
+                  <div className="space-y-3 max-w-md mx-auto">
+                    <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/20 text-primary text-xs font-black uppercase tracking-widest animate-pulse">
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      AI Decomposition Active
+                    </div>
+                    <h3 className="text-2xl font-black tracking-tight">Analyzing Resume Payload</h3>
+                    <p className="text-sm font-bold text-primary/90 min-h-[1.5rem] transition-all duration-300">
+                      {analyzingSteps[analyzingStepIndex]}
+                    </p>
+                    <div className="w-full bg-muted/60 h-2.5 rounded-full overflow-hidden p-0.5 border border-border shadow-inner">
+                      <div 
+                        className="bg-gradient-to-r from-primary via-emerald-400 to-primary h-full rounded-full transition-all duration-500 animate-pulse" 
+                        style={{ width: `${Math.min(100, ((analyzingStepIndex + 1) / analyzingSteps.length) * 100)}%` }}
+                      />
+                    </div>
+                    <p className="text-[10px] font-black uppercase tracking-widest text-muted-foreground opacity-70">Please hold while neural models score your profile...</p>
+                  </div>
+                  <BorderBeam size={300} duration={8} />
+                </div>
+              ) : loadingResume ? (
                 <div className="space-y-6"><Skeleton className="h-40 rounded-3xl" /><Skeleton className="h-6 w-1/2" /></div>
               ) : hasResume ? (
                 <div className="space-y-8">
