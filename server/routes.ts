@@ -39,8 +39,7 @@ import {
 } from "./interview-patterns";
 
 import mammoth from "mammoth";
-// @ts-ignore
-import pdfParse from "pdf-parse/lib/pdf-parse.js";
+import { PDFParse } from "pdf-parse";
 
 
 // Use pdfjs-dist directly (more stable than recent pdf-parse ESM/CJS exports)
@@ -127,15 +126,16 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
   try {
     const isPdf = file.mimetype === 'application/pdf' || file.originalname.toLowerCase().endsWith('.pdf');
     if (isPdf) {
-      // Primary Layer: pdf-parse (Fastest & most accurate text extraction for Node.js)
+      // Primary Layer: PDFParse (pdf-parse v2)
       try {
-        const parsed = await pdfParse(file.buffer);
+        const parser = new PDFParse({ data: file.buffer });
+        const parsed = await parser.getText();
         if (parsed && parsed.text && parsed.text.trim().length > 15) {
-          console.log(`[PDF Extraction] Successfully extracted ${parsed.text.trim().length} characters via pdf-parse`);
+          console.log(`[PDF Extraction] Successfully extracted ${parsed.text.trim().length} characters via PDFParse`);
           return parsed.text.trim();
         }
       } catch (pdfParseErr) {
-        console.warn("[PDF Extraction] pdf-parse failed, trying pdfjs-dist fallback:", pdfParseErr);
+        console.warn("[PDF Extraction] PDFParse failed, trying pdfjs-dist fallback:", pdfParseErr);
       }
 
       // Secondary Layer: pdfjs-dist fallback
