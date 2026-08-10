@@ -237,10 +237,16 @@ class InferenceService:
         with torch.no_grad():
             predictions = self.placement_predictor(feature_tensor)
 
+        def _to_float(val):
+            if hasattr(val, 'item'):
+                return float(val.item())
+            arr = np.asarray(val)
+            return float(arr.ravel()[0]) if arr.size > 0 else 50.0
+
         return {
-            'probability_30_days': float(predictions['probability_30_days'].cpu().numpy()[0]),
-            'probability_60_days': float(predictions['probability_60_days'].cpu().numpy()[0]),
-            'probability_90_days': float(predictions['probability_90_days'].cpu().numpy()[0]),
+            'probability_30_days': _to_float(predictions['probability_30_days']),
+            'probability_60_days': _to_float(predictions['probability_60_days']),
+            'probability_90_days': _to_float(predictions['probability_90_days']),
         }
 
     # ------------------------------------------------------------------

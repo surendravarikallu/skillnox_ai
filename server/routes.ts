@@ -143,7 +143,7 @@ async function extractTextFromFile(file: Express.Multer.File): Promise<string> {
         const pdfjs = await getPdfJs();
         const loadingTask = pdfjs.getDocument({
           data: new Uint8Array(file.buffer),
-          standardFontDataUrl: path.resolve(process.cwd(), "node_modules/pdfjs-dist/standard_fonts/")
+          standardFontDataUrl: path.resolve(process.cwd(), "node_modules/pdfjs-dist/standard_fonts/").replace(/[/\\]+$/, "") + "/"
         });
         const pdf = await loadingTask.promise;
         let fullText = "";
