@@ -322,12 +322,60 @@ export async function textToSpeech(text: string): Promise<Buffer | null> {
  * Server-side Speech-to-Text using NVIDIA Canary / Faster-Whisper.
  * Returns transcribed text.
  */
+async function transcribeWithGroqDirect(audioData: Buffer, contentType: string): Promise<string> {
+  const keysStr = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || '';
+  const keys = keysStr.split(',').map(k => k.trim()).filter(Boolean);
+  if (keys.length === 0) return '';
+
+  const model = process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo';
+
+  for (let attempt = 0; attempt < keys.length; attempt++) {
+    const key = keys[attempt];
+    try {
+      const blob = new Blob([audioData], { type: contentType || 'audio/webm' });
+      const formData = new FormData();
+      formData.append('file', blob, 'recording.webm');
+      formData.append('model', model);
+      formData.append('language', 'en');
+
+      const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${key}`
+        },
+        body: formData,
+        signal: AbortSignal.timeout(15000)
+      });
+
+      if (response.ok) {
+        const data = await response.json() as any;
+        const text = (data.text || '').trim();
+        if (text) {
+          console.log(`[STT Direct Groq] Successfully transcribed (${text.length} chars): "${text.substring(0, 60)}..."`);
+          return text;
+        }
+      } else {
+        const errText = await response.text();
+        console.warn(`[STT Direct Groq] Key ${attempt + 1}/${keys.length} status ${response.status}: ${errText.substring(0, 100)}`);
+      }
+    } catch (err: any) {
+      console.warn(`[STT Direct Groq] Key ${attempt + 1}/${keys.length} error: ${err?.message || err}`);
+    }
+  }
+  return '';
+}
+
 export async function transcribeAudio(audioData: Buffer, contentType: string = 'audio/webm'): Promise<string> {
+  // 1. Primary: Direct Groq Cloud Whisper STT with 3-Key failover (~0.15s ultra-fast)
+  const directResult = await transcribeWithGroqDirect(audioData, contentType);
+  if (directResult) {
+    return directResult;
+  }
+
+  // 2. Secondary Fallback: Python AI Microservice
   const url = `${PYTHON_AI_SERVICE_URL}/api/transcribe`;
   try {
-    // @ts-ignore - FormData available in Node.js 18+
     const formData = new FormData();
-    // @ts-ignore
     const blob = new Blob([audioData], { type: contentType });
     formData.append('file', blob, 'recording.webm');
 
@@ -349,10 +397,10 @@ export async function transcribeAudio(audioData: Buffer, contentType: string = '
     }
 
     const data = await response.json() as { success: boolean; text: string };
-    console.log(`[STT] Transcribed: "${(data.text || '').substring(0, 60)}..."`);
+    console.log(`[STT Python Service] Transcribed: "${(data.text || '').substring(0, 60)}..."`);
     return data.text || '';
   } catch (error) {
-    console.error(`[STT] Error calling STT service:`, error);
+    console.error(`[STT] Error calling Python STT service:`, error);
     return '';
   }
 }

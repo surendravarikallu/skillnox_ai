@@ -25,11 +25,17 @@ sys.path.append(str(Path(__file__).parent.parent))
 from inference.inference_service import InferenceService
 from models.llm_models import get_llm
 
-from dotenv import load_dotenv
-
-# Load .env file from project root
-env_path = Path(__file__).parent.parent.parent / '.env'
-load_dotenv(dotenv_path=env_path)
+# Load .env file from project root (try multiple candidate locations)
+base_dir = Path(__file__).resolve().parent.parent.parent
+env_paths = [
+    base_dir / '.env',
+    Path.cwd() / '.env',
+    Path(__file__).resolve().parent.parent / '.env'
+]
+for p in env_paths:
+    if p.exists():
+        load_dotenv(dotenv_path=p)
+        break
 
 # Initialize LLM via Ollama
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
