@@ -64,12 +64,12 @@ class OllamaLLM:
         self.model_name = model_name
         self.base_url = base_url.rstrip("/")
         self.timeout = timeout
-        self._session = requests.Session()
+        self._session: Optional[requests.Session] = requests.Session()
         self._session.headers.update({"Content-Type": "application/json"})
         
         # High-performance multi-socket Async client for true parallel concurrency
         limits = httpx.Limits(max_keepalive_connections=350, max_connections=500)
-        self._async_client = httpx.AsyncClient(
+        self._async_client: Optional[httpx.AsyncClient] = httpx.AsyncClient(
             limits=limits,
             timeout=float(self.timeout),
             headers={"Content-Type": "application/json"}
@@ -106,6 +106,7 @@ class OllamaLLM:
             return
 
         try:
+            assert self._session is not None, "Session closed"
             resp = self._session.get(
                 f"{self.base_url}/api/tags", timeout=10
             )
@@ -153,7 +154,7 @@ class OllamaLLM:
                 messages.append({"role": "system", "content": system_prompt})
             messages.append({"role": "user", "content": prompt})
 
-            payload = {
+            payload: Dict = {
                 "model": nvidia_model,
                 "messages": messages,
                 "temperature": temperature,
@@ -174,6 +175,7 @@ class OllamaLLM:
                 for attempt in range(2):
                     is_rate_limited = False
                     try:
+                        assert self._async_client is not None, "Async client closed"
                         async with LLM_SEMAPHORE:
                             resp = await self._async_client.post(url, headers=headers, json=payload)
                             if resp.status_code == 429:
@@ -212,6 +214,7 @@ class OllamaLLM:
                 if json_format:
                     payload["format"] = "json"
 
+                assert self._async_client is not None, "Async client closed"
                 resp = await self._async_client.post(f"{self.base_url}/api/generate", json=payload)
                 resp.raise_for_status()
                 return resp.json().get("response", "").strip()
@@ -243,6 +246,7 @@ class OllamaLLM:
                     "max_tokens": max_length,
                     "top_p": 0.9
                 }
+                assert self._session is not None, "Session closed"
                 resp = self._session.post(url, headers=headers, json=payload, timeout=self.timeout)
                 resp.raise_for_status()
                 data = resp.json()
@@ -266,6 +270,7 @@ class OllamaLLM:
             if system_prompt:
                 payload["system"] = system_prompt
 
+            assert self._session is not None, "Session closed"
             resp = self._session.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
             resp.raise_for_status()
             return resp.json().get("response", "").strip()
@@ -456,7 +461,7 @@ class OllamaLLM:
     # Communication Evaluation (Async)
     # ------------------------------------------------------------------
 
-    async def evaluate_communication_async(self, answer: str, question: str = None) -> Dict:
+    async def evaluate_communication_async(self, answer: str, question: Optional[str] = None) -> Dict:
         """Evaluate communication-specific aspects (Async)."""
         system = (
             "You are an expert communication evaluator. "
@@ -545,11 +550,11 @@ class OllamaLLM:
             return {"skills": [], "experience": [], "education": []}
 
     # ------------------------------------------------------------------
-    # Resume Analysis / HackerRank Evaluator (Async)
+    # Resume Analysis / Combined ATS + Technical Depth Evaluator (Async)
     # ------------------------------------------------------------------
 
     async def analyze_resume_async(self, resume_text: str, jd_text: Optional[str] = None) -> Dict:
-        """Analyze and score resume using HackerRank criteria and GitHub data."""
+        """Analyze and score resume using combined ATS + HackerRank criteria in a single LLM call."""
         try:
             # 1. Look for GitHub URL to enrich evaluation
             github_data = ""
@@ -568,14 +573,166 @@ class OllamaLLM:
             if github_data:
                 combined_text = f"{resume_text}\n\n{github_data}"
 
-            # 3. Render prompt templates
-            criteria_template = jinja_env.get_template("resume_evaluation_criteria.jinja")
-            prompt = criteria_template.render(text_content=combined_text)
+            # 3. Try combined evaluation first (ATS + Technical Depth in one call)
+            try:
+                result = await self._run_combined_evaluation(combined_text, jd_text)
+                if result:
+                    return result
+            except Exception as combined_err:
+                print(f"Combined evaluation failed, falling back to legacy: {combined_err}")
 
-            system_template = jinja_env.get_template("resume_evaluation_system_message.jinja")
-            system_prompt = system_template.render()
+            # 4. Fallback to legacy HackerRank-only evaluation
+            return await self._run_legacy_hackerrank_evaluation(combined_text, resume_text)
 
-            print("Evaluating resume using HackerRank scoring model...")
+        except Exception as e:
+            print(f"Error in analyze_resume_async: {e}")
+            return self._fallback_resume_result(resume_text)
+
+    async def _run_combined_evaluation(self, combined_text: str, jd_text: Optional[str] = None) -> Optional[Dict]:
+        """Run the combined ATS + Technical Depth evaluation in a single LLM call."""
+        criteria_template = jinja_env.get_template("resume_combined_evaluation.jinja")
+        prompt = criteria_template.render(text_content=combined_text, jd_text=jd_text or "")
+
+        system_template = jinja_env.get_template("resume_combined_system_message.jinja")
+        system_prompt = system_template.render()
+
+        print("Evaluating resume using Combined ATS + Technical Depth model...")
+        response_text = await self.generate_async(
+            prompt=prompt,
+            max_length=3000,
+            temperature=0.2,
+            system_prompt=system_prompt,
+            json_format=True
+        )
+
+        # Strip markdown formatting from JSON
+        if "```" in response_text:
+            response_text = re.sub(r"```[a-zA-Z]*", "", response_text).strip()
+
+        parsed = json.loads(response_text)
+
+        # Extract ATS evaluation
+        ats_eval = parsed.get("ats_evaluation", {})
+
+        # Compute ATS score strictly as the sum of all 8 breakdown sections
+        if ats_eval.get("sections"):
+            sections = ats_eval["sections"]
+            ats_score = sum(
+                sections.get(s, {}).get("score", 0)
+                for s in ["contact_info", "summary", "experience", "projects", "skills", "education", "formatting", "readability"]
+            )
+            ats_eval["ats_score"] = ats_score
+        else:
+            ats_score = ats_eval.get("ats_score", 0)
+
+        # Extract technical depth
+        tech_depth = parsed.get("technical_depth", {})
+        td_scores = tech_depth.get("scores", {})
+        open_source = td_scores.get("open_source", {}).get("score", 0)
+        self_projects = td_scores.get("self_projects", {}).get("score", 0)
+        production = td_scores.get("production", {}).get("score", 0)
+        technical_skills = td_scores.get("technical_skills", {}).get("score", 0)
+        bonus = tech_depth.get("bonus_points", {}).get("total", 0)
+        deductions = tech_depth.get("deductions", {}).get("total", 0)
+        raw_td_score = open_source + self_projects + production + technical_skills + bonus - deductions
+        td_score = min(100.0, max(0.0, float(raw_td_score)))
+
+        # ATS score is the primary score
+        overall_score = min(100.0, max(0.0, float(ats_score)))
+
+        strengths = tech_depth.get("key_strengths", [])
+        improvements = ats_eval.get("overall_improvements", []) or tech_depth.get("areas_for_improvement", [])
+
+        print(f"Combined Evaluation: ATS={overall_score}%, TechnicalDepth={td_score}%")
+
+        return {
+            "analysis": response_text,
+            "score": overall_score,
+            "strengths": strengths,
+            "suggestions": improvements,
+            "improvements": improvements,
+            "skills": self._extract_skills(combined_text),
+            # Legacy field — kept for backward compatibility with existing UI
+            "hiringAgentEvaluation": tech_depth,
+            # New fields for the upgraded UI
+            "atsEvaluation": ats_eval,
+            "technicalDepthScore": td_score,
+        }
+
+    async def _run_legacy_hackerrank_evaluation(self, combined_text: str, resume_text: str) -> Dict:
+        """Fallback to legacy HackerRank-only evaluation."""
+        criteria_template = jinja_env.get_template("resume_evaluation_criteria.jinja")
+        prompt = criteria_template.render(text_content=combined_text)
+
+        system_template = jinja_env.get_template("resume_evaluation_system_message.jinja")
+        system_prompt = system_template.render()
+
+        print("Evaluating resume using legacy HackerRank scoring model...")
+        response_text = await self.generate_async(
+            prompt=prompt,
+            max_length=2000,
+            temperature=0.2,
+            system_prompt=system_prompt,
+            json_format=True
+        )
+
+        if "```" in response_text:
+            response_text = re.sub(r"```[a-zA-Z]*", "", response_text).strip()
+
+        parsed_evaluation = json.loads(response_text)
+
+        scores = parsed_evaluation.get("scores", {})
+        open_source = scores.get("open_source", {}).get("score", 0)
+        self_projects = scores.get("self_projects", {}).get("score", 0)
+        production = scores.get("production", {}).get("score", 0)
+        technical_skills = scores.get("technical_skills", {}).get("score", 0)
+        bonus = parsed_evaluation.get("bonus_points", {}).get("total", 0)
+        deductions = parsed_evaluation.get("deductions", {}).get("total", 0)
+
+        raw_total_score = open_source + self_projects + production + technical_skills + bonus - deductions
+        overall_score = min(100.0, max(0.0, float(raw_total_score)))
+
+        strengths = parsed_evaluation.get("key_strengths", [])
+        improvements = parsed_evaluation.get("areas_for_improvement", [])
+
+        return {
+            "analysis": response_text,
+            "score": overall_score,
+            "strengths": strengths,
+            "suggestions": improvements,
+            "improvements": improvements,
+            "skills": self._extract_skills(resume_text),
+            "hiringAgentEvaluation": parsed_evaluation
+        }
+
+    def _fallback_resume_result(self, resume_text: str) -> Dict:
+        """Return a safe fallback result when all evaluation methods fail."""
+        return {
+            "analysis": None,
+            "score": 60.0,
+            "strengths": ["Clear technical section"],
+            "suggestions": ["Add link to GitHub portfolio", "Include impact metrics"],
+            "improvements": ["Add link to GitHub portfolio", "Include impact metrics"],
+            "skills": self._extract_skills(resume_text)
+        }
+
+    # ------------------------------------------------------------------
+    # JD-Specific Resume Match Analysis (Async)
+    # ------------------------------------------------------------------
+
+    async def analyze_resume_jd_match_async(self, resume_text: str, jd_text: str) -> Dict:
+        """Analyze how well a resume matches a specific job description."""
+        try:
+            jd_template = jinja_env.get_template("resume_jd_match.jinja")
+            prompt = jd_template.render(text_content=resume_text, jd_text=jd_text)
+
+            system_prompt = (
+                "You are an expert ATS system analyzing resume-to-JD alignment. "
+                "Evaluate keyword matches, section relevance, and provide targeted improvements. "
+                "Respond ONLY with valid JSON."
+            )
+
+            print("Analyzing resume-to-JD match...")
             response_text = await self.generate_async(
                 prompt=prompt,
                 max_length=2000,
@@ -584,50 +741,22 @@ class OllamaLLM:
                 json_format=True
             )
 
-            # Strip markdown formatting from JSON
             if "```" in response_text:
                 response_text = re.sub(r"```[a-zA-Z]*", "", response_text).strip()
 
-            parsed_evaluation = json.loads(response_text)
-
-            # 4. Calculate total score
-            scores = parsed_evaluation.get("scores", {})
-            open_source = scores.get("open_source", {}).get("score", 0)
-            self_projects = scores.get("self_projects", {}).get("score", 0)
-            production = scores.get("production", {}).get("score", 0)
-            technical_skills = scores.get("technical_skills", {}).get("score", 0)
-            
-            bonus = parsed_evaluation.get("bonus_points", {}).get("total", 0)
-            deductions = parsed_evaluation.get("deductions", {}).get("total", 0)
-
-            raw_total_score = open_source + self_projects + production + technical_skills + bonus - deductions
-            # Normalize to 0-100 scale for standard progress rendering, but clamp cleanly
-            overall_score = min(100.0, max(0.0, float(raw_total_score)))
-
-            # Extract list section helper for fallback
-            strengths = parsed_evaluation.get("key_strengths", [])
-            improvements = parsed_evaluation.get("areas_for_improvement", [])
-
-            return {
-                "analysis": response_text,
-                "score": overall_score,
-                "strengths": strengths,
-                "suggestions": improvements,
-                "improvements": improvements,
-                "skills": self._extract_skills(resume_text),
-                "hiringAgentEvaluation": parsed_evaluation
-            }
+            parsed = json.loads(response_text)
+            print(f"JD Match Score: {parsed.get('jd_match_score', 'N/A')}%")
+            return parsed
 
         except Exception as e:
-            print(f"Error in analyze_resume_async (HackerRank Scorer): {e}")
-            # Fallback to simple analysis if the model output fails to parse
+            print(f"Error in analyze_resume_jd_match_async: {e}")
             return {
-                "analysis": None,
-                "score": 60.0,
-                "strengths": ["Clear technical section"],
-                "suggestions": ["Add link to GitHub portfolio", "Include impact metrics"],
-                "improvements": ["Add link to GitHub portfolio", "Include impact metrics"],
-                "skills": self._extract_skills(resume_text)
+                "jd_match_score": 50,
+                "matched_keywords": [],
+                "missing_keywords": [],
+                "section_relevance": {},
+                "targeted_improvements": ["Tailor your resume keywords to match the job description"],
+                "summary": "Analysis could not be completed. Please try again."
             }
 
     # ------------------------------------------------------------------

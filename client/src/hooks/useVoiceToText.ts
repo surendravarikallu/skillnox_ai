@@ -19,6 +19,7 @@ interface UseVoiceToTextReturn {
   micTestResult: MicTestResult;
   testMicrophone: () => Promise<boolean>;
   getRecordedAudio: () => Promise<Blob | null>;
+  setExternalStream: (stream: MediaStream | null) => void;
 }
 
 export function useVoiceToText(): UseVoiceToTextReturn {
@@ -27,6 +28,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const audioChunksRef = useRef<Blob[]>([]);
   const mediaStreamRef = useRef<MediaStream | null>(null);
+  const externalStreamRef = useRef<MediaStream | null>(null);
   const [connectionState, setConnectionState] = useState<ConnectionState>("disconnected");
   const [error, setError] = useState<string | null>(null);
   const [micTestResult, setMicTestResult] = useState<MicTestResult>("untested");
@@ -296,7 +298,16 @@ export function useVoiceToText(): UseVoiceToTextReturn {
       // Fresh recording session — clear any stale chunks
       audioChunksRef.current = [];
 
-      // Validate audio stream — Chrome can silently end tracks
+      // Priority 1: Reuse audio tracks from shared camera/mic stream
+      if (externalStreamRef.current) {
+        const extAudioTracks = externalStreamRef.current.getAudioTracks();
+        if (extAudioTracks.length > 0 && extAudioTracks.every(t => t.readyState === 'live')) {
+          mediaStreamRef.current = new MediaStream(extAudioTracks);
+          console.log("[VoiceToText] Using shared camera microphone stream");
+        }
+      }
+
+      // Priority 2: Validate existing stream
       if (mediaStreamRef.current) {
         const tracks = mediaStreamRef.current.getAudioTracks();
         if (tracks.length === 0 || tracks.some(t => t.readyState === 'ended')) {
@@ -305,7 +316,9 @@ export function useVoiceToText(): UseVoiceToTextReturn {
         }
       }
 
+      // Priority 3: Acquire dedicated audio stream if no shared stream
       if (!mediaStreamRef.current) {
+        console.log("[VoiceToText] Acquiring dedicated getUserMedia({ audio: true }) stream");
         mediaStreamRef.current = await navigator.mediaDevices.getUserMedia({ audio: true });
       }
       let options: MediaRecorderOptions = { audioBitsPerSecond: 32000 };
@@ -405,9 +418,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     mediaRecorderRef.current = null;
 
     // Immediately start a fresh MediaRecorder for the NEXT question
-    // This runs async but we don't need to await it — it just needs to be recording
-    // by the time the user starts speaking for the next question
-    startMediaRecorder();
+    await startMediaRecorder();
 
     return blob;
   }, [startMediaRecorder]);
@@ -644,6 +655,11 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     };
   }, []);
 
+  const setExternalStream = useCallback((stream: MediaStream | null) => {
+    externalStreamRef.current = stream;
+    console.log(`[VoiceToText] External stream ${stream ? 'SET' : 'CLEARED'} (${stream?.getAudioTracks().length || 0} audio tracks)`);
+  }, []);
+
   return {
     transcript,
     isListening,
@@ -660,6 +676,7 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     micTestResult,
     testMicrophone,
     getRecordedAudio,
+    setExternalStream,
   };
 }
 

@@ -1,0 +1,41 @@
+Perform a JD-SPECIFIC analysis of this resume against the provided job description.
+
+**YOUR TASK**: Evaluate how well this resume aligns with the specific job description. This is NOT a general ATS score — this is a targeted match analysis.
+
+**INSTRUCTIONS:**
+1. Extract the top 10-15 keywords/skills required from the job description
+2. Check which of those keywords appear in the resume
+3. Score overall alignment (0-100)
+4. Provide targeted improvements to better match THIS specific JD
+
+**IMPORTANT CONSTRAINTS:**
+- matched_keywords: List of JD keywords found in the resume (max 15)
+- missing_keywords: List of JD keywords NOT found in the resume (max 10)
+- section_relevance: Score each resume section's relevance to the JD
+- targeted_improvements: 3-5 specific suggestions to better align the resume to this JD
+- Each improvement should be actionable and specific to the JD
+
+Respond with ONLY this JSON structure (no markdown, no extra text):
+
+{
+    "jd_match_score": 0,
+    "matched_keywords": ["keyword1", "keyword2"],
+    "missing_keywords": ["keyword1", "keyword2"],
+    "section_relevance": {
+        "experience": { "score": 0, "max": 25, "feedback": "How relevant is the experience section" },
+        "projects": { "score": 0, "max": 25, "feedback": "How relevant are the projects" },
+        "skills": { "score": 0, "max": 30, "feedback": "How well do skills match JD requirements" },
+        "education": { "score": 0, "max": 20, "feedback": "Education relevance to the role" }
+    },
+    "targeted_improvements": [
+        "Specific actionable improvement 1 for this JD",
+        "Specific actionable improvement 2 for this JD"
+    ],
+    "summary": "Brief 2-3 sentence summary of how well this resume matches the job description"
+}
+
+**JOB DESCRIPTION:**
+{{ jd_text }}
+
+**RESUME:**
+{{ text_content }}

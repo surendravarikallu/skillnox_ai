@@ -137,12 +137,14 @@ export class DatabaseStorage implements IStorage {
   }
 
   async getUserByEmail(email: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.email, email));
+    if (!email) return undefined;
+    const [user] = await db.select().from(users).where(sql`LOWER(${users.email}) = LOWER(${email})`);
     return user;
   }
 
   async getUserByRollNumber(rollNumber: string): Promise<User | undefined> {
-    const [user] = await db.select().from(users).where(eq(users.rollNumber, rollNumber));
+    if (!rollNumber) return undefined;
+    const [user] = await db.select().from(users).where(sql`LOWER(${users.rollNumber}) = LOWER(${rollNumber})`);
     return user;
   }
 

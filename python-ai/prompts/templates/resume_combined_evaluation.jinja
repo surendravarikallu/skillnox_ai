@@ -1,0 +1,132 @@
+Perform a DUAL evaluation of this resume:
+
+1. **ATS Compliance Score** — How well would this resume pass through real ATS systems?
+2. **Technical Depth Score** — How strong is this candidate technically (HackerRank-style)?
+
+**MANDATORY: You MUST fill ALL 8 ATS sections AND ALL 4 technical depth categories.**
+
+**CRITICAL INSTRUCTIONS FOR ATS SCORING:**
+- READ every single bullet point in Experience, Projects, and Education sections
+- **WORK EXPERIENCE & INTERNSHIPS**: Search carefully for internships, part-time roles, or ambassador roles. If ZERO work/internship roles exist in the text, YOU MUST SET `sections.experience.score = 0`. Do NOT hallucinate an experience score for academic projects! If roles exist (e.g. Full Stack Intern), evaluate them fully.
+- **NO QUANTIFIED METRICS (NUMBERS/%)**: Award 0 points for metric criteria in experience and projects if bullet points lack concrete numbers/metrics.
+- **GRAMMAR / BROKEN SENTENCES**: Check for awkward phrasing or broken sentences (e.g. "programmer on, with regular practice"). Deduct 3-5 points in `readability`.
+- Check if projects have links, live demos, or GitHub repositories. Deduct points if missing.
+- Assess keyword relevance for a software/tech role (Git, Cloud, Testing, CI/CD, JS frameworks).
+- **CALIBRATION MANDATE**: Un-inflated realistic scoring. Resumes without internships or quantified metrics MUST be scored between 45% and 68% total.
+- ATS score = sum of all 8 section scores (contact_info + summary + experience + projects + skills + education + formatting + readability) (max 100)
+
+**CRITICAL INSTRUCTIONS FOR TECHNICAL DEPTH:**
+- Having personal GitHub repos does NOT count as open source contributions
+- Simple projects (todo, calculator, CRUD) should score LOW (1-9)
+- Projects without links get 30-50% lower scores
+- Total = categories + bonus - deductions (max 120)
+
+{% if jd_text %}
+**JOB DESCRIPTION CONTEXT:**
+When scoring, also consider alignment with this specific job description:
+{{ jd_text }}
+
+Factor JD keywords into the skills scoring and provide JD-specific missing keywords.
+{% endif %}
+
+**IMPORTANT LIST CONSTRAINTS:**
+- Each section feedback: 1-3 sentences maximum
+- improvements arrays: 1-3 items per section maximum
+- missing_keywords: 3-8 keywords maximum
+- weak_bullets: 2-5 examples maximum
+- key_strengths: 1-5 items maximum
+- areas_for_improvement: 1-3 items maximum
+- overall_improvements: 3-5 items maximum
+
+Respond with ONLY this JSON structure (no markdown, no extra text):
+
+{
+    "ats_evaluation": {
+        "ats_score": 0,
+        "sections": {
+            "contact_info": {
+                "score": 0,
+                "max": 5,
+                "feedback": "Brief assessment of contact information completeness",
+                "status": "pass|needs_work|critical"
+            },
+            "summary": {
+                "score": 0,
+                "max": 10,
+                "feedback": "Assessment of professional summary/objective",
+                "status": "pass|needs_work|critical"
+            },
+            "experience": {
+                "score": 0,
+                "max": 20,
+                "feedback": "Assessment of work experience section quality",
+                "status": "pass|needs_work|critical",
+                "improvements": ["specific actionable improvement 1", "specific actionable improvement 2"]
+            },
+            "projects": {
+                "score": 0,
+                "max": 15,
+                "feedback": "Assessment of projects section",
+                "status": "pass|needs_work|critical",
+                "improvements": ["specific improvement 1"]
+            },
+            "skills": {
+                "score": 0,
+                "max": 20,
+                "feedback": "Assessment of skills/keywords section",
+                "status": "pass|needs_work|critical",
+                "missing_keywords": ["keyword1", "keyword2"]
+            },
+            "education": {
+                "score": 0,
+                "max": 10,
+                "feedback": "Assessment of education section",
+                "status": "pass|needs_work|critical"
+            },
+            "formatting": {
+                "score": 0,
+                "max": 10,
+                "feedback": "Assessment of resume formatting and ATS compatibility",
+                "status": "pass|needs_work|critical",
+                "issues": ["formatting issue 1"]
+            },
+            "readability": {
+                "score": 0,
+                "max": 10,
+                "feedback": "Assessment of readability and conciseness",
+                "status": "pass|needs_work|critical"
+            }
+        },
+        "overall_improvements": [
+            "Top priority improvement 1",
+            "Top priority improvement 2",
+            "Top priority improvement 3"
+        ],
+        "keyword_density": {
+            "found": ["keyword1", "keyword2"],
+            "missing": ["missing_keyword1", "missing_keyword2"]
+        },
+        "bullet_point_analysis": {
+            "total_bullets": 0,
+            "with_metrics": 0,
+            "with_action_verbs": 0,
+            "weak_bullets": ["Example of a weak bullet point from the resume"]
+        }
+    },
+    "technical_depth": {
+        "scores": {
+            "open_source": {"score": 0, "max": 35, "evidence": "Brief evidence string"},
+            "self_projects": {"score": 0, "max": 30, "evidence": "Brief evidence string"},
+            "production": {"score": 0, "max": 25, "evidence": "Brief evidence string"},
+            "technical_skills": {"score": 0, "max": 10, "evidence": "Brief evidence string"}
+        },
+        "bonus_points": {"total": 0, "breakdown": "Description of bonus points awarded"},
+        "deductions": {"total": 0, "reasons": "Description of deductions applied"},
+        "key_strengths": ["strength1", "strength2"],
+        "areas_for_improvement": ["improvement1", "improvement2"]
+    }
+}
+
+Resume to evaluate:
+
+{{ text_content }}

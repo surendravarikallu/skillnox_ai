@@ -408,6 +408,20 @@ async def analyze_resume(request: ResumeAnalyzeRequest):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@app.post("/api/llm/analyze-resume-jd-match")
+async def analyze_resume_jd_match(request: ResumeAnalyzeRequest):
+    """Analyze resume-to-JD keyword match (Async)"""
+    try:
+        if not request.jd_text:
+            raise HTTPException(status_code=400, detail="jd_text is required for JD match analysis")
+        result = await llm.analyze_resume_jd_match_async(request.resume_text, request.jd_text)
+        return {"success": True, "data": result}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 # ---------------------------------------------------------------------------
 def get_nvidia_keys() -> List[str]:
     keys_str = os.environ.get("NVIDIA_API_KEYS", "")

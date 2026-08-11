@@ -1443,6 +1443,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       let improvements: string[] = [];
       let aiSkills: string[] = [];
       let hiringAgentEvaluation: any = null;
+      let atsEvaluation: any = null;
+      let technicalDepthScore: number | null = null;
 
       if (aiAnalysis) {
         overallScore = aiAnalysis.score || overallScore;
@@ -1451,7 +1453,9 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         improvements = aiAnalysis.improvements || [];
         aiSkills = aiAnalysis.skills || [];
         hiringAgentEvaluation = aiAnalysis.hiringAgentEvaluation || null;
-        console.log(`AI Analysis: Score=${overallScore}, Suggestions=${suggestions.length}, Skills=${aiSkills.length}`);
+        atsEvaluation = aiAnalysis.atsEvaluation || null;
+        technicalDepthScore = aiAnalysis.technicalDepthScore ?? null;
+        console.log(`AI Analysis: ATS=${overallScore}%, TechDepth=${technicalDepthScore ?? 'N/A'}%, Suggestions=${suggestions.length}, Skills=${aiSkills.length}`);
       } else {
         console.log("AI analysis unavailable, falling back to fast scoring");
         const scoreResult = await withTimeout(
@@ -1538,22 +1542,65 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         });
       }
 
-      // Persist original uploaded file to disk for instant viewing/downloading
+      // Persist original uploaded file to disk in fullname_rollnumber format and clean up old files
       let fileUrl = "";
+      let existingResume: any = null;
       try {
+        const user = await storage.getUser(userId);
+        existingResume = await storage.getResumeByUserId(userId);
         const uploadDir = path.resolve(process.cwd(), 'uploads', 'resumes');
         if (!fs.existsSync(uploadDir)) {
           fs.mkdirSync(uploadDir, { recursive: true });
         }
-        const safeFileName = `${userId}-${Date.now()}-${file.originalname.replace(/[^a-zA-Z0-9.-]/g, '_')}`;
+
+        // Construct clean fullname_rollnumber filename
+        const rawFirstName = (user?.firstName || '').trim();
+        const rawLastName = (user?.lastName || '').trim();
+        const rawFullName = `${rawFirstName} ${rawLastName}`.trim() || 'student';
+        const cleanFullName = rawFullName.replace(/[^a-zA-Z0-9]/g, '_').replace(/_+/g, '_').replace(/^_+|_+$/g, '');
+        const cleanRollNumber = (user?.rollNumber || user?.email?.split('@')[0] || userId).trim().replace(/[^a-zA-Z0-9]/g, '_');
+        const ext = path.extname(file.originalname).toLowerCase() || '.pdf';
+
+        const safeFileName = `${cleanFullName}_${cleanRollNumber}${ext}`;
+
+        // 1. Clean up old file referenced by database
+        if (existingResume && existingResume.fileUrl) {
+          try {
+            const oldFilePath = path.resolve(process.cwd(), existingResume.fileUrl.replace(/^\//, ''));
+            if (fs.existsSync(oldFilePath)) {
+              fs.unlinkSync(oldFilePath);
+              console.log(`[Storage Cleanup] Deleted previous resume file for user ${userId}: ${oldFilePath}`);
+            }
+          } catch (cleanupErr) {
+            console.warn(`[Storage Cleanup] Warning deleting old resume file:`, cleanupErr);
+          }
+        }
+
+        // 2. Clean up any orphan files on disk matching userId or rollNumber
+        try {
+          const files = fs.readdirSync(uploadDir);
+          for (const f of files) {
+            if (f.startsWith(`${userId}-`) || f.includes(cleanRollNumber)) {
+              const p = path.join(uploadDir, f);
+              if (fs.existsSync(p)) {
+                fs.unlinkSync(p);
+                console.log(`[Storage Cleanup] Removed old resume file: ${f}`);
+              }
+            }
+          }
+        } catch (dirErr) {
+          console.warn(`[Storage Cleanup] Warning scanning old resume files:`, dirErr);
+        }
+
         const filePath = path.join(uploadDir, safeFileName);
         fs.writeFileSync(filePath, file.buffer);
         fileUrl = `/uploads/resumes/${safeFileName}`;
+        console.log(`[Storage] Saved resume as: ${safeFileName}`);
       } catch (fileErr) {
         console.warn("Could not save resume file to disk:", fileErr);
       }
 
-      const resume = await storage.createResume({
+      const resumePayload = {
         userId,
         fileName: file.originalname,
         fileUrl,
@@ -1561,6 +1608,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           raw: sanitizedFullText.substring(0, RAW_RESUME_STORE_LENGTH),
           aiAnalysis: aiAnalysis?.analysis || null,
           hiringAgentEvaluation: hiringAgentEvaluation,
+          atsEvaluation: atsEvaluation,
+          technicalDepthScore: technicalDepthScore,
           suggestions: suggestions.length > 0 ? suggestions : [],
           strengths: strengths.length > 0 ? strengths : [],
           improvements: improvements.length > 0 ? improvements : [],
@@ -1573,9 +1622,13 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         experience,
         education,
         overallScore,
-      });
+      };
 
-      console.log(`Resume created: Skills=${finalSkills.length}, Suggestions=${suggestions.length}, Score=${overallScore}`);
+      const resume = existingResume 
+        ? await storage.updateResume(existingResume.id, resumePayload as any)
+        : await storage.createResume(resumePayload);
+
+      console.log(`Resume updated/created: User=${userId}, Skills=${finalSkills.length}, Score=${overallScore}`);
 
       res.json(resume);
     } catch (error) {
@@ -1616,12 +1669,12 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       if (resume && resumeContent) {
         try {
-          jdBasedAnalysis = await pythonAI.analyzeResumeWithAI(resumeContent, description);
+          jdBasedAnalysis = await pythonAI.analyzeResumeJDMatch(resumeContent, description);
           if (jdBasedAnalysis) {
-            jdMatchScore = jdBasedAnalysis.score || matchScore;
-            jdSuggestions = jdBasedAnalysis.suggestions || [];
-            jdStrengths = jdBasedAnalysis.strengths || [];
-            jdImprovements = jdBasedAnalysis.improvements || [];
+            jdMatchScore = jdBasedAnalysis.jd_match_score || jdBasedAnalysis.score || matchScore;
+            jdSuggestions = jdBasedAnalysis.targeted_improvements || jdBasedAnalysis.suggestions || [];
+            jdStrengths = jdBasedAnalysis.matched_keywords?.map((kw: string) => `Strong in: ${kw}`) || jdBasedAnalysis.strengths || [];
+            jdImprovements = jdBasedAnalysis.missing_keywords?.map((kw: string) => `Add "${kw}" to your resume`) || jdBasedAnalysis.improvements || [];
           }
         } catch (error) {
           console.error("Error getting JD-based AI analysis:", error);
@@ -1694,17 +1747,18 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       }
 
       // Get JD-based AI analysis
-      const jdBasedAnalysis = await pythonAI.analyzeResumeWithAI(resumeContent, jd.description || '');
+      const jdBasedAnalysis = await pythonAI.analyzeResumeJDMatch(resumeContent, jd.description || '');
 
       if (jdBasedAnalysis) {
         // Update JD with new analysis
         await storage.updateJobDescription(jdId, {
-          matchScore: jdBasedAnalysis.score || jd.matchScore || 50,
+          matchScore: jdBasedAnalysis.jd_match_score || jdBasedAnalysis.score || jd.matchScore || 50,
           parsedData: {
-            aiAnalysis: jdBasedAnalysis.analysis || null,
-            suggestions: jdBasedAnalysis.suggestions || [],
-            strengths: jdBasedAnalysis.strengths || [],
-            improvements: jdBasedAnalysis.improvements || []
+            aiAnalysis: jdBasedAnalysis.summary || null,
+            jdMatchAnalysis: jdBasedAnalysis,
+            suggestions: jdBasedAnalysis.targeted_improvements || [],
+            strengths: jdBasedAnalysis.matched_keywords?.map((kw: string) => `Strong in: ${kw}`) || [],
+            improvements: jdBasedAnalysis.missing_keywords?.map((kw: string) => `Add "${kw}" to your resume`) || []
           } as any,
         });
       }
@@ -2187,37 +2241,100 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           slotEndTime: user.slotEndTime || null,
           slotStatus: user.slotStatus || "active",
           isSlotActive: true,
+          isSlotCompleted: false,
           inWaitingRoom: false,
           secondsUntilStart: 0,
           lockReason: null
         });
       }
 
-      const d = new Date();
-      const year = d.getFullYear().toString();
-      const month = (d.getMonth() + 1).toString().padStart(2, '0');
-      const day = d.getDate().toString().padStart(2, '0');
-      const todayYMD = `${year}-${month}-${day}`;
-      const todayDMY = `${day}-${month}-${year}`;
+      if (user.slotStatus === 'completed') {
+        return res.json({
+          slotDate: user.slotDate,
+          slotStartTime: user.slotStartTime,
+          slotEndTime: user.slotEndTime,
+          slotStatus: 'completed',
+          isSlotActive: false,
+          isSlotCompleted: true,
+          inWaitingRoom: false,
+          secondsUntilStart: 0,
+          lockReason: "You have completed your scheduled placement mock interview session."
+        });
+      }
 
-      const cleanSlot = (user.slotDate || '').trim();
-      const isDateMatch = cleanSlot === todayYMD || cleanSlot === todayDMY;
+      const now = new Date();
+      const todayMidnight = new Date(now.getFullYear(), now.getMonth(), now.getDate());
 
-      let isSlotActive = isDateMatch;
+      // Helper to parse YYYY-MM-DD or DD-MM-YYYY
+      const parseSlotDate = (str: string): Date | null => {
+        const s = (str || '').trim();
+        if (/^\d{4}-\d{2}-\d{2}$/.test(s)) {
+          const [y, m, d] = s.split('-').map(Number);
+          return new Date(y, m - 1, d);
+        }
+        if (/^\d{2}-\d{2}-\d{4}$/.test(s)) {
+          const [d, m, y] = s.split('-').map(Number);
+          return new Date(y, m - 1, d);
+        }
+        return null;
+      };
+
+      const slotD = parseSlotDate(user.slotDate || '');
+      let isSlotPast = false;
+      let isSlotFuture = false;
+      let isTodaySlot = false;
+
+      if (slotD) {
+        slotD.setHours(0, 0, 0, 0);
+        if (slotD.getTime() < todayMidnight.getTime()) {
+          isSlotPast = true;
+        } else if (slotD.getTime() > todayMidnight.getTime()) {
+          isSlotFuture = true;
+        } else {
+          isTodaySlot = true;
+        }
+      }
+
+      if (isSlotPast) {
+        return res.json({
+          slotDate: user.slotDate,
+          slotStartTime: user.slotStartTime,
+          slotEndTime: user.slotEndTime,
+          slotStatus: user.slotStatus || "expired",
+          isSlotActive: false,
+          isSlotCompleted: false,
+          isSlotPast: true,
+          isSlotFuture: false,
+          inWaitingRoom: false,
+          secondsUntilStart: 0,
+          lockReason: `Your assigned interview slot date (${user.slotDate}) has passed. Access is restricted for past slots.`
+        });
+      }
+
+      if (isSlotFuture) {
+        return res.json({
+          slotDate: user.slotDate,
+          slotStartTime: user.slotStartTime,
+          slotEndTime: user.slotEndTime,
+          slotStatus: user.slotStatus || "scheduled",
+          isSlotActive: false,
+          isSlotCompleted: false,
+          isSlotPast: false,
+          isSlotFuture: true,
+          inWaitingRoom: false,
+          secondsUntilStart: 0,
+          lockReason: `Your interview is scheduled for ${user.slotDate}${user.slotStartTime ? ' at ' + user.slotStartTime : ''}. Access will open on your assigned date.`
+        });
+      }
+
+      let isSlotActive = isTodaySlot;
       let inWaitingRoom = false;
       let secondsUntilStart = 0;
       let lockReason = null;
 
-      if (!isDateMatch) {
-        isSlotActive = false;
-        lockReason = `Your interview is scheduled for ${user.slotDate}${user.slotStartTime ? ' at ' + user.slotStartTime : ''}. Access is restricted outside your assigned date.`;
-      } else if (user.slotStartTime) {
-        const now = new Date();
+      if (isTodaySlot && user.slotStartTime) {
         const [startH, startM] = user.slotStartTime.split(':').map(Number);
-        
-        const startTimeDate = new Date();
-        startTimeDate.setHours(startH, startM, 0, 0);
-
+        const startTimeDate = new Date(now.getFullYear(), now.getMonth(), now.getDate(), startH, startM, 0, 0);
         const diffSeconds = Math.floor((startTimeDate.getTime() - now.getTime()) / 1000);
 
         if (diffSeconds > 0) {
@@ -2320,7 +2437,24 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       // Allow access if interview is in_progress or completed
       if (interview.status !== 'pending' || isAdminUser) {
-        const questions = await storage.getQuestionsByInterviewId(interviewId);
+        let questions = await storage.getQuestionsByInterviewId(interviewId);
+        
+        // Fallback: If interview_questions table is empty, auto-populate from interview.questions JSON
+        if ((!questions || questions.length === 0) && interview.questions && Array.isArray(interview.questions)) {
+          console.log(`[Questions] Fallback: auto-populating ${interview.questions.length} questions from interview.questions JSON for ${interviewId}`);
+          for (let index = 0; index < (interview.questions as any[]).length; index++) {
+            const qItem = (interview.questions as any[])[index];
+            const qText = typeof qItem === 'string' ? qItem : (qItem?.question || qItem?.q || qItem?.text || String(qItem));
+            const qType = typeof qItem === 'object' && qItem?.type ? qItem.type : (interview.type || 'technical');
+            await storage.createInterviewQuestion({
+              interviewId: interview.id,
+              question: qText,
+              round: qType,
+              orderIndex: index,
+            });
+          }
+          questions = await storage.getQuestionsByInterviewId(interviewId);
+        }
         
         // If full simulation, filter to current round's questions only
         if (interview.company && interview.simulationMode === 'full' && !isAdminUser) {
@@ -2792,7 +2926,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         return a.length > 0 && a !== "(no answer recorded)" && a !== "silence detected";
       });
 
-      const scoredQuestions = questions.filter(q => typeof q.score === 'number' && q.score > 0);
+      const scoredQuestions = validAnsweredQuestions.filter(q => typeof q.score === 'number' && q.score > 0);
       const totalPointsEarned = scoredQuestions.reduce((acc, q) => acc + (q.score || 0), 0);
 
       let technicalScore = 0;
@@ -2801,7 +2935,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       let voiceScore = 0;
       let overallScore = 0;
 
-      if (scoredQuestions.length > 0) {
+      if (validAnsweredQuestions.length > 0 && scoredQuestions.length > 0) {
         const avgScore = Math.round(totalPointsEarned / scoredQuestions.length);
         technicalScore = avgScore;
         communicationScore = communicationData?.overall ?? Math.round(avgScore * 0.95);
@@ -2818,6 +2952,11 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       const improvements: string[] = [];
       if (validAnsweredQuestions.length === 0) {
+        technicalScore = 0;
+        communicationScore = 0;
+        emotionScore = 0;
+        voiceScore = 0;
+        overallScore = 0;
         improvements.push("No responses recorded during session. Ensure your microphone is connected and test your audio before starting.");
       } else {
         if (technicalScore < 70) improvements.push("Practice more technical concepts and explain code logic in detail");
@@ -3255,6 +3394,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   const updateStudentSchema = z.object({
     firstName: z.string().optional(),
     lastName: z.string().optional(),
+    email: z.string().optional(),
     rollNumber: z.string().min(1).optional(),
     department: z.string().optional(),
     year: z.number().int().optional(),
@@ -3277,13 +3417,16 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       const updateData: Partial<User> = {};
 
       if (typeof data.firstName === 'string') {
-        updateData.firstName = data.firstName || null;
+        updateData.firstName = data.firstName.trim() || null;
       }
       if (typeof data.lastName === 'string') {
-        updateData.lastName = data.lastName || null;
+        updateData.lastName = data.lastName.trim() || null;
+      }
+      if (typeof data.email === 'string' && data.email.trim()) {
+        updateData.email = data.email.trim();
       }
       if (typeof data.department === 'string') {
-        updateData.department = data.department || null;
+        updateData.department = data.department.trim() || null;
       }
       if (typeof data.year === 'number') {
         updateData.year = data.year;
@@ -3291,7 +3434,6 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       if (typeof data.rollNumber === 'string' && data.rollNumber.trim()) {
         const normalizedRoll = data.rollNumber.trim();
         updateData.rollNumber = normalizedRoll;
-        updateData.email = `${normalizedRoll}@students.local`;
       }
       if (typeof data.password === 'string' && data.password.trim()) {
         updateData.passwordHash = await hashPassword(data.password.trim());

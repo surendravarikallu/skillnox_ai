@@ -96,8 +96,8 @@ export default function ResumePage() {
     if (uploadResumeMutation.isPending) {
       setAnalyzingStepIndex(0);
       interval = setInterval(() => {
-        setAnalyzingStepIndex(prev => (prev + 1) % analyzingSteps.length);
-      }, 1200);
+        setAnalyzingStepIndex(prev => Math.min(analyzingSteps.length - 1, prev + 1));
+      }, 1800);
     }
     return () => {
       if (interval) clearInterval(interval);
@@ -140,6 +140,24 @@ export default function ResumePage() {
   const skills = hasResume ? (resume.skills || []) : [];
   const experience = (hasResume ? (resume.experience as any[]) : []) || [];
   const education = (hasResume ? (resume.education as any[]) : []) || [];
+  const atsEvaluation = parsedData?.atsEvaluation || parsedData?.ats_evaluation || null;
+  const calcTechDepth = (data: any): number | null => {
+    if (typeof data?.technicalDepthScore === 'number') return data.technicalDepthScore;
+    const hae = data?.hiringAgentEvaluation || data?.technical_depth;
+    if (hae && hae.scores) {
+      const openSource = hae.scores.open_source?.score || 0;
+      const selfProjects = hae.scores.self_projects?.score || 0;
+      const production = hae.scores.production?.score || 0;
+      const techSkills = hae.scores.technical_skills?.score || 0;
+      const bonus = hae.bonus_points?.total || 0;
+      const deductions = hae.deductions?.total || 0;
+      const rawTech = openSource + selfProjects + production + techSkills + bonus - deductions;
+      return Math.min(100, Math.max(0, rawTech));
+    }
+    return null;
+  };
+  const technicalDepthScore = calcTechDepth(parsedData);
+  const [techDepthExpanded, setTechDepthExpanded] = useState(false);
 
   return (
     <div className="max-w-[1400px] mx-auto space-y-10 pb-12">
@@ -153,7 +171,7 @@ export default function ResumePage() {
         <p className="text-muted-foreground text-lg">Align your professional identity with global industry standards.</p>
       </section>
 
-      <div className="grid lg:grid-cols-12 gap-8">
+      <div className="grid lg:grid-cols-12 gap-8 items-start">
         {/* Left: Resume Details */}
         <div className="lg:col-span-7 space-y-8">
           <Card className="rounded-[2.5rem] glass-card overflow-hidden relative">
@@ -182,11 +200,13 @@ export default function ResumePage() {
                     <p className="text-xs font-semibold text-muted-foreground min-h-[1.5rem] transition-all duration-300">
                       {analyzingSteps[analyzingStepIndex]}
                     </p>
-                    <div className="w-full bg-muted/60 h-2 rounded-full overflow-hidden p-0.5 border border-border shadow-inner">
+                    <div className="w-full bg-muted/60 h-2.5 rounded-full overflow-hidden p-0.5 border border-border shadow-inner relative">
                       <div 
-                        className="bg-primary h-full rounded-full transition-all duration-500" 
-                        style={{ width: `${Math.min(100, ((analyzingStepIndex + 1) / analyzingSteps.length) * 100)}%` }}
-                      />
+                        className="bg-gradient-to-r from-primary via-indigo-500 to-purple-500 h-full rounded-full transition-all duration-700 relative overflow-hidden" 
+                        style={{ width: `${[25, 55, 78, 92][analyzingStepIndex] || 92}%` }}
+                      >
+                        <div className="absolute inset-0 bg-white/20 animate-pulse" />
+                      </div>
                     </div>
                     <p className="text-[10px] font-medium text-muted-foreground opacity-70">Please wait while your document is being processed...</p>
                   </div>
@@ -279,8 +299,8 @@ export default function ResumePage() {
             <BorderBeam size={400} duration={15} />
           </Card>
 
-          {/* HackerRank ATS Report Card */}
-          {hasResume && parsedData?.hiringAgentEvaluation && (
+          {/* ATS Compliance Report Card (Primary) */}
+          {hasResume && atsEvaluation && atsEvaluation.sections && (
             <motion.div
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
@@ -292,124 +312,275 @@ export default function ResumePage() {
                   <div className="flex items-center justify-between">
                     <div>
                       <h3 className="text-xl font-black tracking-tight flex items-center gap-3">
-                        <Sparkles className="w-5 h-5 text-primary animate-pulse" />
-                        HackerRank ATS Score breakdown
+                        <ShieldCheck className="w-5 h-5 text-primary" />
+                        ATS Compliance Score
                       </h3>
-                      <p className="text-xs text-muted-foreground mt-1 uppercase tracking-widest font-black opacity-60">Objective Candidate Scoring</p>
+                      <p className="text-xs text-muted-foreground mt-1 uppercase tracking-widest font-black opacity-60">Real-World ATS System Analysis</p>
                     </div>
-                    <Badge className="bg-primary/10 border border-primary/30 text-primary text-[10px] font-black uppercase tracking-wider px-3 py-1">ATS Standard v1.2</Badge>
+                    <div className="text-center">
+                      <span className="text-4xl font-black text-primary">{Math.round(atsEvaluation.ats_score || resume.overallScore || 0)}%</span>
+                      <p className="text-[10px] font-black uppercase tracking-widest opacity-50">ATS Score</p>
+                    </div>
                   </div>
 
-                  {/* Category Progress Grid */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                  {/* 8-Section Progress Grid */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {[
-                      {
-                        name: "Open Source",
-                        key: "open_source",
-                        data: parsedData.hiringAgentEvaluation.scores?.open_source,
-                        color: "from-blue-500 to-indigo-500",
-                        icon: Code
-                      },
-                      {
-                        name: "Self Projects",
-                        key: "self_projects",
-                        data: parsedData.hiringAgentEvaluation.scores?.self_projects,
-                        color: "from-purple-500 to-pink-500",
-                        icon: Target
-                      },
-                      {
-                        name: "Production Experience",
-                        key: "production",
-                        data: parsedData.hiringAgentEvaluation.scores?.production,
-                        color: "from-emerald-500 to-teal-500",
-                        icon: Briefcase
-                      },
-                      {
-                        name: "Technical Skills",
-                        key: "technical_skills",
-                        data: parsedData.hiringAgentEvaluation.scores?.technical_skills,
-                        color: "from-amber-500 to-yellow-500",
-                        icon: GraduationCap
-                      }
-                    ].map((cat) => {
-                      if (!cat.data) return null;
-                      const pct = Math.round((cat.data.score / cat.data.max) * 100);
-                      const Icon = cat.icon;
+                      { key: "contact_info", name: "Contact Information", icon: FileText, color: "from-sky-500 to-blue-500" },
+                      { key: "summary", name: "Professional Summary", icon: BrainCircuit, color: "from-violet-500 to-purple-500" },
+                      { key: "experience", name: "Work Experience", icon: Briefcase, color: "from-emerald-500 to-teal-500" },
+                      { key: "projects", name: "Projects", icon: Code, color: "from-orange-500 to-amber-500" },
+                      { key: "skills", name: "Skills & Keywords", icon: Cpu, color: "from-pink-500 to-rose-500" },
+                      { key: "education", name: "Education", icon: GraduationCap, color: "from-indigo-500 to-blue-500" },
+                      { key: "formatting", name: "Formatting", icon: FileText, color: "from-cyan-500 to-sky-500" },
+                      { key: "readability", name: "Readability", icon: Eye, color: "from-lime-500 to-emerald-500" },
+                    ].map((sec) => {
+                      const data = atsEvaluation.sections?.[sec.key];
+                      if (!data) return null;
+                      const pct = data.max > 0 ? Math.round((data.score / data.max) * 100) : 0;
+                      const statusColor = data.status === "pass" ? "text-emerald-500 bg-emerald-500/10 border-emerald-500/30"
+                        : data.status === "critical" ? "text-rose-500 bg-rose-500/10 border-rose-500/30"
+                        : "text-amber-500 bg-amber-500/10 border-amber-500/30";
+                      const statusLabel = data.status === "pass" ? "Pass" : data.status === "critical" ? "Critical" : "Needs Work";
+                      const Icon = sec.icon;
                       return (
-                        <div key={cat.key} className="p-5 rounded-3xl bg-muted/30 border border-border/40 hover:border-primary/20 transition-all flex flex-col justify-between space-y-4">
+                        <div key={sec.key} className="p-4 rounded-2xl bg-muted/30 border border-border/40 hover:border-primary/20 transition-all space-y-3">
                           <div className="flex items-center justify-between">
-                            <div className="flex items-center gap-3">
-                              <div className="w-8 h-8 rounded-xl bg-primary/5 flex items-center justify-center">
-                                <Icon className="w-4 h-4 text-primary" />
+                            <div className="flex items-center gap-2.5">
+                              <div className="w-7 h-7 rounded-lg bg-primary/5 flex items-center justify-center">
+                                <Icon className="w-3.5 h-3.5 text-primary" />
                               </div>
-                              <span className="font-bold text-sm text-foreground/90">{cat.name}</span>
+                              <span className="font-bold text-sm">{sec.name}</span>
                             </div>
-                            <span className="text-xs font-black tracking-widest text-primary bg-primary/5 px-2.5 py-1 rounded-lg">
-                              {cat.data.score}/{cat.data.max}
-                            </span>
-                          </div>
-
-                          <div className="space-y-1">
-                            <div className="h-2 w-full bg-muted rounded-full overflow-hidden">
-                              <motion.div
-                                initial={{ width: 0 }}
-                                animate={{ width: `${pct}%` }}
-                                transition={{ duration: 1, ease: "easeOut" }}
-                                className={cn("h-full rounded-full bg-gradient-to-r", cat.color)}
-                              />
-                            </div>
-                            <div className="flex justify-between text-[10px] text-muted-foreground font-medium">
-                              <span>Min Base: 0</span>
-                              <span>Max: {cat.data.max}</span>
+                            <div className="flex items-center gap-2">
+                              <Badge variant="outline" className={cn("text-[9px] font-black uppercase px-2 py-0.5 border", statusColor)}>
+                                {statusLabel}
+                              </Badge>
+                              <span className="text-xs font-black text-primary bg-primary/5 px-2 py-0.5 rounded-md">
+                                {data.score}/{data.max}
+                              </span>
                             </div>
                           </div>
-
-                          <p className="text-xs text-muted-foreground/80 leading-relaxed italic bg-muted/20 p-3 rounded-2xl border border-border/20">
-                            &ldquo;{cat.data.evidence}&rdquo;
-                          </p>
+                          <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                            <motion.div
+                              initial={{ width: 0 }}
+                              animate={{ width: `${pct}%` }}
+                              transition={{ duration: 1, ease: "easeOut" }}
+                              className={cn("h-full rounded-full bg-gradient-to-r", sec.color)}
+                            />
+                          </div>
+                          <p className="text-xs text-muted-foreground/80 leading-relaxed">{data.feedback}</p>
+                          {data.improvements && data.improvements.length > 0 && (
+                            <ul className="space-y-1 pl-3">
+                              {data.improvements.map((imp: string, i: number) => (
+                                <li key={i} className="text-xs text-muted-foreground flex items-start gap-1.5">
+                                  <ArrowUpRight className="w-3 h-3 text-primary shrink-0 mt-0.5" />
+                                  {imp}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {data.issues && data.issues.length > 0 && (
+                            <ul className="space-y-1 pl-3">
+                              {data.issues.map((issue: string, i: number) => (
+                                <li key={i} className="text-xs text-amber-500 flex items-start gap-1.5">
+                                  <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                                  {issue}
+                                </li>
+                              ))}
+                            </ul>
+                          )}
+                          {data.missing_keywords && data.missing_keywords.length > 0 && (
+                            <div className="flex flex-wrap gap-1.5 pt-1">
+                              {data.missing_keywords.map((kw: string, i: number) => (
+                                <Badge key={i} variant="outline" className="border-orange-500/30 bg-orange-500/5 text-orange-500 text-[9px] font-bold px-2 py-0.5">
+                                  + {kw}
+                                </Badge>
+                              ))}
+                            </div>
+                          )}
                         </div>
                       );
                     })}
                   </div>
 
-                  {/* Bonus & Deductions Card Row */}
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-2">
-                    {/* Bonus Card */}
-                    <div className="p-5 rounded-3xl bg-emerald-500/5 border border-emerald-500/20 space-y-3 relative overflow-hidden group">
-                      <div className="absolute top-2 right-2 w-10 h-10 text-emerald-500/10 transition-transform group-hover:scale-110">
-                        <CheckCircle className="w-full h-full" />
+                  {/* Bullet Point Analysis */}
+                  {atsEvaluation.bullet_point_analysis && (
+                    <div className="p-5 rounded-2xl bg-muted/30 border border-border/40 space-y-3">
+                      <h4 className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                        <TrendingUp className="w-4 h-4 text-primary" />
+                        Bullet Point Quality
+                      </h4>
+                      <div className="grid grid-cols-3 gap-4 text-center">
+                        <div>
+                          <p className="text-2xl font-black text-primary">{atsEvaluation.bullet_point_analysis.total_bullets}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Total Bullets</p>
+                        </div>
+                        <div>
+                          <p className="text-2xl font-black text-emerald-500">{atsEvaluation.bullet_point_analysis.with_metrics}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">With Metrics</p>
+                        </div>
+                        <div>
+                          <p className="text-2xl font-black text-blue-500">{atsEvaluation.bullet_point_analysis.with_action_verbs}</p>
+                          <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Action Verbs</p>
+                        </div>
                       </div>
-                      <div className="flex items-center gap-2">
-                        <CheckCircle className="w-5 h-5 text-emerald-500" />
-                        <span className="font-black uppercase tracking-wider text-[11px] text-emerald-600 dark:text-emerald-400">Bonus Signals</span>
-                      </div>
-                      <p className="text-2xl font-black text-emerald-600 dark:text-emerald-400">
-                        +{parsedData.hiringAgentEvaluation.bonus_points?.total || 0} Points
-                      </p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        {parsedData.hiringAgentEvaluation.bonus_points?.breakdown || "No bonus points applied."}
-                      </p>
+                      {atsEvaluation.bullet_point_analysis.weak_bullets?.length > 0 && (
+                        <div className="space-y-1.5 pt-2">
+                          <p className="text-[10px] font-black uppercase tracking-widest text-amber-500">Weak Bullets to Improve</p>
+                          {atsEvaluation.bullet_point_analysis.weak_bullets.map((wb: string, i: number) => (
+                            <div key={i} className="text-xs text-muted-foreground bg-amber-500/5 border border-amber-500/10 rounded-lg px-3 py-2 italic">
+                              "{wb}"
+                            </div>
+                          ))}
+                        </div>
+                      )}
                     </div>
+                  )}
 
-                    {/* Deductions Card */}
-                    <div className="p-5 rounded-3xl bg-rose-500/5 border border-rose-500/20 space-y-3 relative overflow-hidden group">
-                      <div className="absolute top-2 right-2 w-10 h-10 text-rose-500/10 transition-transform group-hover:scale-110">
-                        <AlertCircle className="w-full h-full" />
+                  {/* Missing Keywords */}
+                  {atsEvaluation.keyword_density?.missing?.length > 0 && (
+                    <div className="p-5 rounded-2xl bg-muted/30 border border-border/40 space-y-3">
+                      <h4 className="text-xs font-black uppercase tracking-widest flex items-center gap-2">
+                        <Zap className="w-4 h-4 text-primary" />
+                        Keywords to Add
+                      </h4>
+                      <div className="flex flex-wrap gap-2">
+                        {atsEvaluation.keyword_density.missing.map((kw: string, i: number) => (
+                          <Badge key={i} variant="outline" className="border-primary/30 bg-primary/5 text-primary text-xs font-bold px-3 py-1">
+                            + {kw}
+                          </Badge>
+                        ))}
                       </div>
-                      <div className="flex items-center gap-2">
-                        <AlertCircle className="w-5 h-5 text-rose-500" />
-                        <span className="font-black uppercase tracking-wider text-[11px] text-rose-600 dark:text-rose-400">Deduction Signal</span>
-                      </div>
-                      <p className="text-2xl font-black text-rose-600 dark:text-rose-400">
-                        -{parsedData.hiringAgentEvaluation.deductions?.total || 0} Points
-                      </p>
-                      <p className="text-xs text-muted-foreground leading-relaxed">
-                        {parsedData.hiringAgentEvaluation.deductions?.reasons || "No deductions applied."}
-                      </p>
                     </div>
-                  </div>
+                  )}
                 </div>
                 <BorderBeam size={600} duration={20} />
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Technical Depth Score (HackerRank — Secondary Collapsible) */}
+          {hasResume && parsedData?.hiringAgentEvaluation && (
+            <motion.div
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: 0.2 }}
+            >
+              <Card className="rounded-[2.5rem] glass-card overflow-hidden relative border-border/40">
+                <button
+                  className="w-full p-6 flex items-center justify-between text-left hover:bg-muted/20 transition-colors rounded-[2.5rem]"
+                  onClick={() => setTechDepthExpanded(!techDepthExpanded)}
+                >
+                  <div className="flex items-center gap-3">
+                    <Sparkles className="w-5 h-5 text-primary" />
+                    <div>
+                      <h3 className="text-base font-black tracking-tight">Technical Depth Analysis</h3>
+                      <p className="text-[10px] text-muted-foreground uppercase tracking-widest font-bold opacity-60">HackerRank-Style Evaluation</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-3">
+                    {technicalDepthScore !== null && (
+                      <span className="text-xl font-black text-primary">{Math.round(technicalDepthScore)}%</span>
+                    )}
+                    <span className={cn("text-muted-foreground transition-transform", techDepthExpanded ? "rotate-180" : "")}>▼</span>
+                  </div>
+                </button>
+
+                <AnimatePresence>
+                  {techDepthExpanded && (
+                    <motion.div
+                      initial={{ height: 0, opacity: 0 }}
+                      animate={{ height: "auto", opacity: 1 }}
+                      exit={{ height: 0, opacity: 0 }}
+                      className="overflow-hidden"
+                    >
+                      <div className="px-6 pb-6 space-y-4">
+                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                          {[
+                            { name: "Open Source", key: "open_source", data: parsedData.hiringAgentEvaluation.scores?.open_source, color: "from-blue-500 to-indigo-500", icon: Code },
+                            { name: "Self Projects", key: "self_projects", data: parsedData.hiringAgentEvaluation.scores?.self_projects, color: "from-purple-500 to-pink-500", icon: Target },
+                            { name: "Production Experience", key: "production", data: parsedData.hiringAgentEvaluation.scores?.production, color: "from-emerald-500 to-teal-500", icon: Briefcase },
+                            { name: "Technical Skills", key: "technical_skills", data: parsedData.hiringAgentEvaluation.scores?.technical_skills, color: "from-amber-500 to-yellow-500", icon: GraduationCap },
+                          ].map((cat) => {
+                            if (!cat.data) return null;
+                            const pct = Math.round((cat.data.score / cat.data.max) * 100);
+                            const Icon = cat.icon;
+                            return (
+                              <div key={cat.key} className="p-4 rounded-2xl bg-muted/30 border border-border/40 space-y-3">
+                                <div className="flex items-center justify-between">
+                                  <div className="flex items-center gap-2.5">
+                                    <Icon className="w-4 h-4 text-primary" />
+                                    <span className="font-bold text-sm">{cat.name}</span>
+                                  </div>
+                                  <span className="text-xs font-black text-primary">{cat.data.score}/{cat.data.max}</span>
+                                </div>
+                                <div className="h-1.5 w-full bg-muted rounded-full overflow-hidden">
+                                  <div className={cn("h-full rounded-full bg-gradient-to-r transition-all", cat.color)} style={{ width: `${pct}%` }} />
+                                </div>
+                                <p className="text-xs text-muted-foreground/80 italic">&ldquo;{cat.data.evidence}&rdquo;</p>
+                              </div>
+                            );
+                          })}
+                        </div>
+
+                        {/* Bonus & Deductions */}
+                        <div className="grid grid-cols-2 gap-4">
+                          <div className="p-4 rounded-2xl bg-emerald-500/5 border border-emerald-500/20 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <CheckCircle className="w-4 h-4 text-emerald-500" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-emerald-500">Bonus</span>
+                            </div>
+                            <p className="text-lg font-black text-emerald-500">+{parsedData.hiringAgentEvaluation.bonus_points?.total || 0}</p>
+                            <p className="text-[10px] text-muted-foreground">{parsedData.hiringAgentEvaluation.bonus_points?.breakdown || "None"}</p>
+                          </div>
+                          <div className="p-4 rounded-2xl bg-rose-500/5 border border-rose-500/20 space-y-1">
+                            <div className="flex items-center gap-2">
+                              <AlertCircle className="w-4 h-4 text-rose-500" />
+                              <span className="text-[10px] font-black uppercase tracking-wider text-rose-500">Deductions</span>
+                            </div>
+                            <p className="text-lg font-black text-rose-500">-{parsedData.hiringAgentEvaluation.deductions?.total || 0}</p>
+                            <p className="text-[10px] text-muted-foreground">{parsedData.hiringAgentEvaluation.deductions?.reasons || "None"}</p>
+                          </div>
+                        </div>
+                      </div>
+                    </motion.div>
+                  )}
+                </AnimatePresence>
+              </Card>
+            </motion.div>
+          )}
+
+          {/* Template Suggestions for Low ATS Scores */}
+          {hasResume && (resume.overallScore || 0) < 40 && (
+            <motion.div initial={{ opacity: 0, y: 20 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.3 }}>
+              <Card className="rounded-[2.5rem] glass-card overflow-hidden relative p-8 space-y-6 border-amber-500/30 bg-gradient-to-br from-amber-500/5 to-transparent">
+                <div className="flex items-center gap-3">
+                  <AlertCircle className="w-6 h-6 text-amber-500" />
+                  <div>
+                    <h3 className="text-lg font-black tracking-tight">Resume Needs Significant Improvement</h3>
+                    <p className="text-xs text-muted-foreground">Your ATS score is below 40%. Start with one of these ATS-optimized templates:</p>
+                  </div>
+                </div>
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                  {[
+                    { name: "Clean Tech", desc: "Single-column, minimal design optimized for tech roles", link: "https://docs.google.com/document/d/1RhPbrVR3wXHFhrd05azZDTcmit3YqiHx/copy", color: "from-blue-500 to-sky-500" },
+                    { name: "Impact-Driven", desc: "Emphasis on metrics, achievements, and quantified results", link: "https://docs.google.com/document/d/1f6bk9UjuAjKpCLNfTrm1BbWn5d1Z9oZT/copy", color: "from-emerald-500 to-teal-500" },
+                    { name: "Academic Focus", desc: "Best for fresh graduates with strong education section", link: "https://docs.google.com/document/d/1oTbzPmHXqwG7E9tR7v1VCG_RkLqpTf4E/copy", color: "from-purple-500 to-violet-500" },
+                    { name: "Hybrid", desc: "Balanced projects + experience for career switchers", link: "https://docs.google.com/document/d/1MBCiENMiTuZRlJMhM5rN7XWp2GhL0Kx8/copy", color: "from-orange-500 to-amber-500" },
+                  ].map((tmpl) => (
+                    <a key={tmpl.name} href={tmpl.link} target="_blank" rel="noopener noreferrer"
+                      className="p-4 rounded-2xl bg-muted/30 border border-border/40 hover:border-primary/30 transition-all group space-y-2 block"
+                    >
+                      <div className={cn("w-full h-2 rounded-full bg-gradient-to-r", tmpl.color)} />
+                      <h4 className="font-bold text-sm group-hover:text-primary transition-colors">{tmpl.name}</h4>
+                      <p className="text-xs text-muted-foreground">{tmpl.desc}</p>
+                      <span className="text-[10px] font-black uppercase tracking-widest text-primary flex items-center gap-1">
+                        <ExternalLink className="w-3 h-3" /> Use This Template
+                      </span>
+                    </a>
+                  ))}
+                </div>
               </Card>
             </motion.div>
           )}
@@ -538,91 +709,78 @@ export default function ResumePage() {
 
       {/* Interactive Resume View Dialog */}
       <Dialog open={viewResumeModalOpen} onOpenChange={setViewResumeModalOpen}>
-        <DialogContent className="max-w-4xl max-h-[85vh] overflow-y-auto rounded-[2rem] p-8">
-          <DialogHeader className="space-y-2">
+        <DialogContent className="max-w-5xl max-h-[90vh] overflow-hidden rounded-[2rem] p-0 flex flex-col">
+          <DialogHeader className="p-6 pb-4 border-b border-border shrink-0">
             <div className="flex items-center justify-between">
               <Badge variant="outline" className="text-xs font-bold px-3 py-1 border-primary/30 text-primary">
-                Active Document Record
+                Active Document
               </Badge>
-              {resume?.fileUrl && (
-                <Button variant="ghost" size="sm" asChild className="gap-2 text-xs font-bold text-primary">
-                  <a href={resume.fileUrl} target="_blank" rel="noopener noreferrer">
-                    <ExternalLink className="w-3.5 h-3.5" />
-                    Open Original PDF
-                  </a>
-                </Button>
-              )}
+              <div className="flex items-center gap-2">
+                {resume?.fileUrl && (
+                  <Button variant="ghost" size="sm" asChild className="gap-2 text-xs font-bold text-primary">
+                    <a href={resume.fileUrl} target="_blank" rel="noopener noreferrer">
+                      <ExternalLink className="w-3.5 h-3.5" />
+                      Open in New Tab
+                    </a>
+                  </Button>
+                )}
+                {resume?.fileUrl && (
+                  <Button variant="secondary" size="sm" asChild className="gap-2 text-xs font-bold">
+                    <a href={resume.fileUrl} download>
+                      <Download className="w-3.5 h-3.5" />
+                      Download
+                    </a>
+                  </Button>
+                )}
+              </div>
             </div>
-            <DialogTitle className="text-2xl font-bold">{resume?.fileName || "Uploaded Resume"}</DialogTitle>
+            <DialogTitle className="text-xl font-bold">{resume?.fileName || "Uploaded Resume"}</DialogTitle>
             <DialogDescription className="text-xs text-muted-foreground">
-              Extracted content and parsed skills for {user?.firstName || "Candidate"} ({user?.rollNumber || ""})
+              Resume document for {user?.firstName || "Candidate"} {user?.rollNumber ? `(${user.rollNumber})` : ""}
             </DialogDescription>
           </DialogHeader>
 
           {resume && (
-            <div className="space-y-6 pt-4">
-              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 p-4 rounded-2xl bg-muted/40 border border-border text-center">
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">ATS Alignment Score</p>
-                  <p className="text-2xl font-black text-primary">{Math.round(resume.overallScore || 0)}%</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Extracted Skills</p>
-                  <p className="text-2xl font-black text-emerald-500">{skills.length}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Work History</p>
-                  <p className="text-2xl font-black">{experience.length}</p>
-                </div>
-                <div>
-                  <p className="text-[10px] font-bold uppercase tracking-wider text-muted-foreground">Education</p>
-                  <p className="text-2xl font-black">{education.length}</p>
-                </div>
-              </div>
-
-              {/* Skills List */}
-              {skills.length > 0 && (
-                <div className="space-y-2">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                    <Code className="w-4 h-4 text-primary" />
-                    Extracted Technical Skills ({skills.length})
-                  </h4>
-                  <div className="flex flex-wrap gap-2 p-4 rounded-2xl bg-muted/30 border border-border">
-                    {skills.map((skill, i) => (
-                      <Badge key={i} variant="secondary" className="px-3 py-1 text-xs font-semibold rounded-lg bg-primary/10 text-primary border-0">
-                        {skill}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Parsed Raw Document Text */}
-              <div className="space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
-                    <FileText className="w-4 h-4 text-primary" />
-                    Extracted Resume Text Content
-                  </h4>
+            <div className="flex-1 min-h-0 overflow-hidden">
+              {resume.fileUrl ? (
+                <iframe
+                  src={resume.fileUrl}
+                  className="w-full h-full min-h-[70vh] border-0"
+                  title="Resume PDF Viewer"
+                  style={{ background: '#525659' }}
+                />
+              ) : (
+                <div className="p-8 text-center space-y-4">
+                  <FileText className="w-16 h-16 mx-auto text-muted-foreground/40" />
+                  <p className="text-sm text-muted-foreground">
+                    PDF preview unavailable. The original file was not stored on the server.
+                  </p>
                   {parsedData?.raw && (
-                    <Button 
-                      variant="ghost" 
-                      size="sm" 
-                      onClick={() => {
-                        navigator.clipboard.writeText(parsedData.raw);
-                        toast({ title: "Copied!", description: "Resume text copied to clipboard." });
-                      }}
-                      className="h-8 text-xs font-semibold gap-1.5"
-                    >
-                      <Copy className="w-3.5 h-3.5" />
-                      Copy Raw Text
-                    </Button>
+                    <div className="text-left mt-6 space-y-2">
+                      <div className="flex items-center justify-between">
+                        <h4 className="text-xs font-bold uppercase tracking-wider text-muted-foreground flex items-center gap-2">
+                          <FileText className="w-4 h-4 text-primary" />
+                          Extracted Text Content
+                        </h4>
+                        <Button 
+                          variant="ghost" size="sm"
+                          onClick={() => {
+                            navigator.clipboard.writeText(parsedData.raw);
+                            toast({ title: "Copied!", description: "Resume text copied to clipboard." });
+                          }}
+                          className="h-8 text-xs font-semibold gap-1.5"
+                        >
+                          <Copy className="w-3.5 h-3.5" />
+                          Copy Text
+                        </Button>
+                      </div>
+                      <div className="p-5 rounded-2xl bg-slate-950 text-slate-100 font-mono text-xs leading-relaxed max-h-[350px] overflow-y-auto whitespace-pre-wrap border border-slate-800 shadow-inner">
+                        {parsedData.raw}
+                      </div>
+                    </div>
                   )}
                 </div>
-                <div className="p-5 rounded-2xl bg-slate-950 text-slate-100 font-mono text-xs leading-relaxed max-h-[350px] overflow-y-auto whitespace-pre-wrap border border-slate-800 shadow-inner">
-                  {parsedData?.raw || "No raw text extracted."}
-                </div>
-              </div>
+              )}
             </div>
           )}
         </DialogContent>

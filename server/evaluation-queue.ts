@@ -76,7 +76,7 @@ class EvaluationQueue {
       
       if (evaluation) {
         await storage.updateInterviewQuestion(task.questionId, {
-          score: evaluation.score || 50,
+          score: typeof evaluation.score === 'number' ? evaluation.score : 0,
           feedback: evaluation.feedback || "Good attempt.",
         });
         console.log(`[EvaluationQueue] Successfully evaluated question ${task.questionId}`);
@@ -107,7 +107,20 @@ class EvaluationQueue {
   }
 
   private async applyFallback(questionId: string, answer: string) {
-    const wordCount = answer.trim().split(/\s+/).length;
+    const trimmed = (answer || '').trim().toLowerCase();
+    if (!trimmed || trimmed.includes("no answer recorded") || trimmed.includes("silence detected")) {
+      try {
+        await storage.updateInterviewQuestion(questionId, {
+          score: 0,
+          feedback: "No response was recorded for this question.",
+        });
+      } catch (err) {
+        console.error(`[EvaluationQueue] Failed to apply fallback for ${questionId}:`, err);
+      }
+      return;
+    }
+
+    const wordCount = trimmed.split(/\s+/).length;
     let score = 50;
     let feedback = "Try to elaborate more with examples.";
 

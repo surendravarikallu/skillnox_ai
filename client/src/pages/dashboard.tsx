@@ -75,10 +75,45 @@ export default function Dashboard() {
     ? completedInterviews.reduce((acc, i) => acc + (i.voiceScore || 0), 0) / completedInterviews.length
     : null;
 
+  const isSlotCompleted = user?.slotStatus === 'completed' || mySlot?.isSlotCompleted || (completedInterviews.length > 0 && !pendingInterview);
+  const latestCompleted = completedInterviews[0];
+
   return (
     <div className="max-w-[1600px] mx-auto space-y-8 pb-12">
-      {/* SLOT ALLOTMENT BANNER (IF ASSIGNED) */}
-      {user?.slotDate && (
+      {/* SLOT ALLOTMENT & SESSION STATUS BANNER */}
+      {isSlotCompleted && latestCompleted ? (
+        <Card className="rounded-2xl border border-emerald-500/30 bg-gradient-to-r from-emerald-500/10 via-teal-500/10 to-card p-6 shadow-xl">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-emerald-500/20 to-teal-600/20 border border-emerald-500/30 flex items-center justify-center text-emerald-400 shadow-inner shrink-0 relative group">
+                <Award className="w-6 h-6 text-emerald-400 group-hover:scale-110 transition-transform" />
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-emerald-500 rounded-full border-2 border-background" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-emerald-600 text-white text-[10px] font-black uppercase tracking-widest">
+                    Interview Completed ✅
+                  </Badge>
+                  <Badge variant="outline" className="border-emerald-500/30 text-emerald-400 font-extrabold text-xs">
+                    Score: {Math.round(latestCompleted.overallScore || 0)}%
+                  </Badge>
+                </div>
+                <p className="font-extrabold text-base mt-1 text-foreground">
+                  Placement Interview Session Evaluated Successfully
+                </p>
+                <p className="text-xs text-muted-foreground font-medium mt-0.5">
+                  Completed on {user?.slotDate || new Date(latestCompleted.completedAt || Date.now()).toLocaleDateString()} • Overall Score: <strong className="text-emerald-400">{Math.round(latestCompleted.overallScore || 0)}%</strong>
+                </p>
+              </div>
+            </div>
+            <Link href={`/interview/${latestCompleted.id}/results`}>
+              <Button className="rounded-xl px-6 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20">
+                View Full Detailed Report →
+              </Button>
+            </Link>
+          </div>
+        </Card>
+      ) : user?.slotDate && !isSlotCompleted && !mySlot?.isSlotPast ? (
         <Card className="rounded-2xl border border-primary/30 bg-gradient-to-r from-primary/10 via-purple-500/10 to-card p-6 shadow-xl">
           <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
             <div className="flex items-center gap-4">
@@ -92,7 +127,10 @@ export default function Dashboard() {
                     Assigned Slot
                   </Badge>
 
-                  <Badge variant={mySlot?.isSlotActive ? "default" : "secondary"} className={mySlot?.isSlotActive ? "bg-emerald-500 font-bold" : "font-bold"}>
+                  <Badge 
+                    variant={mySlot?.isSlotActive ? "default" : "secondary"} 
+                    className={mySlot?.isSlotActive ? "bg-emerald-500 font-bold" : "font-bold"}
+                  >
                     {mySlot?.isSlotActive ? "Slot Active Now ✓" : "Upcoming Slot"}
                   </Badge>
                 </div>
@@ -104,7 +142,7 @@ export default function Dashboard() {
                 )}
               </div>
             </div>
-            {pendingInterview && (
+            {pendingInterview && mySlot?.isSlotActive && (
               <Link href={`/interview/${pendingInterview.id}/room`}>
                 <Button className="rounded-xl px-6 font-bold bg-emerald-600 hover:bg-emerald-700 text-white shadow-lg shadow-emerald-600/20">
                   Enter Interview Room →
@@ -113,7 +151,35 @@ export default function Dashboard() {
             )}
           </div>
         </Card>
-      )}
+      ) : mySlot?.isSlotPast && !isSlotCompleted ? (
+        <Card className="rounded-2xl border border-amber-500/30 bg-gradient-to-r from-amber-500/10 via-orange-500/10 to-card p-6 shadow-xl">
+          <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div className="flex items-center gap-4">
+              <div className="w-12 h-12 rounded-2xl bg-gradient-to-br from-amber-500/20 to-orange-600/20 border border-amber-500/30 flex items-center justify-center text-amber-400 shadow-inner shrink-0 relative group">
+                <Clock className="w-6 h-6 text-amber-400 group-hover:scale-110 transition-transform" />
+                <div className="absolute -top-1 -right-1 w-3 h-3 bg-amber-500 rounded-full border-2 border-background animate-ping" />
+              </div>
+              <div>
+                <div className="flex items-center gap-2">
+                  <Badge className="bg-amber-600 text-white text-[10px] font-black uppercase tracking-widest">
+                    Past Slot
+                  </Badge>
+
+                  <Badge variant="outline" className="border-amber-500/40 text-amber-400 font-extrabold text-xs">
+                    Slot Date Passed ⚠️
+                  </Badge>
+                </div>
+                <p className="font-extrabold text-base mt-1 text-foreground">
+                  Interview Slot Date Expired: {user?.slotDate} ({user?.slotStartTime || '09:00'} - {user?.slotEndTime || '17:00'})
+                </p>
+                <p className="text-xs text-amber-400/90 font-medium mt-0.5">
+                  Your assigned slot date ({user?.slotDate}) has passed. Access is restricted. Please contact your T&amp;P administrator to request a slot reschedule.
+                </p>
+              </div>
+            </div>
+          </div>
+        </Card>
+      ) : null}
 
       {/* Hero Welcome Section */}
       <section className="relative group">

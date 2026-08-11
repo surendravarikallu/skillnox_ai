@@ -75,6 +75,7 @@ export default function AdminStudentsPage() {
   const [editForm, setEditForm] = useState({
     firstName: "",
     lastName: "",
+    email: "",
     rollNumber: "",
     branch: "",
     year: "",
@@ -243,6 +244,7 @@ export default function AdminStudentsPage() {
     setEditForm({
       firstName: student.firstName || "",
       lastName: student.lastName || "",
+      email: student.email || "",
       rollNumber: student.rollNumber || "",
       branch: student.department || "",
       year: student.year ? String(student.year) : "",
@@ -265,6 +267,7 @@ export default function AdminStudentsPage() {
       const payload: Record<string, any> = {
         firstName: editForm.firstName.trim(),
         lastName: editForm.lastName.trim(),
+        email: editForm.email.trim(),
         rollNumber: editForm.rollNumber.trim(),
         department: editForm.branch.trim(),
         slotDate: editForm.slotDate,
@@ -755,48 +758,63 @@ export default function AdminStudentsPage() {
       </Tabs>
 
       <Dialog open={isEditDialogOpen} onOpenChange={setIsEditDialogOpen}>
-        <DialogContent>
+        <DialogContent className="max-w-lg">
           <DialogHeader>
-            <DialogTitle>Edit Student</DialogTitle>
+            <DialogTitle className="text-xl font-bold flex items-center gap-2">
+              <Pencil className="w-5 h-5 text-primary" /> Edit Student Candidate Profile
+            </DialogTitle>
           </DialogHeader>
           <div className="grid gap-4 py-2">
-            <div className="grid gap-2">
-              <Label>First Name</Label>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs font-semibold">First Name</Label>
+                <Input
+                  value={editForm.firstName}
+                  onChange={(e) => handleEditFormChange("firstName", e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs font-semibold">Last Name</Label>
+                <Input
+                  value={editForm.lastName}
+                  onChange={(e) => handleEditFormChange("lastName", e.target.value)}
+                />
+              </div>
+            </div>
+            <div className="grid gap-1.5">
+              <Label className="text-xs font-semibold">Email Address</Label>
               <Input
-                value={editForm.firstName}
-                onChange={(e) => handleEditFormChange("firstName", e.target.value)}
+                type="email"
+                placeholder="student@gmail.com"
+                value={editForm.email}
+                onChange={(e) => handleEditFormChange("email", e.target.value)}
               />
             </div>
-            <div className="grid gap-2">
-              <Label>Last Name</Label>
-              <Input
-                value={editForm.lastName}
-                onChange={(e) => handleEditFormChange("lastName", e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Roll Number</Label>
-              <Input
-                value={editForm.rollNumber}
-                onChange={(e) => handleEditFormChange("rollNumber", e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Branch</Label>
-              <Input
-                value={editForm.branch}
-                onChange={(e) => handleEditFormChange("branch", e.target.value)}
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label>Year</Label>
-              <Input
-                type="number"
-                min={1}
-                max={5}
-                value={editForm.year}
-                onChange={(e) => handleEditFormChange("year", e.target.value)}
-              />
+            <div className="grid grid-cols-3 gap-3">
+              <div className="grid gap-1.5">
+                <Label className="text-xs font-semibold">Roll Number</Label>
+                <Input
+                  value={editForm.rollNumber}
+                  onChange={(e) => handleEditFormChange("rollNumber", e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs font-semibold">Branch / Dept</Label>
+                <Input
+                  value={editForm.branch}
+                  onChange={(e) => handleEditFormChange("branch", e.target.value)}
+                />
+              </div>
+              <div className="grid gap-1.5">
+                <Label className="text-xs font-semibold">Year</Label>
+                <Input
+                  type="number"
+                  min={1}
+                  max={5}
+                  value={editForm.year}
+                  onChange={(e) => handleEditFormChange("year", e.target.value)}
+                />
+              </div>
             </div>
             <div className="grid gap-2">
               <Label>Reset Password (optional)</Label>

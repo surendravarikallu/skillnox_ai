@@ -60,7 +60,8 @@ export async function evaluateAnswer(answer: string, question?: string): Promise
   const wordCount = trimmed ? trimmed.split(/\s+/).length : 0;
 
   // Immediately score empty / missing answers as 0
-  if (!trimmed || trimmed.toLowerCase() === "no answer recorded" || trimmed.toLowerCase() === "silence detected") {
+  const lower = trimmed.toLowerCase();
+  if (!trimmed || lower.includes("no answer recorded") || lower.includes("silence detected")) {
     return {
       score: 0,
       feedback: "No response was recorded for this question."

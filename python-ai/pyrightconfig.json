@@ -1,0 +1,18 @@
+{
+  "include": [
+    "."
+  ],
+  "exclude": [
+    "prompts/templates",
+    "**/__pyrefly_virtual__",
+    "c:/__pyrefly_virtual__"
+  ],
+  "ignore": [
+    "prompts/templates/**",
+    "**/__pyrefly_virtual__/**",
+    "c:/__pyrefly_virtual__/**"
+  ],
+  "reportMissingImports": "none",
+  "reportUndefinedVariable": "none",
+  "reportGeneralTypeIssues": "none"
+}

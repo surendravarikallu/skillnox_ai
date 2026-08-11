@@ -3,7 +3,7 @@
  * Communicates with FastAPI service running on port 8000
  */
 
-const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8000';
+const PYTHON_AI_SERVICE_URL = process.env.PYTHON_AI_SERVICE_URL || 'http://localhost:8060';
 const AI_SERVICE_API_KEY = process.env.AI_SERVICE_API_KEY || '';
 
 function sanitizeGeneratedQuestion(question?: string | null): string | null {
@@ -152,6 +152,19 @@ export async function analyzeResumeWithAI(resumeText: string, jdText?: string) {
     return result?.data || null;
   } catch (error) {
     console.error('Error calling analyzeResumeWithAI:', error);
+    return null;
+  }
+}
+
+export async function analyzeResumeJDMatch(resumeText: string, jdText: string) {
+  try {
+    const result = await callPythonService('/api/llm/analyze-resume-jd-match', 'POST', {
+      resume_text: resumeText,
+      jd_text: jdText
+    });
+    return result?.data || null;
+  } catch (error) {
+    console.error('Error calling analyzeResumeJDMatch:', error);
     return null;
   }
 }

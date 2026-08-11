@@ -86,7 +86,7 @@ export default function InterviewRoom() {
     enabled: !!user && user.role !== 'admin',
   });
 
-  const { transcript, isListening, connectionState, startListening, stopListening, pauseListening, clearTranscript, hardResetTranscript, setTranscript, error: speechError, micTestResult, testMicrophone, getRecordedAudio } = useVoiceToText();
+  const { transcript, isListening, connectionState, startListening, stopListening, pauseListening, clearTranscript, hardResetTranscript, setTranscript, error: speechError, micTestResult, testMicrophone, getRecordedAudio, setExternalStream } = useVoiceToText();
   const { isSpeaking: isAISpeaking, speak: speakText, stop: stopSpeaking, primeAudio } = useTextToSpeech();
 
   const videoRef = useRef<HTMLVideoElement>(null);
@@ -203,22 +203,32 @@ export default function InterviewRoom() {
         streamRef.current = stream;
         setStreamVersion(prev => prev + 1);
         if (videoRef.current) videoRef.current.srcObject = stream;
+        setExternalStream(stream);
       } catch (error) {
-        console.warn("Camera+audio getUserMedia failed, trying video-only:", error);
-        // CRITICAL: Do NOT disable mic when camera fails!
-        // Try video-only as fallback
+        console.warn("Camera+audio (enhanced) getUserMedia failed, trying standard audio:", error);
         try {
           const stream = await navigator.mediaDevices.getUserMedia({
             video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
-            audio: false
+            audio: true
           });
           streamRef.current = stream;
           setStreamVersion(prev => prev + 1);
           if (videoRef.current) videoRef.current.srcObject = stream;
-        } catch (videoError) {
-          console.warn("Video-only also failed, disabling camera only:", videoError);
-          setCameraEnabled(false);
-          // NEVER set micEnabled(false) here — mic works independently via SpeechRecognition
+          setExternalStream(stream);
+        } catch (stdError) {
+          console.warn("Camera+audio (standard) failed, trying video-only:", stdError);
+          try {
+            const stream = await navigator.mediaDevices.getUserMedia({
+              video: { width: { ideal: 1280 }, height: { ideal: 720 }, facingMode: 'user' },
+              audio: false
+            });
+            streamRef.current = stream;
+            setStreamVersion(prev => prev + 1);
+            if (videoRef.current) videoRef.current.srcObject = stream;
+          } catch (videoError) {
+            console.warn("Video-only also failed, disabling camera only:", videoError);
+            setCameraEnabled(false);
+          }
         }
       }
     };
@@ -862,17 +872,17 @@ export default function InterviewRoom() {
                   <div className="space-y-3">
                     <span className="text-muted-foreground/60 italic block">
                       {isListening
-                        ? "🎙️ Microphone active — please speak your response clearly."
-                        : "Click 'Start Listening' above to enable your microphone."}
+                        ? "🎙️ Microphone Active — Speak your answer clearly. Your speech text will appear here in real-time."
+                        : "Click 'Start Listening' above to begin recording your voice response."}
                     </span>
                     {isListening && (
                       <div className="space-y-2">
                         <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full bg-emerald-500/10 border border-emerald-500/30 text-emerald-500 text-xs font-bold animate-pulse">
                           <span className="w-2 h-2 rounded-full bg-emerald-500" />
-                          Recording in progress — your spoken response is being captured
+                          Recording Audio — Your voice will be transcribed by AI when you submit
                         </div>
-                        <p className="text-xs text-muted-foreground/70">
-                          Your response is securely captured and evaluated upon submission.
+                        <p className="text-xs text-muted-foreground">
+                          💡 Even if text doesn't appear here live, your voice is being recorded and will be transcribed accurately by Groq Cloud Whisper AI on submit.
                         </p>
                       </div>
                     )}
