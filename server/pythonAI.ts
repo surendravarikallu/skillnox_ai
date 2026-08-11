@@ -325,9 +325,13 @@ export async function textToSpeech(text: string): Promise<Buffer | null> {
 async function transcribeWithGroqDirect(audioData: Buffer, contentType: string): Promise<string> {
   const keysStr = process.env.GROQ_API_KEYS || process.env.GROQ_API_KEY || '';
   const keys = keysStr.split(',').map(k => k.trim()).filter(Boolean);
-  if (keys.length === 0) return '';
+  if (keys.length === 0) {
+    console.warn('[STT Direct Groq] No API keys configured');
+    return '';
+  }
 
   const model = process.env.GROQ_STT_MODEL || 'whisper-large-v3-turbo';
+  console.log(`[STT Direct Groq] Attempting transcription: ${audioData.length} bytes, contentType=${contentType}, model=${model}, keys=${keys.length}`);
 
   for (let attempt = 0; attempt < keys.length; attempt++) {
     const key = keys[attempt];
@@ -337,6 +341,7 @@ async function transcribeWithGroqDirect(audioData: Buffer, contentType: string):
       formData.append('file', blob, 'recording.webm');
       formData.append('model', model);
       formData.append('language', 'en');
+      formData.append('response_format', 'verbose_json');
 
       const response = await fetch('https://api.groq.com/openai/v1/audio/transcriptions', {
         method: 'POST',
@@ -344,19 +349,24 @@ async function transcribeWithGroqDirect(audioData: Buffer, contentType: string):
           'Authorization': `Bearer ${key}`
         },
         body: formData,
-        signal: AbortSignal.timeout(15000)
+        signal: AbortSignal.timeout(30000)
       });
 
       if (response.ok) {
         const data = await response.json() as any;
         const text = (data.text || '').trim();
+        console.log(`[STT Direct Groq] Key ${attempt + 1}: status=200, text="${(text || '').substring(0, 80)}", duration=${data.duration || 'N/A'}s, language=${data.language || 'N/A'}, segments=${data.segments?.length || 0}`);
         if (text) {
-          console.log(`[STT Direct Groq] Successfully transcribed (${text.length} chars): "${text.substring(0, 60)}..."`);
           return text;
         }
+        // If empty text, log segment details for diagnosis
+        if (data.segments && data.segments.length > 0) {
+          console.log(`[STT Direct Groq] Segments detail:`, JSON.stringify(data.segments.slice(0, 3)));
+        }
+        console.warn(`[STT Direct Groq] Key ${attempt + 1}: Groq returned EMPTY text for ${audioData.length} bytes of audio (duration=${data.duration || 'N/A'}s)`);
       } else {
         const errText = await response.text();
-        console.warn(`[STT Direct Groq] Key ${attempt + 1}/${keys.length} status ${response.status}: ${errText.substring(0, 100)}`);
+        console.warn(`[STT Direct Groq] Key ${attempt + 1}/${keys.length} status ${response.status}: ${errText.substring(0, 200)}`);
       }
     } catch (err: any) {
       console.warn(`[STT Direct Groq] Key ${attempt + 1}/${keys.length} error: ${err?.message || err}`);
@@ -364,6 +374,7 @@ async function transcribeWithGroqDirect(audioData: Buffer, contentType: string):
   }
   return '';
 }
+
 
 export async function transcribeAudio(audioData: Buffer, contentType: string = 'audio/webm'): Promise<string> {
   // 1. Primary: Direct Groq Cloud Whisper STT with 3-Key failover (~0.15s ultra-fast)
@@ -373,6 +384,7 @@ export async function transcribeAudio(audioData: Buffer, contentType: string = '
   }
 
   // 2. Secondary Fallback: Python AI Microservice
+  console.log(`[STT] Groq Direct returned empty, trying Python AI fallback for ${audioData.length} bytes...`);
   const url = `${PYTHON_AI_SERVICE_URL}/api/transcribe`;
   try {
     const formData = new FormData();
@@ -397,8 +409,9 @@ export async function transcribeAudio(audioData: Buffer, contentType: string = '
     }
 
     const data = await response.json() as { success: boolean; text: string };
-    console.log(`[STT Python Service] Transcribed: "${(data.text || '').substring(0, 60)}..."`);
-    return data.text || '';
+    const pyText = (data.text || '').trim();
+    console.log(`[STT Python Service] Transcribed (${pyText.length} chars): "${pyText.substring(0, 80)}..."`);
+    return pyText;
   } catch (error) {
     console.error(`[STT] Error calling Python STT service:`, error);
     return '';

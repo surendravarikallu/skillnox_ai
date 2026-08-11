@@ -16,6 +16,7 @@ from typing import List, Optional, Dict, Any
 import numpy as np
 import sys
 from pathlib import Path
+from dotenv import load_dotenv
 import io
 import base64
 import json
