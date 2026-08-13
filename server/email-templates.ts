@@ -1,9 +1,7 @@
 // Professional Email Templates for Skillnox AI (Kitaghire Subsystem)
 // All emails sent from: no-reply@kitaghire.in
 
-const PLATFORM_URL = process.env.NODE_ENV === 'production'
-  ? 'https://skillnoxai.kitaghire.in'
-  : 'http://localhost:5070';
+const PLATFORM_URL = process.env.PLATFORM_URL || process.env.APP_URL || 'https://skillnoxai.kitaghire.in';
 
 function baseLayout(title: string, body: string): string {
   return `

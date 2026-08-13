@@ -20,7 +20,7 @@ CACHE_DIR.mkdir(exist_ok=True)
 TEMPLATE_DIR = Path(__file__).parent.parent / "prompts" / "templates"
 jinja_env = Environment(loader=FileSystemLoader(str(TEMPLATE_DIR)), trim_blocks=True, lstrip_blocks=True)
 
-def _create_cache_filename(api_url: str, params: dict = None) -> Path:
+def _create_cache_filename(api_url: str, params: Optional[dict] = None) -> Path:
     url_parts = api_url.replace("https://api.github.com/", "").replace("/", "_")
     if params:
         param_str = "_".join([f"{k}_{v}" for k, v in sorted(params.items())])
@@ -29,7 +29,7 @@ def _create_cache_filename(api_url: str, params: dict = None) -> Path:
         filename = f"gh_cache_{url_parts}.json"
     return CACHE_DIR / filename
 
-def _fetch_github_api(api_url: str, params: dict = None) -> tuple[int, Any]:
+def _fetch_github_api(api_url: str, params: Optional[dict] = None) -> tuple[int, Any]:
     headers = {
         "Accept": "application/vnd.github.v3+json"
     }
@@ -74,7 +74,7 @@ def _fetch_github_api(api_url: str, params: dict = None) -> tuple[int, Any]:
         logger.error(f"Request to GitHub API failed: {e}")
         return 500, {}
 
-async def _fetch_github_api_async(api_url: str, params: dict = None) -> tuple[int, Any]:
+async def _fetch_github_api_async(api_url: str, params: Optional[dict] = None) -> tuple[int, Any]:
     headers = {
         "Accept": "application/vnd.github.v3+json"
     }
