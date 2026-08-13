@@ -54,25 +54,36 @@ npm run test:python
 
 ## Configuration & Environment Variables
 
-The connection between Node.js and Python is configured in your `.env` file:
+The connection between Node.js and Python, as well as cloud API providers, is configured in your `.env` file:
 
 ```env
 # Python AI Service URL (Default: http://localhost:8000)
 PYTHON_AI_SERVICE_URL=http://localhost:8000
 
-# Optional API Key for securing microservice endpoints
-AI_SERVICE_API_KEY=your_optional_secret_key
+# NVIDIA NIM Cloud API Key (Primary LLM & Vision Engine)
+NVIDIA_API_KEY=nvapi-your_nvidia_api_key
+# NVIDIA_API_KEYS=nvapi-key1,nvapi-key2  # Multi-key rotation
+NVIDIA_MODEL=meta/llama-3.1-8b-instruct
+
+# Groq Cloud Speech-to-Text Keys
+GROQ_API_KEYS=gsk_key1,gsk_key2
+GROQ_STT_MODEL=whisper-large-v3-turbo
+
+# Local Ollama Fallback Engine
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3.5:9b
 ```
 
 ---
 
 ## Resilient Fallback Mechanics
 
-Skilnox AI implements graceful degradation:
+Skilnox AI implements multi-tier graceful degradation:
 
-1. **LLM Question Generation Fallback**: If the local LLM or Python API times out (>60s) or fails, Node backend automatically loads questions from the pre-populated `COMPANY_QUESTION_BANK` in `server/company-questions.ts`.
-2. **STT Failover**: Primary Speech-to-Text uses Groq Cloud Whisper API (3-key failover). If Groq is unavailable, it fails over to the Python microservice Faster-Whisper engine.
-3. **Evaluation Fallback**: If answer evaluation fails on the AI service, Node uses rule-based semantic metrics (keyword relevance, length, structure) to ensure the user never gets an unhandled error.
+1. **NVIDIA NIM LLM Cloud API → Local Ollama Fallback**: If `NVIDIA_API_KEY` is present, all question generation, answer evaluations, and resume analyses use NVIDIA NIM (`meta/llama-3.1-8b-instruct`). If the NVIDIA API key is missing or fails, requests fail over to the local Ollama LLM (`qwen3.5:9b`).
+2. **NVIDIA Vision API → HSEmotion Fallback**: Webcam frame emotion analysis uses NVIDIA Vision (`meta/llama-3.2-11b-vision-instruct`). If unavailable, it falls back to local PyTorch `HSEmotionRecognizer`.
+3. **Groq Cloud STT → Local Whisper Fallback**: Speech-to-Text uses Groq Cloud Whisper API (3-key failover for ~0.15s responses). If Groq is unavailable, it fails over to local `Faster-Whisper`.
+4. **Question Bank Fallback**: If LLM services time out (>60s) or fail, Node backend loads fallback questions from `COMPANY_QUESTION_BANK` in `server/company-questions.ts`.
 
 ---
 

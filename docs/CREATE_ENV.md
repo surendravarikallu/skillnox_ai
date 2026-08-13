@@ -28,9 +28,14 @@ cp env.template .env
 | `JWT_SECRET` | Secret key used for signing session JWT tokens | `super-secret-jwt-key-min-32-chars-long` | **Required** |
 | `SESSION_SECRET` | Secret key for express-session cookie encryption | `super-secret-session-key` | **Required** |
 | `PYTHON_AI_SERVICE_URL` | URL of the FastAPI Python AI microservice | `http://localhost:8000` | **Required** |
-| `AI_SERVICE_API_KEY` | Optional security header for Python service | `skilnox_ai_secret_key` | Optional |
+| `NVIDIA_API_KEY` | NVIDIA NIM Cloud API key (Primary LLM & Vision Engine) | `nvapi-...` | **Recommended** |
+| `NVIDIA_API_KEYS` | Comma-separated NVIDIA API keys for high-throughput concurrency | `nvapi-key1,nvapi-key2` | Optional |
+| `NVIDIA_MODEL` | NVIDIA NIM LLM Model identifier | `meta/llama-3.1-8b-instruct` | Optional |
 | `GROQ_API_KEYS` | Comma-separated Groq Cloud API keys for ultra-fast STT | `gsk_key1,gsk_key2` | Recommended |
 | `GROQ_STT_MODEL` | Whisper model specified for Groq STT | `whisper-large-v3-turbo` | Optional |
+| `OLLAMA_BASE_URL` | Local Ollama service endpoint (Local Fallback) | `http://localhost:11434` | Optional |
+| `OLLAMA_MODEL` | Local Ollama model name | `qwen3.5:9b` | Optional |
+| `AI_SERVICE_API_KEY` | Optional security header for Python service | `skilnox_ai_secret_key` | Optional |
 | `PORT` | HTTP port for Node.js Express application | `5000` | Optional (Default: 5000) |
 | `NODE_ENV` | Environment state (`development` / `production`) | `development` | Optional |
 | `SMTP_HOST` | Email SMTP host for scheduling notifications | `smtp.gmail.com` | Optional |
@@ -54,9 +59,18 @@ SESSION_SECRET=session_secret_key_skilnox_2026
 PYTHON_AI_SERVICE_URL=http://localhost:8000
 AI_SERVICE_API_KEY=
 
+# NVIDIA NIM Cloud API (Primary LLM & Vision Engine)
+NVIDIA_API_KEY=
+# NVIDIA_API_KEYS=nvapi-key1,nvapi-key2
+NVIDIA_MODEL=meta/llama-3.1-8b-instruct
+
 # Speech-To-Text API Keys (Groq Cloud Failover)
 GROQ_API_KEYS=
 GROQ_STT_MODEL=whisper-large-v3-turbo
+
+# Local Ollama Fallback Engine
+OLLAMA_BASE_URL=http://localhost:11434
+OLLAMA_MODEL=qwen3.5:9b
 
 # Server Settings
 PORT=5000

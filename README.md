@@ -7,19 +7,19 @@
 ### 🧠 Intelligent Interview System
 *   **Multi-Mode Interviews**: Practice for **Technical**, **HR**, **Behavioral**, and **Project-based** rounds.
 *   **Company-Specific Drills**: Simulates interview patterns for top MNCs like **TCS, Infosys, Wipro, Accenture, Amazon**, and more.
-*   **Dynamic Questioning**: Uses a **Local LLM (TinyLlama / Phi-3)** or rule-based logic to generate unique, context-aware questions.
-*   **Real-time Feedback**: Instant analysis of your answers with scores for relevance, clarity, and depth.
+*   **Dynamic Questioning**: Uses **NVIDIA NIM Cloud API (`meta/llama-3.1-8b-instruct`)** or local Ollama LLM (`qwen3.5:9b`) to generate unique, context-aware questions.
+*   **Real-time Feedback**: Instant evaluation of candidate responses with score breakdown, constructive feedback, and ideal answers.
 
 ### 📄 Advanced Resume Analysis
 *   **Smart Parsing**: Automatically extracts skills, education, and experience from PDF resumes using AI.
-*   **Skill Gap Analysis**: Compares your resume against job descriptions to identify missing key skills.
-*   **Optimization Tips**: Provides actionable suggestions to improve your ATS score and resume impact.
+*   **Skill Gap & ATS Match**: Compares resume technical depth against job descriptions to score keyword alignment and structural clarity.
+*   **Optimization Tips**: Provides actionable suggestions to improve ATS compatibility and technical impact.
 
 ### 🎯 Holistic Performance Metrics
-*   **Placement Probability**: Predicts your chances of getting hired within 30, 60, or 90 days based on your performance.
-*   **Emotion Analysis**: (Experimental) Analyzes confidence and facial expressions during video interviews.
-*   **Voice Analysis**: (Experimental) Evaluates speech clarity and tone.
-*   **Detailed Reports**: Comprehensive dashboard showing your progress across Technical, Communication, and Confidence metrics.
+*   **Placement Probability**: Predicts offer chances within 30, 60, or 90 days based on multi-modal candidate performance metrics.
+*   **Emotion & Vision Analysis**: Powered by **NVIDIA Vision API (`meta/llama-3.2-11b-vision-instruct`)** and local HSEmotion to quantify candidate confidence and composure.
+*   **Voice & Acoustic Analysis**: Powered by **Groq Cloud Whisper STT** and Librosa to evaluate pitch, pace, fluency, and filler words.
+*   **Detailed Reports**: Comprehensive analytics dashboard for tracking Technical, Communication, and Confidence metrics.
 
 ## 🛠️ Tech Stack
 
@@ -36,11 +36,12 @@
 *   **ORM**: Drizzle ORM
 *   **Authentication**: Passport.js
 
-### AI & Machine Learning Service
+### AI & Machine Learning Microservice
+*   **Primary Cloud AI**: **NVIDIA NIM Cloud API** (`meta/llama-3.1-8b-instruct`, `meta/llama-3.2-11b-vision-instruct`)
+*   **Cloud Speech-to-Text**: **Groq Cloud Whisper API** (`whisper-large-v3-turbo`)
+*   **Local Fallback AI**: Ollama (`qwen3.5:9b`), Faster-Whisper, HSEmotion
 *   **Framework**: FastAPI (Python)
-*   **ML Libraries**: PyTorch, Transformers (Hugging Face), Scikit-learn
-*   **Local LLM**: TinyLlama-1.1B (Default) / Phi-3-mini
-*   **Tools**: Better-Whisper (ASR), PDF.js
+*   **ML Libraries**: PyTorch, Transformers, Librosa, Scikit-learn
 
 ## 📦 Prerequisites
 

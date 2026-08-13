@@ -17,41 +17,43 @@ Skilnox AI integrates a multi-model Machine Learning engine residing in the `pyt
           │                      │              │              │                      │
           ▼                      ▼              ▼              ▼                      ▼
   ┌──────────────┐       ┌──────────────┐ ┌───────────┐ ┌──────────────┐      ┌──────────────┐
-  │ Local LLM    │       │ Resume Parser│ │ Answer    │ │ Emotion      │      │ Placement    │
-  │ Generator    │       │ (spaCy/NLP)  │ │ Evaluator │ │ & Voice      │      │ Predictor    │
-  │ Qwen2.5 /    │       │              │ │ (Embeds)  │ │ (CV/Librosa) │      │ (Scikit)     │
-  │ TinyLlama    │       └──────────────┘ └───────────┘ └──────────────┘      └──────────────┘
-  └──────────────┘
+  │ NVIDIA NIM   │       │ Resume Parser│ │ Answer    │ │ Vision &     │      │ Placement    │
+  │ LLM API      │       │ (spaCy/LLM)  │ │ Evaluator │ │ Audio APIs   │      │ Predictor    │
+  │ (Llama-3.1)  │       │              │ │ (LLM/NIM) │ │ (NVIDIA/Groq)│      │ (Scikit)     │
+  └──────┬───────┘       └──────────────┘ └───────────┘ └──────┬───────┘      └──────────────┘
+         │                                                     │
+         ▼ (Fallback)                                          ▼ (Fallback)
+  ┌──────────────┐                                      ┌──────────────┐
+  │ Local Ollama │                                      │ HSEmotion /  │
+  │ (Qwen Model) │                                      │ Whisper Local│
+  └──────────────┘                                      └──────────────┘
 ```
 
 ---
 
 ## Models Breakdown
 
-### 1. Dynamic Question Generator (LLM)
-- **Primary Model**: `Qwen/Qwen2.5-7B-Instruct` or `TinyLlama/TinyLlama-1.1B-Chat-v1.0`
-- **Location**: Downloaded locally to `python-ai/models/` or loaded via HuggingFace Transformers pipeline.
-- **Fine-Tuning**: Custom QLoRA fine-tuning pipeline available under `python-ai/training/` (Google Colab optimized).
-- **Purpose**: Generates company-specific, round-aware technical, behavioral, and HR questions based on target job description skills.
+### 1. Dynamic Question Generator & Evaluator (LLM)
+- **Primary Engine**: **NVIDIA NIM Cloud API** (`meta/llama-3.1-8b-instruct`) via high-speed OpenAI-compatible REST completions endpoint (`https://integrate.api.nvidia.com/v1/chat/completions`).
+- **Multi-Key & Rate-Limit Resilience**: Supports multi-key pools (`NVIDIA_API_KEYS`), automatic retry logic with backoff for HTTP 429 rate limiting, and multi-socket async concurrency.
+- **Local Fallback**: Local Ollama server (`qwen3.5:9b` / `skillnox-qwen`) if NVIDIA API key is not supplied or cloud API is unreachable.
+- **Purpose**: Generates company-specific technical, behavioral, and HR questions along with instant answer evaluation, score breakdown, and ideal response suggestions.
 
 ### 2. Resume Parser & ATS Match Engine
-- **Libraries**: `spaCy` (`en_core_web_sm`), `pdfjs-dist`, `PyMuPDF` / `pdf-parse`
-- **Purpose**: Extract structured contact info, technical skills array, education history, and experience timeline from uploaded PDF/Word resumes.
-- **Matching Metric**: TF-IDF cosine similarity & semantic embedding distance against required Job Description (JD) skills.
+- **Engine**: Combined ATS + Technical Depth Evaluator powered by NVIDIA NIM / Ollama Jinja prompt templates.
+- **Libraries**: `spaCy`, `PyMuPDF`, `pdf-parse`, Jinja2 prompt rendering engine.
+- **Purpose**: Extracts structured contact details, skills, experience, and education, scoring resume relevance against Job Description (JD) keywords and technical depth.
 
-### 3. Answer Evaluation Engine
-- **Model**: `sentence-transformers/all-MiniLM-L6-v2`
-- **Purpose**: Computes semantic embedding similarity between candidate responses and reference model answers. Generates granular feedback on relevance, technical accuracy, and completeness.
+### 3. Facial Emotion & Composure Analysis
+- **Primary Engine**: **NVIDIA Vision API** (`meta/llama-3.2-11b-vision-instruct`). Analyzes base64-encoded webcam frames to extract emotion, composure, eye contact, and confidence metrics.
+- **Local Fallback**: Pretrained `HSEmotionRecognizer` (ResNet model `enet_b0_8_best_afew`) + OpenCV Haar Cascade face detection.
 
-### 4. Facial Emotion Analysis (Experimental)
-- **Framework**: `PyTorch` + `OpenCV` + `FER`
-- **Purpose**: Processes webcam frames during live interview sessions to quantify facial expressions (confidence, neutrality, nervousness, smile index).
+### 4. Audio & Speech-to-Text (STT) Analysis
+- **Primary STT**: **Groq Cloud Whisper API** (`whisper-large-v3-turbo`) with 3-key rotation for sub-second (~0.15s) speech transcription.
+- **Secondary STT / Local Fallback**: NVIDIA Cloud STT / Local `Faster-Whisper` (`large-v3-turbo` with `int8` quantization).
+- **Acoustic Analysis**: `Librosa` feature extractor analyzing pitch variation (Hz), pause frequency, speaking pace (syllables/min), and filler word ratio.
 
-### 5. Audio & Voice Tone Analysis (Experimental)
-- **Framework**: `Librosa`, `Faster-Whisper`
-- **Purpose**: Analyzes speech acoustics (pitch variation, speech rate in words-per-minute, pause frequency, jitter) to calculate voice confidence scores.
-
-### 6. Placement Probability Predictor
+### 5. Placement Probability Predictor
 - **Algorithm**: `RandomForestClassifier` / `GradientBoostingClassifier`
 - **Inputs**: Resume Score, JD Match Score, Technical Interview Score, HR Score, GD Score, Emotion Score, Voice Score.
 - **Output**: Estimated probability of securing a job offer within 30, 60, and 90 days.
