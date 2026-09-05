@@ -77,7 +77,7 @@ class OllamaLLM:
 
         nvidia_key = os.environ.get("NVIDIA_API_KEY")
         if nvidia_key:
-            nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+            nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
             print(f"[OK] AI Engine Initialized: NVIDIA NIM Cloud API ({nvidia_model})")
         else:
             print(f"Initializing Local LLM: {model_name} @ {base_url}")
@@ -97,36 +97,23 @@ class OllamaLLM:
     # ------------------------------------------------------------------
 
     def _verify_connection(self):
-        """Verify NVIDIA NIM API or local Ollama is running."""
-        nvidia_key = os.environ.get("NVIDIA_API_KEY")
-        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+        """Verify NVIDIA NIM API is configured and accessible."""
+        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
+        if keys_str:
+            nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+        else:
+            single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
+            nvidia_keys = [single_k] if single_k else []
+        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
 
-        if nvidia_key:
-            print(f"[OK] NVIDIA NIM LLM Cloud API ready: {nvidia_model} (High-Speed H100 GPU cluster)")
+        if nvidia_keys:
+            print(f"[OK] NVIDIA NIM Cloud API ready: {nvidia_model} ({len(nvidia_keys)} API keys in load-balanced pool)")
             return
 
-        try:
-            assert self._session is not None, "Session closed"
-            resp = self._session.get(
-                f"{self.base_url}/api/tags", timeout=10
-            )
-            if resp.status_code == 200:
-                models = [m["name"] for m in resp.json().get("models", [])]
-                if self.model_name in models or f"{self.model_name}:latest" in models:
-                    print(f"[OK] Ollama LLM ready: {self.model_name}")
-                else:
-                    print(f"[WARN] Model '{self.model_name}' not found. Available: {models}")
-                    print(f"  Run: ollama pull {self.model_name}")
-            else:
-                print(f"[WARN] Ollama returned status {resp.status_code}")
-        except requests.ConnectionError:
-            print("[WARN] Cannot connect to Ollama. Ensure it is running.")
-            print("  Start with: ollama serve")
-        except Exception as e:
-            print(f"[WARN] Ollama connection check failed: {e}")
+        print("[WARN] No NVIDIA API keys found. Please set NVIDIA_API_KEYS in .env.")
 
     # ------------------------------------------------------------------
-    # Core generation (Async & Sync with NVIDIA NIM Cloud Fallback)
+    # Core generation (Async & Sync with NVIDIA NIM Cloud)
     # ------------------------------------------------------------------
 
     async def generate_async(
@@ -137,7 +124,7 @@ class OllamaLLM:
         system_prompt: Optional[str] = None,
         json_format: bool = False,
     ) -> str:
-        """Generate text using NVIDIA NIM API if key exists, otherwise local Ollama."""
+        """Generate text using NVIDIA NIM API with multi-key pool failover."""
         keys_str = os.environ.get("NVIDIA_API_KEYS", "")
         if keys_str:
             nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
@@ -145,7 +132,7 @@ class OllamaLLM:
             single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
             nvidia_keys = [single_k] if single_k else []
 
-        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
 
         if nvidia_keys:
             url = "https://integrate.api.nvidia.com/v1/chat/completions"
@@ -164,20 +151,19 @@ class OllamaLLM:
             if json_format:
                 payload["response_format"] = {"type": "json_object"}
 
-            # Iterate through key pool first
+            # Iterate through key pool with retry
             for key_idx, nvidia_key in enumerate(nvidia_keys, 1):
                 headers = {
                     "Authorization": f"Bearer {nvidia_key}",
                     "Content-Type": "application/json"
                 }
 
-                # Retry loop per key
                 for attempt in range(2):
                     is_rate_limited = False
                     try:
                         assert self._async_client is not None, "Async client closed"
                         async with LLM_SEMAPHORE:
-                            resp = await self._async_client.post(url, headers=headers, json=payload)
+                            resp = await self._async_client.post(url, headers=headers, json=payload, timeout=20.0)
                             if resp.status_code == 429:
                                 is_rate_limited = True
                             else:
@@ -191,92 +177,55 @@ class OllamaLLM:
 
                     if is_rate_limited:
                         backoff = (attempt + 1) * 0.5
-                        print(f"[NVIDIA Key {key_idx} 429] Rate limit hit. Retrying key {key_idx} after releasing semaphore...")
+                        print(f"[NVIDIA Key {key_idx} 429] Rate limit hit. Retrying key after {backoff}s...")
                         await asyncio.sleep(backoff)
 
-        # Fallback to local Ollama API
-        async with LLM_SEMAPHORE:
-            try:
-                payload = {
-                    "model": self.model_name,
-                    "prompt": prompt,
-                    "stream": False,
-                    "options": {
-                        "temperature": temperature,
-                        "top_p": 0.9,
-                        "num_predict": max_length,
-                        "repeat_penalty": 1.1,
-                        "num_ctx": 2048,
-                    },
-                }
-                if system_prompt:
-                    payload["system"] = system_prompt
-                if json_format:
-                    payload["format"] = "json"
-
-                assert self._async_client is not None, "Async client closed"
-                resp = await self._async_client.post(f"{self.base_url}/api/generate", json=payload)
-                resp.raise_for_status()
-                return resp.json().get("response", "").strip()
-            except Exception as e:
-                print(f"[WARN] Local Ollama async generation failed: {e}")
-                return self._fallback_generate(prompt)
+        # Fallback to local heuristic if all cloud keys are unreachable
+        print("[WARN] All NVIDIA NIM keys exhausted or unavailable. Using rule-based fallback.")
+        return self._fallback_generate(prompt)
 
     def generate(self, prompt, max_length=300, temperature=0.7, system_prompt=None):
-        """Synchronous generation using NVIDIA NIM API if key exists, otherwise local Ollama."""
-        nvidia_key = os.environ.get("NVIDIA_API_KEY")
-        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
+        """Synchronous generation using NVIDIA NIM API pool."""
+        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
+        if keys_str:
+            nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+        else:
+            single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
+            nvidia_keys = [single_k] if single_k else []
 
-        if nvidia_key:
-            try:
-                url = "https://integrate.api.nvidia.com/v1/chat/completions"
-                headers = {
-                    "Authorization": f"Bearer {nvidia_key}",
-                    "Content-Type": "application/json"
-                }
-                messages = []
-                if system_prompt:
-                    messages.append({"role": "system", "content": system_prompt})
-                messages.append({"role": "user", "content": prompt})
+        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
 
-                payload = {
-                    "model": nvidia_model,
-                    "messages": messages,
-                    "temperature": temperature,
-                    "max_tokens": max_length,
-                    "top_p": 0.9
-                }
-                assert self._session is not None, "Session closed"
-                resp = self._session.post(url, headers=headers, json=payload, timeout=self.timeout)
-                resp.raise_for_status()
-                data = resp.json()
-                return data["choices"][0]["message"]["content"].strip()
-            except Exception as e:
-                print(f"[WARN] NVIDIA NIM API sync call failed: {e}. Falling back to local Ollama...")
-
-        # Fallback to local Ollama API
-        try:
-            payload = {
-                "model": self.model_name,
-                "prompt": prompt,
-                "stream": False,
-                "options": {
-                    "temperature": temperature,
-                    "top_p": 0.9,
-                    "num_predict": max_length,
-                    "repeat_penalty": 1.1,
-                },
-            }
+        if nvidia_keys:
+            url = "https://integrate.api.nvidia.com/v1/chat/completions"
+            messages = []
             if system_prompt:
-                payload["system"] = system_prompt
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
 
-            assert self._session is not None, "Session closed"
-            resp = self._session.post(f"{self.base_url}/api/generate", json=payload, timeout=self.timeout)
-            resp.raise_for_status()
-            return resp.json().get("response", "").strip()
-        except Exception as e:
-            print(f"Error in sync generate: {e}")
-            return self._fallback_generate(prompt)
+            payload = {
+                "model": nvidia_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_length,
+                "top_p": 0.9
+            }
+
+            for key in nvidia_keys:
+                try:
+                    headers = {
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json"
+                    }
+                    assert self._session is not None, "Session closed"
+                    resp = self._session.post(url, headers=headers, json=payload, timeout=min(self.timeout, 15))
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        return data["choices"][0]["message"]["content"].strip()
+                except Exception as e:
+                    print(f"[WARN] NVIDIA NIM sync call failed on key ({e}), trying next...")
+                    continue
+
+        return self._fallback_generate(prompt)
 
     # ------------------------------------------------------------------
     # Interview Question Generation (Async)
@@ -382,11 +331,12 @@ class OllamaLLM:
             "STT software frequently produces minor phonetic typos or homophone mis-hearings (e.g., 'hits' for 'heads', 'actual' for 'factorial', 'NBDIJOD' for 'NBDIJOF', 'consecutive 2 difference' for 'difference increases by 2'). "
             "You MUST be intelligent and forgiving of minor STT transcription errors. Do NOT penalize phonetic or spelling glitches caused by speech recognition!\n\n"
             "FAIR CANDIDATE SCORING RULES:\n"
-            "- If the candidate states the CORRECT numerical answer or core technical concept (e.g., 120, 42, 37.5% / 3 in 8, block scope vs function scope, shifting letters in alphabet), ALWAYS AWARD AT LEAST 75-90% SCORE!\n"
+            "- CRITICAL GUARDRAIL 1: If the candidate simply REPEATS or READS BACK the question text (e.g. 'What is a database index...'), you MUST AWARD SCORE: 0! Do NOT give marks for echoing the question!\n"
+            "- CRITICAL GUARDRAIL 2: If the candidate states 'I don't know', 'Sorry I don't', 'No idea', or provides no actual technical response, you MUST AWARD SCORE: 0!\n"
             "- 85-100: Candidate provides correct answer AND clear explanation or step-by-step logic.\n"
             "- 70-84: Candidate provides correct final answer or main concept clearly, even if brief or containing STT phonetic typos.\n"
             "- 45-69: Candidate shows partial understanding but missed key details or made a slight calculation error.\n"
-            "- 0-30: Answer is completely wrong, off-topic, or empty.\n\n"
+            "- 0-30: Answer is completely wrong, off-topic, repeated question, evasion, or empty.\n\n"
             "EXACT OUTPUT FORMAT REQUIRED (No preamble, no markdown headers):\n"
             "Score: [number 0-100]\n"
             "Feedback: [2-3 supportive, constructive sentences highlighting candidate strengths and simple areas to improve]\n"

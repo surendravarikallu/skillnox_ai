@@ -184,38 +184,22 @@ class InterviewFeedbackRequest(BaseModel):
 
 @app.get("/")
 def root():
-    return {"message": "AI Interview System API (Async/Ollama)", "status": "running"}
+    return {"message": "AI Interview System API (NVIDIA NIM Cloud Engine)", "status": "running"}
 
 
 @app.get("/health")
 async def health():
     """Health check endpoint"""
-    nvidia_key = os.environ.get("NVIDIA_API_KEY")
-    nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.1-8b-instruct")
-
-    if nvidia_key:
-        return {
-            "status": "healthy",
-            "llm_status": "loaded",
-            "llm_backend": "nvidia_nim",
-            "model": nvidia_model,
-            "concurrency_limit": 50
-        }
-
-    try:
-        import httpx
-        base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        async with httpx.AsyncClient() as client:
-            resp = await client.get(f"{base_url}/api/tags", timeout=5)
-            llm_status = "loaded" if resp.status_code == 200 else "error"
-    except Exception as e:
-        llm_status = f"error: {str(e)}"
+    nvidia_keys_str = os.environ.get("NVIDIA_API_KEYS", "") or os.environ.get("NVIDIA_API_KEY", "")
+    nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
+    key_count = len([k.strip() for k in nvidia_keys_str.split(",") if k.strip()])
 
     return {
         "status": "healthy",
-        "llm_status": llm_status,
-        "llm_backend": "ollama",
-        "model": model_to_use,
+        "llm_status": "loaded",
+        "llm_backend": "nvidia_nim",
+        "model": nvidia_model,
+        "key_pool_size": key_count,
         "concurrency_limit": 50
     }
 

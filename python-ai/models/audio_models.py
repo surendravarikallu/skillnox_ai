@@ -252,8 +252,13 @@ class LLMVoiceAnalyzer:
     ]
 
     def __init__(self):
-        self.ollama_base_url = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434")
-        self.ollama_model = os.environ.get("OLLAMA_MODEL", "qwen3:8b")
+        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
+        if keys_str:
+            self.nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
+        else:
+            single = os.environ.get("NVIDIA_API_KEY", "").strip()
+            self.nvidia_keys = [single] if single else []
+        self.nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
 
     def analyze(self, acoustic_features: Dict, transcript: str = "") -> Dict:
         """Analyze voice quality from acoustic features and transcript."""
@@ -289,20 +294,20 @@ class LLMVoiceAnalyzer:
         energy_consistency = acoustic_features.get('energy_consistency', 0.5)
         clarity_base = int(energy_consistency * 100)
 
-        # --- LLM-enhanced scoring (if available) ---
+        # --- LLM-enhanced scoring via NVIDIA NIM ---
         llm_scores = self._get_llm_scores(acoustic_features, transcript)
 
         if llm_scores:
             # Blend rule-based and LLM scores (60% LLM, 40% rule-based)
             fluency = int(0.6 * llm_scores.get('fluency', fluency_base) + 0.4 * fluency_base)
-            grammar = llm_scores.get('grammar', 60)
-            tone = llm_scores.get('tone', 60)
+            grammar = llm_scores.get('grammar', 70)
+            tone = llm_scores.get('tone', 70)
             pace = int(0.6 * llm_scores.get('pace', pace_score) + 0.4 * pace_score)
             clarity = int(0.6 * llm_scores.get('clarity', clarity_base) + 0.4 * clarity_base)
         else:
             fluency = fluency_base
-            grammar = 60  # Cannot assess grammar without LLM
-            tone = 60
+            grammar = 70
+            tone = 70
             pace = pace_score
             clarity = clarity_base
 
@@ -339,12 +344,12 @@ class LLMVoiceAnalyzer:
         return filler_count, filler_ratio, word_count
 
     def _get_llm_scores(self, features: Dict, transcript: str) -> Optional[Dict]:
-        """Get LLM-powered voice quality scores"""
+        """Get LLM-powered voice quality scores using NVIDIA NIM API."""
         if not transcript or len(transcript.strip()) < 10:
             return None
 
         prompt = (
-            f"Analyze this interview candidate's voice quality based on the following data.\n\n"
+            f"Analyze this interview candidate's voice quality based on the following acoustic data and transcript.\n\n"
             f"Transcript: \"{transcript[:1500]}\"\n\n"
             f"Acoustic Metrics:\n"
             f"- Speaking rate: {features.get('speaking_rate_spm', 0):.0f} syllables/min\n"
@@ -357,23 +362,37 @@ class LLMVoiceAnalyzer:
             f"Pace: [score]\nClarity: [score]"
         )
 
-        try:
-            resp = requests.post(
-                f"{self.ollama_base_url}/api/generate",
-                json={
-                    "model": self.ollama_model,
-                    "prompt": prompt,
-                    "system": "You are a voice quality evaluator for interview candidates. Score strictly 0-100.",
-                    "stream": False,
-                    "options": {"temperature": 0.3, "num_predict": 150},
-                },
-                timeout=60,
-            )
-            if resp.status_code == 200:
-                text = resp.json().get("response", "")
-                return self._parse_scores(text)
-        except Exception:
-            pass
+        # Iterate through NVIDIA NIM key pool
+        for key in self.nvidia_keys:
+            try:
+                resp = requests.post(
+                    "https://integrate.api.nvidia.com/v1/chat/completions",
+                    headers={
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json"
+                    },
+                    json={
+                        "model": self.nvidia_model,
+                        "messages": [
+                            {"role": "system", "content": "You are a professional voice and speech quality evaluator for interview candidates. Score strictly 0-100."},
+                            {"role": "user", "content": prompt}
+                        ],
+                        "temperature": 0.2,
+                        "max_tokens": 150
+                    },
+                    timeout=10
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    text = data["choices"][0]["message"]["content"]
+                    parsed = self._parse_scores(text)
+                    if parsed:
+                        return parsed
+                elif resp.status_code == 429:
+                    continue  # Try next key in pool
+            except Exception as e:
+                print(f"[WARN] NVIDIA voice scoring error on key: {e}")
+                continue
 
         return None
 
