@@ -1,10 +1,12 @@
 import { evaluateAnswer } from "./evaluate";
 import { storage } from "./storage";
+import { recordCommunicationScore } from "./interview-metrics";
 
 interface EvaluationTask {
   questionId: string;
   answer: string;
   questionText: string;
+  interviewId?: string;
   retryCount: number;
   priority: number; // Higher is more urgent
 }
@@ -12,7 +14,8 @@ interface EvaluationTask {
 // ─── Constants ────────────────────────────────────────
 const MAX_QUEUE_SIZE = 2000;
 const MAX_RETRIES = 3;
-const CONCURRENT_LIMIT = 100;
+// Regulated to 8 concurrent tasks to prevent overloading NVIDIA NIM during 20-student bursts
+const CONCURRENT_LIMIT = 8;
 const STATUS_LOG_INTERVAL_MS = 10000;
 const RETRY_BACKOFF_MS = 5000;
 
@@ -37,7 +40,7 @@ class EvaluationQueue {
   /**
    * Add a new evaluation task to the queue
    */
-  public async add(questionId: string, answer: string, questionText: string, priority = 1): Promise<boolean> {
+  public async add(questionId: string, answer: string, questionText: string, interviewId?: string, priority = 1): Promise<boolean> {
     if (this.queue.length >= this.maxQueueSize) {
       console.warn(`[EvaluationQueue] Load shedding: Queue full (${this.maxQueueSize}). Rejecting evaluation for ${questionId}`);
       
@@ -50,6 +53,7 @@ class EvaluationQueue {
       questionId,
       answer,
       questionText,
+      interviewId,
       retryCount: 0,
       priority
     });
@@ -79,7 +83,13 @@ class EvaluationQueue {
           score: typeof evaluation.score === 'number' ? evaluation.score : 0,
           feedback: evaluation.feedback || "Good attempt.",
         });
-        console.log(`[EvaluationQueue] Successfully evaluated question ${task.questionId}`);
+
+        // Record real communication score for interview metrics
+        if (task.interviewId && typeof evaluation.communicationScore === 'number') {
+          recordCommunicationScore(task.interviewId, evaluation.communicationScore);
+        }
+
+        console.log(`[EvaluationQueue] Evaluated question ${task.questionId}: score=${evaluation.score}, comm=${evaluation.communicationScore ?? 'N/A'}`);
       } else {
         throw new Error("Empty evaluation result");
       }
