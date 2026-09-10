@@ -602,6 +602,24 @@ export function useVoiceToText(): UseVoiceToTextReturn {
     return () => document.removeEventListener('visibilitychange', handleVisibilityChange);
   }, [createAndStartRecognition]);
 
+  // Invalidate cached audio stream when audio devices change (earphones plugged in/out)
+  // This ensures the next startMediaRecorder() call acquires a fresh stream from the new device
+  useEffect(() => {
+    const handleDeviceChange = () => {
+      console.log("[VoiceToText] Audio device changed. Invalidating cached media stream so next recording uses new device.");
+      // Mark the current stream as stale so startMediaRecorder() will re-acquire
+      if (mediaStreamRef.current) {
+        mediaStreamRef.current.getAudioTracks().forEach(track => track.stop());
+        mediaStreamRef.current = null;
+      }
+      // Also clear external stream reference so it gets refreshed
+      externalStreamRef.current = null;
+    };
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+  }, []);
+
   // 3-Second Active Watchdog Heartbeat for Chrome Auto-Recovery
   // Only fires if isListening is false AND autoRestart is true AND we're not paused.
   // Since onend now keeps isListening=true during fast-restart, this only fires

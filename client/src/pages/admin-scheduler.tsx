@@ -602,7 +602,9 @@ export default function AdminScheduler() {
                           Target: {c.branch || 'All Branches'} · Scheduled: {new Date(c.scheduledAt).toLocaleString()}
                         </p>
                       </div>
-                      <Badge className="bg-emerald-500/20 text-emerald-500 border-0">{c.status}</Badge>
+                      <Badge className={c.status === 'completed' ? "bg-emerald-500/20 text-emerald-500 border-0 font-bold" : "bg-amber-500/20 text-amber-500 border-0 font-bold"}>
+                        {c.status === 'completed' ? '✅ Enrolled & Ready' : c.status === 'active' ? '⚡ Dispatching...' : '⏳ Scheduled'}
+                      </Badge>
                     </div>
                   ))}
                 </div>

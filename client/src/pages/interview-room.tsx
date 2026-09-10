@@ -27,8 +27,18 @@ import {
   BrainCircuit,
   Loader2,
   Sparkles,
-  FileText
+  FileText,
+  AlertTriangle
 } from "lucide-react";
+import {
+  AlertDialog,
+  AlertDialogAction,
+  AlertDialogContent,
+  AlertDialogDescription,
+  AlertDialogFooter,
+  AlertDialogHeader,
+  AlertDialogTitle,
+} from "@/components/ui/alert-dialog";
 import { apiRequest, queryClient } from "@/lib/queryClient";
 import { useToast } from "@/hooks/use-toast";
 import { NeonPulse } from "@/components/NeonPulse";
@@ -65,6 +75,7 @@ export default function InterviewRoom() {
   const [micTested, setMicTested] = useState(false);
   const [isAnalyzingReport, setIsAnalyzingReport] = useState(false);
   const [reportStepIndex, setReportStepIndex] = useState(0);
+  const [showNoAudioAlert, setShowNoAudioAlert] = useState(false);
 
   const reportSteps = [
     "Processing Audio Transcripts & Candidate Responses...",
@@ -86,10 +97,11 @@ export default function InterviewRoom() {
     enabled: !!user && user.role !== 'admin',
   });
 
-  const { transcript, isListening, connectionState, startListening, stopListening, pauseListening, clearTranscript, hardResetTranscript, setTranscript, error: speechError, micTestResult, testMicrophone, getRecordedAudio, setExternalStream } = useVoiceToText();
+  const { transcript, isListening, connectionState, startListening, stopListening, pauseListening, resumeListening, clearTranscript, hardResetTranscript, setTranscript, error: speechError, micTestResult, testMicrophone, getRecordedAudio, setExternalStream } = useVoiceToText();
   const { isSpeaking: isAISpeaking, speak: speakText, stop: stopSpeaking, primeAudio } = useTextToSpeech();
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
   const timerRef = useRef<NodeJS.Timeout | null>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -237,6 +249,49 @@ export default function InterviewRoom() {
     return () => { if (streamRef.current) streamRef.current.getTracks().forEach(track => track.stop()); };
   }, [cameraEnabled, interview?.status]);
 
+  // DEVICE CHANGE LISTENER: Re-acquire audio stream when earphones/buds are plugged in or out
+  useEffect(() => {
+    if (interview?.status !== 'in_progress') return;
+
+    const handleDeviceChange = async () => {
+      console.log("[InterviewRoom] 🎧 Audio device changed (earphones plugged/unplugged). Re-acquiring audio stream...");
+      try {
+        // Get fresh audio stream with the new default device
+        const newStream = await navigator.mediaDevices.getUserMedia({
+          audio: ENHANCED_AUDIO_CONSTRAINTS
+        });
+
+        // Update the shared stream reference so MediaRecorder uses the new device
+        const oldAudioTracks = streamRef.current?.getAudioTracks() || [];
+        oldAudioTracks.forEach(track => track.stop());
+
+        // If we have a video+audio stream, replace just the audio tracks
+        if (streamRef.current) {
+          // Remove old audio tracks
+          streamRef.current.getAudioTracks().forEach(track => streamRef.current!.removeTrack(track));
+          // Add new audio tracks
+          newStream.getAudioTracks().forEach(track => streamRef.current!.addTrack(track));
+        }
+
+        // Update external stream for VoiceToText hook
+        setExternalStream(streamRef.current || newStream);
+
+        // Restart listening with the new audio device
+        if (micEnabled && !isAISpeaking) {
+          stopListening();
+          setTimeout(() => startListening(), 300);
+        }
+
+        console.log("[InterviewRoom] ✅ Audio stream re-acquired with new device");
+      } catch (err) {
+        console.warn("[InterviewRoom] ⚠️ Failed to re-acquire audio stream after device change:", err);
+      }
+    };
+
+    navigator.mediaDevices.addEventListener('devicechange', handleDeviceChange);
+    return () => navigator.mediaDevices.removeEventListener('devicechange', handleDeviceChange);
+  }, [interview?.status, micEnabled, isAISpeaking, setExternalStream, stopListening, startListening]);
+
   const maxDurationReachedRef = useRef(false);
 
   useEffect(() => {
@@ -334,27 +389,58 @@ export default function InterviewRoom() {
 
     console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1}/${questions.length} | qId=${qId} | isLast=${isLast} | fallbackText.length=${fallbackText.length}`);
 
-    // 1. Instantly extract candidate's recorded audio blob (~20ms)
+    // 1. Extract candidate's recorded audio blob
     const audioBlob = await getRecordedAudio();
-    console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} audioBlob: ${audioBlob ? audioBlob.size + ' bytes' : 'NULL'}`);
+    const hasAudioBlob = audioBlob && audioBlob.size > 500;
+    const cleanTranscript = fallbackText.trim();
+    const spokenWords = cleanTranscript.split(/\s+/).filter(w => w.length > 1);
+    const hasValidSpeechText = spokenWords.length >= 3;
 
-    // 2. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION
+    console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} audioBlob: ${audioBlob ? audioBlob.size + ' bytes' : 'NULL'} | spokenWords: ${spokenWords.length}`);
+
+    // STRICT AUDIO GUARD: Block submission ONLY if BOTH audio blob and valid speech transcript are missing!
+    if (!hasAudioBlob && !hasValidSpeechText) {
+      console.warn(`[InterviewRoom] ⛔ handleSubmitAnswer BLOCKED: No audio blob captured and fewer than 3 spoken words for Q${currentQuestionIndex + 1}`);
+      setShowNoAudioAlert(true);
+      return;
+    }
+
+    // 2. Capture face frame snapshot from active video feed for NVIDIA Vision emotion scoring
+    let frameSnapshot: string | null = null;
+    if (videoRef.current && cameraEnabled) {
+      try {
+        const canvas = canvasRef.current || document.createElement('canvas');
+        canvas.width = 320;
+        canvas.height = 240;
+        const ctx = canvas.getContext('2d');
+        if (ctx && videoRef.current.videoWidth > 0) {
+          ctx.drawImage(videoRef.current, 0, 0, 320, 240);
+          frameSnapshot = canvas.toDataURL('image/jpeg', 0.65);
+        }
+      } catch (err) {
+        console.warn("[InterviewRoom] Frame capture warning:", err);
+      }
+    }
+
+    // 3. INSTANT ZERO-LATENCY UI SWITCH TO NEXT QUESTION
     clearTranscript();
     if (currentQuestionIndex < questions.length - 1) {
       setCurrentQuestionIndex(prev => prev + 1);
     }
 
-    // 3. Process Groq Cloud Whisper AI STT and save answer
+    // 4. Process Groq Cloud Whisper AI STT and save answer with frameData
     const savePromise = (async () => {
       let groqTranscript = fallbackText;
       if (audioBlob && audioBlob.size > 500) {
         try {
           const token = localStorage.getItem("token");
+          const clientB64 = cleanTranscript ? btoa(unescape(encodeURIComponent(cleanTranscript))) : '';
           console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} sending ${audioBlob.size} bytes to /api/transcribe...`);
           const res = await fetch('/api/transcribe', {
             method: 'POST',
             headers: {
               'Content-Type': audioBlob.type || 'audio/webm',
+              ...(clientB64 ? { 'x-client-transcript': clientB64 } : {}),
               ...(token ? { 'Authorization': `Bearer ${token}` } : {}),
             },
             body: audioBlob,
@@ -375,10 +461,14 @@ export default function InterviewRoom() {
         console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} skipping transcribe (blob too small or null)`);
       }
 
-      // Save the official Groq Whisper AI transcription directly to database
+      // Save answer and frameData for AI emotion/communication evaluation
       const finalSaveAnswer = groqTranscript || "(no answer recorded)";
-      console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} saving answer (${finalSaveAnswer.length} chars): "${finalSaveAnswer.substring(0, 60)}..."`);
-      return await apiRequest('POST', `/api/interviews/${id}/answer`, { questionId: qId, answer: finalSaveAnswer });
+      console.log(`[InterviewRoom] 🔵 Q${currentQuestionIndex + 1} saving answer (${finalSaveAnswer.length} chars, frame=${frameSnapshot ? 'YES' : 'NO'}): "${finalSaveAnswer.substring(0, 60)}..."`);
+      return await apiRequest('POST', `/api/interviews/${id}/answer`, {
+        questionId: qId,
+        answer: finalSaveAnswer,
+        frameData: frameSnapshot
+      });
     })();
 
     pendingAnswerPromisesRef.current.push(savePromise);
@@ -403,33 +493,48 @@ export default function InterviewRoom() {
     if (qId && !loadingQuestions && interview?.status === 'in_progress' && spokenQuestionIdRef.current !== qId) {
       spokenQuestionIdRef.current = qId;
       
-      // Ensure mic is active & listening immediately on question change
-      startListening();
+      // CRITICAL FIX: Pause mic BEFORE AI speaks to prevent:
+      // 1. Mic recording the AI's own TTS output (echo/self-recording)
+      // 2. SpeechRecognition transcribing AI speech as student's answer
+      // 3. Stale transcript data from previous question leaking into next
+      pauseListening();
+      clearTranscript();
       
       console.log(`[InterviewRoom] Auto-speaking question (${qId}): "${currentQuestion.question.substring(0, 50)}..."`);
       
-      // Speak question text in background without locking/muting microphone
-      speakText(currentQuestion.question).catch(err => {
+      // Speak question text, then resume mic AFTER AI finishes
+      speakText(currentQuestion.question).then(() => {
+        console.log(`[InterviewRoom] AI finished speaking Q(${qId}). Resuming mic for student response...`);
+        // Small delay to ensure TTS audio fully stops before mic resumes
+        setTimeout(() => {
+          clearTranscript(); // Double-clear to ensure no AI speech leaked into transcript
+          resumeListening();
+        }, 200);
+      }).catch(err => {
         console.error("[InterviewRoom] Automatic question speech failed:", err);
+        // Even on TTS failure, resume mic so student can still answer
+        clearTranscript();
+        resumeListening();
       });
     }
-  }, [currentQuestion?.id, currentQuestion?.question, loadingQuestions, interview?.status, speakText, startListening]);
+  }, [currentQuestion?.id, currentQuestion?.question, loadingQuestions, interview?.status, speakText, pauseListening, resumeListening, clearTranscript]);
 
   // MIC WATCHDOG: During an active interview, ensure mic is always running.
   // If the mic drops for any reason (Chrome glitch, TTS race, etc.) and the student
   // hasn't manually disabled it, auto-restart it every 5 seconds.
+  // IMPORTANT: Do NOT restart mic while AI is speaking — mic is intentionally paused during TTS.
   useEffect(() => {
     if (interview?.status !== 'in_progress' || !micEnabled) return;
 
     const watchdog = setInterval(() => {
-      if (micEnabled && !isListening && interview?.status === 'in_progress') {
-        console.warn("[InterviewRoom] 🔧 Mic watchdog: mic not listening during active interview. Auto-restarting...");
+      if (micEnabled && !isListening && !isAISpeaking && interview?.status === 'in_progress') {
+        console.warn("[InterviewRoom] \ud83d\udd27 Mic watchdog: mic not listening during active interview (AI not speaking). Auto-restarting...");
         startListening();
       }
-    }, 3000);
+    }, 5000);
 
     return () => clearInterval(watchdog);
-  }, [interview?.status, micEnabled, isListening, startListening]);
+  }, [interview?.status, micEnabled, isListening, isAISpeaking, startListening]);
 
   // Ctrl+Enter keyboard shortcut to submit answer
   useEffect(() => {
@@ -701,6 +806,7 @@ export default function InterviewRoom() {
         <div className="lg:col-span-5 space-y-8">
           <Card className="rounded-[2.5rem] glass-card overflow-hidden relative group h-[550px] shadow-2xl border-primary/10">
             <div className="absolute inset-0 z-0 bg-muted">
+              <canvas ref={canvasRef} style={{ display: 'none' }} aria-hidden="true" />
               {cameraEnabled ? (
                 <video 
                   ref={videoRef} 
@@ -882,7 +988,7 @@ export default function InterviewRoom() {
                           Recording Audio — Your voice will be transcribed by AI when you submit
                         </div>
                         <p className="text-xs text-muted-foreground">
-                          💡 Even if text doesn't appear here live, your voice is being recorded and will be transcribed accurately by Groq Cloud Whisper AI on submit.
+                          🎙️ <strong>Voice-Only Response Required:</strong> Ensure your microphone/earphones are unmuted and active while speaking. Submissions with 0 bytes of audio will be blocked.
                         </p>
                       </div>
                     )}
@@ -929,6 +1035,41 @@ export default function InterviewRoom() {
           </Card>
         </div>
       </div>
+
+      <AlertDialog open={showNoAudioAlert} onOpenChange={setShowNoAudioAlert}>
+        <AlertDialogContent className="max-w-md rounded-2xl border-red-500/20 shadow-2xl">
+          <AlertDialogHeader>
+            <AlertDialogTitle className="flex items-center gap-2 text-red-500 font-bold text-lg">
+              <AlertTriangle className="w-6 h-6 text-red-500" />
+              No Audio Input Detected!
+            </AlertDialogTitle>
+            <AlertDialogDescription className="space-y-3 pt-2 text-sm text-foreground/80">
+              <p className="font-semibold text-foreground">
+                We could not capture any voice audio from your microphone or earphones.
+              </p>
+              <ul className="list-disc pl-5 space-y-1.5 text-xs text-muted-foreground">
+                <li>Check that your earphone/headset microphone is <strong>unmuted</strong>.</li>
+                <li>Ensure your microphone volume or hardware mute switch is turned <strong>ON</strong>.</li>
+                <li>Verify Chrome microphone permissions in your browser address bar.</li>
+              </ul>
+              <div className="p-3 bg-red-500/10 border border-red-500/20 rounded-xl text-xs text-red-400 font-medium">
+                💡 Submitting without voice audio is strictly not allowed. Please speak clearly into your microphone before proceeding.
+              </div>
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter className="pt-2">
+            <AlertDialogAction
+              className="w-full bg-primary hover:bg-primary/90 text-primary-foreground font-bold rounded-xl h-11"
+              onClick={() => {
+                setShowNoAudioAlert(false);
+                startListening();
+              }}
+            >
+              🔄 Try Speaking Again
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
