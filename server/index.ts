@@ -9,6 +9,7 @@ import { serveStatic } from "./static";
 import { createServer } from "http";
 import { evaluationQueue } from "./evaluation-queue";
 import { storage } from "./storage";
+import { createFullInterviewWithQuestions } from "./questionGenerator";
 
 const app = express();
 app.set("trust proxy", 1);
@@ -131,13 +132,13 @@ app.use((req, res, next) => {
 
             for (const student of targetUsers) {
               log(`[CampaignScheduler] Automatically enrolling student ${student.firstName} ${student.lastName} (${student.id})`);
-              await storage.createInterview({
+              await createFullInterviewWithQuestions({
                 userId: student.id,
-                types: campaign.company ? ['company'] : ['technical'],
+                types: campaign.company ? ['company'] : ['communication', 'technical', 'hr'],
                 difficulty: campaign.difficulty as any,
                 type: campaign.company ? 'company' : 'technical',
-                company: campaign.company,
-                simulationMode: campaign.simulationMode,
+                company: campaign.company || null,
+                simulationMode: campaign.simulationMode || 'combined',
                 trendingEnabled: true,
                 status: 'pending',
               });

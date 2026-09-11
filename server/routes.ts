@@ -23,6 +23,7 @@ import {
 import * as pythonAI from "./pythonAI";
 import { evaluationQueue } from "./evaluation-queue";
 import { evaluateAnswer, withTimeout } from "./evaluate";
+import { recordEmotionScore, getSessionMetrics, clearSessionMetrics } from "./interview-metrics";
 import {
   buildQuestionSet,
   getCompanyQuestions,
@@ -32,6 +33,7 @@ import {
   COMPANY_QUESTION_BANK,
   type InterviewRound
 } from "./company-questions";
+import { createFullInterviewWithQuestions } from "./questionGenerator";
 import {
   INTERVIEW_PATTERNS,
   getInterviewPattern,
@@ -2126,16 +2128,25 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         audioBuffer = Buffer.concat(chunks);
       }
 
-      if (audioBuffer.length < 100) {
-        console.warn(`[STT Route] Warning: Audio buffer received is too small (${audioBuffer?.length || 0} bytes)`);
-        return res.json({ success: true, text: "" });
+      const contentType = req.headers['content-type'] || 'audio/webm';
+      let clientTranscript = '';
+      if (req.headers['x-client-transcript']) {
+        try {
+          clientTranscript = Buffer.from(req.headers['x-client-transcript'], 'base64').toString('utf-8');
+        } catch {
+          clientTranscript = decodeURIComponent(req.headers['x-client-transcript']);
+        }
       }
 
-      const contentType = req.headers['content-type'] || 'audio/webm';
-      console.log(`[STT Route] Processing ${audioBuffer.length} bytes of ${contentType} audio for transcription...`);
+      if (audioBuffer.length < 100) {
+        console.warn(`[STT Route] Warning: Audio buffer received is too small (${audioBuffer?.length || 0} bytes)`);
+        return res.json({ success: true, text: clientTranscript || "" });
+      }
 
-      const transcript = await pythonAI.transcribeAudio(audioBuffer, contentType);
-      console.log(`[STT Route] Transcription successful (${transcript.length} chars): "${transcript.substring(0, 60)}..."`);
+      console.log(`[STT Route] Processing ${audioBuffer.length} bytes of ${contentType} audio (client fallback: ${clientTranscript ? clientTranscript.length + ' chars' : 'none'})...`);
+
+      const transcript = await pythonAI.transcribeAudio(audioBuffer, contentType, clientTranscript);
+      console.log(`[STT Route] Transcription result (${transcript.length} chars): "${transcript.substring(0, 60)}..."`);
       res.json({ success: true, text: transcript });
     } catch (error: any) {
       console.error("[STT Route] Error:", error);
@@ -2868,7 +2879,7 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   app.post('/api/interviews/:id/answer', isAuthenticated, async (req: any, res) => {
     try {
       const interviewId = req.params.id;
-      const { questionId, answer } = req.body;
+      const { questionId, answer, frameData } = req.body;
 
       if (!questionId) {
         return res.status(400).json({ message: "Question ID is required" });
@@ -2899,8 +2910,26 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       console.log(`Answer received for question ${questionId} in interview ${interviewId}, scheduling async evaluation.`);
       res.json(optimisticQuestion);
 
-      // Add to evaluation queue for managed background processing
-      evaluationQueue.add(questionId, answer, question.question || '');
+      // Async facial emotion analysis via NVIDIA Vision if webcam frame is provided
+      if (frameData && typeof frameData === 'string' && frameData.includes('base64,')) {
+        try {
+          const b64 = frameData.split('base64,')[1];
+          const imageBuffer = Buffer.from(b64, 'base64');
+          pythonAI.analyzeEmotion(imageBuffer).then(emotionRes => {
+            if (emotionRes && typeof emotionRes.emotion_score === 'number') {
+              recordEmotionScore(interviewId, emotionRes.emotion_score, emotionRes.confidence);
+              console.log(`[Interview ${interviewId}] Emotion score recorded: ${emotionRes.emotion_score}% (Expression: ${emotionRes.emotion || 'composure'})`);
+            }
+          }).catch(err => {
+            console.warn(`[Interview ${interviewId}] Emotion analysis error:`, err?.message || err);
+          });
+        } catch (err) {
+          console.warn(`[Interview ${interviewId}] Frame decode error:`, err);
+        }
+      }
+
+      // Add to evaluation queue for managed background processing (with interviewId for communication tracking)
+      evaluationQueue.add(questionId, answer, question.question || '', interviewId);
     } catch (error: any) {
       console.error("Error submitting answer:", error);
       res.status(500).json({
@@ -2938,10 +2967,40 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       if (validAnsweredQuestions.length > 0 && scoredQuestions.length > 0) {
         const avgScore = Math.round(totalPointsEarned / scoredQuestions.length);
         technicalScore = avgScore;
-        communicationScore = communicationData?.overall ?? Math.round(avgScore * 0.95);
-        emotionScore = emotionData?.emotion_score ?? Math.round(avgScore * 0.9);
-        voiceScore = voiceData?.overall_voice_score ?? Math.round(avgScore * 0.9);
-        overallScore = Math.round((technicalScore + communicationScore + emotionScore + voiceScore) / 4);
+
+        const sessionMetrics = getSessionMetrics(interviewId);
+
+        // 1. Genuine Communication Score (evaluated across questions via NVIDIA NIM)
+        if (sessionMetrics && sessionMetrics.communicationScores.length > 0) {
+          const commSum = sessionMetrics.communicationScores.reduce((a, b) => a + b, 0);
+          communicationScore = Math.round(commSum / sessionMetrics.communicationScores.length);
+        } else {
+          communicationScore = communicationData?.overall ?? Math.round(avgScore * 0.95);
+        }
+
+        // 2. Genuine Face & Emotion Score (evaluated from webcam frames via NVIDIA Vision)
+        if (sessionMetrics && sessionMetrics.emotionScores.length > 0) {
+          const emoSum = sessionMetrics.emotionScores.reduce((a, b) => a + b, 0);
+          emotionScore = Math.round(emoSum / sessionMetrics.emotionScores.length);
+        } else {
+          emotionScore = emotionData?.emotion_score ?? Math.round(avgScore * 0.9);
+        }
+
+        // 3. Genuine Voice Score
+        if (sessionMetrics && sessionMetrics.voiceScores.length > 0) {
+          const voiceSum = sessionMetrics.voiceScores.reduce((a, b) => a + b, 0);
+          voiceScore = Math.round(voiceSum / sessionMetrics.voiceScores.length);
+        } else {
+          voiceScore = voiceData?.overall_voice_score ?? Math.round(communicationScore * 0.95);
+        }
+
+        // 4. Weighted Composite Overall Score
+        overallScore = Math.round(
+          technicalScore * 0.40 +
+          communicationScore * 0.30 +
+          emotionScore * 0.15 +
+          voiceScore * 0.15
+        );
       } else if (validAnsweredQuestions.length > 0) {
         technicalScore = 75;
         communicationScore = 75;
@@ -2983,6 +3042,9 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         completedAt,
         duration: durationSeconds,
       });
+
+      // Clear in-memory session metrics after persisting
+      clearSessionMetrics(interviewId);
 
       const resume = await storage.getResumeByUserId(userId);
       const resumeScore = resume?.overallScore || 50;
@@ -4148,6 +4210,15 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       }
 
       let committedCount = 0;
+      const emailDispatchList: Array<{
+        email: string;
+        name: string;
+        rollNumber: string;
+        slotDate: string;
+        slotStartTime: string;
+        slotEndTime: string;
+        interviewId: string;
+      }> = [];
 
       for (const slot of slots) {
         // 1. Update user slot date and times
@@ -4158,16 +4229,26 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
           slotStatus: 'active'
         });
 
-        // 2. Create pending interview instance for the student
-        await storage.createInterview({
+        // 2. Create full 15-question interview instance for the student
+        const newInterview = await createFullInterviewWithQuestions({
           userId: slot.studentId,
           type: slot.interviewType || 'technical',
-          types: Array.isArray(slot.types) && slot.types.length > 0 ? slot.types : [slot.interviewType || 'technical'],
+          types: Array.isArray(slot.types) && slot.types.length > 0 ? slot.types : ['communication', 'technical', 'hr'],
           difficulty: slot.difficulty || 'medium',
-          company: slot.company || undefined,
+          company: slot.company || null,
           status: 'pending',
           simulationMode: 'combined',
           trendingEnabled: true
+        });
+
+        emailDispatchList.push({
+          email: slot.email || `${slot.rollNumber?.toLowerCase()}@gmail.com`,
+          name: slot.studentName || slot.rollNumber,
+          rollNumber: slot.rollNumber,
+          slotDate: slot.slotDate,
+          slotStartTime: slot.slotStartTime,
+          slotEndTime: slot.slotEndTime,
+          interviewId: newInterview.id
         });
 
         committedCount++;
@@ -4176,10 +4257,61 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
       // Clear draft proposal after successful commitment
       await setGlobalSetting('draft_slot_proposal', '', 'Approved and committed');
 
+      // 3. Launch background email notification dispatch (non-blocking)
+      if (emailDispatchList.length > 0) {
+        (async () => {
+          console.log(`[SchedulerApprove] 📧 Launching background email dispatch for ${emailDispatchList.length} students...`);
+          for (const item of emailDispatchList) {
+            try {
+              const htmlContent = `
+                <!DOCTYPE html>
+                <html>
+                <head><meta charset="utf-8"></head>
+                <body style="font-family: Arial, sans-serif; padding: 20px; background-color: #f4f6f9; color: #333;">
+                  <div style="max-width: 600px; margin: 0 auto; background: #ffffff; border-radius: 16px; padding: 24px; box-shadow: 0 4px 14px rgba(0,0,0,0.08);">
+                    <div style="background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%); padding: 20px; border-radius: 12px; text-align: center; color: white; margin-bottom: 20px;">
+                      <h2 style="margin: 0; font-size: 20px;">🎓 CONLOQUIUM '26 — Mock Interview Slot</h2>
+                      <p style="margin: 4px 0 0 0; font-size: 13px; opacity: 0.9;">Skillnox AI Automated Placement Assessment</p>
+                    </div>
+                    <p style="font-size: 15px; font-weight: bold; color: #1e293b;">Hello ${item.name} (${item.rollNumber}),</p>
+                    <p style="font-size: 14px; color: #475569;">Your placement mock interview slot has been officially scheduled and approved. Please review your login credentials and slot time below:</p>
+                    
+                    <div style="background-color: #f8fafc; border-left: 4px solid #3b82f6; padding: 16px; border-radius: 8px; margin: 20px 0; font-size: 14px;">
+                      <p style="margin: 6px 0;"><strong>📅 Assigned Slot Date:</strong> <span style="color: #2563eb; font-weight: bold;">${item.slotDate}</span></p>
+                      <p style="margin: 6px 0;"><strong>⏰ Time Window:</strong> ${item.slotStartTime} - ${item.slotEndTime}</p>
+                      <p style="margin: 6px 0;"><strong>👤 Portal Username:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: bold;">${item.rollNumber}</code></p>
+                      <p style="margin: 6px 0;"><strong>🔑 Password:</strong> <code style="background: #e2e8f0; padding: 2px 6px; border-radius: 4px; font-weight: bold;">${item.rollNumber}</code></p>
+                    </div>
+
+                    <div style="text-align: center; margin: 28px 0;">
+                      <a href="https://skillnoxai.kitaghire.in/interview/${item.interviewId}" style="background: linear-gradient(135deg, #2563eb 0%, #1d4ed8 100%); color: #ffffff !important; padding: 14px 32px; text-decoration: none; border-radius: 12px; font-weight: bold; font-size: 15px; display: inline-block;">🚀 Access Interview Room</a>
+                    </div>
+
+                    <p style="font-size: 12px; color: #94a3b8; text-align: center; margin-top: 20px; border-top: 1px solid #e2e8f0; padding-top: 15px;">
+                      Kitsakshaa Engineering College — Placement Cell
+                    </p>
+                  </div>
+                </body>
+                </html>
+              `;
+              await sendEmail({
+                to: item.email,
+                subject: `🎓 CONLOQUIUM '26: Your Placement Interview Slot (${item.slotDate} ${item.slotStartTime}-${item.slotEndTime})`,
+                html: htmlContent
+              });
+              await new Promise(r => setTimeout(r, 200));
+            } catch (e) {
+              console.error(`[SchedulerApprove] Failed sending email to ${item.email}:`, e);
+            }
+          }
+          console.log(`[SchedulerApprove] ✅ Finished background email dispatch for ${emailDispatchList.length} students.`);
+        })();
+      }
+
       res.json({
         success: true,
         committedCount,
-        message: `Successfully approved and created ${committedCount} student slots with interview instances.`
+        message: `Successfully approved and created ${committedCount} student slots with interview instances and dispatched email notifications.`
       });
     } catch (error: any) {
       console.error("Error approving dynamic slots:", error);
