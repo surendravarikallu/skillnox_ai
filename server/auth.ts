@@ -58,11 +58,26 @@ export async function hashPassword(password: string): Promise<string> {
   return bcrypt.hash(password, 10);
 }
 
-// Compare password
+import * as argon2 from "argon2";
+import { scrypt, timingSafeEqual } from "crypto";
+import { promisify } from "util";
+
+const scryptAsync = promisify(scrypt);
+
+// Compare password (supports Argon2, Bcrypt, and Scrypt for kitaghire shared credentials)
 export async function comparePassword(password: string, hash: string): Promise<boolean> {
   if (!password || !hash) return false;
   
-  // 1. Standard bcrypt compare
+  // 1. Argon2id compare (Kitaghire unified standard)
+  if (hash.startsWith("$argon2")) {
+    try {
+      return await argon2.verify(hash, password);
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // 2. Standard bcrypt compare
   if (hash.startsWith("$2a$") || hash.startsWith("$2b$") || hash.startsWith("$2y$")) {
     try {
       const match = await bcrypt.compare(password, hash);
@@ -75,12 +90,28 @@ export async function comparePassword(password: string, hash: string): Promise<b
     }
   }
 
-  // 2. Direct string comparison (uppercase & lowercase)
+  // 3. Legacy Scrypt compare (hex.salt from College Portal)
+  if (hash.includes(".")) {
+    try {
+      const [hashed, salt] = hash.split(".");
+      if (hashed && salt) {
+        const hashedBuf = Buffer.from(hashed, "hex");
+        const suppliedBuf = (await scryptAsync(password, salt, 64)) as Buffer;
+        if (hashedBuf.length === suppliedBuf.length && timingSafeEqual(hashedBuf, suppliedBuf)) {
+          return true;
+        }
+      }
+    } catch (e) {
+      // ignore
+    }
+  }
+
+  // 4. Direct string comparison (fallback)
   if (password.trim() === hash.trim() || password.trim().toUpperCase() === hash.trim().toUpperCase()) {
     return true;
   }
 
-  // 3. Fallback bcrypt for un-prefixed hashes
+  // 5. Fallback bcrypt for un-prefixed hashes
   try {
     return await bcrypt.compare(password, hash);
   } catch (e) {
