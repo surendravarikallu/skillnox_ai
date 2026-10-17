@@ -114,9 +114,12 @@ export const interviews = pgTable("interviews", {
   responses: jsonb("responses"),
   technicalScore: real("technical_score"),
   communicationScore: real("communication_score"),
-  emotionScore: real("emotion_score"),
+  emotionScore: real("emotion_score"), // Deprecated for hiring decisions per EEOC compliance
   voiceScore: real("voice_score"),
+  integrityScore: real("integrity_score").default(100), // Real-time proctoring compliance (100 -> 0)
   overallScore: real("overall_score"),
+  skillGraph: jsonb("skill_graph"), // Dynamic candidate skill graph & verification matrix
+  evidenceQuotes: jsonb("evidence_quotes"), // Verbatim transcript quotes backing each score
   feedback: text("feedback"),
   improvements: text("improvements").array(),
   duration: integer("duration"),
@@ -129,6 +132,21 @@ export const interviews = pgTable("interviews", {
   index("idx_interviews_user_id").on(table.userId),
   index("idx_interviews_status").on(table.status),
   index("idx_interviews_created_at").on(table.createdAt),
+]);
+
+// Proctoring Logs table (real-time forensic telemetry)
+export const proctoringLogs = pgTable("proctoring_logs", {
+  id: varchar("id").primaryKey().default(sql`gen_random_uuid()`),
+  interviewId: varchar("interview_id").notNull().references(() => interviews.id, { onDelete: 'cascade' }),
+  eventType: varchar("event_type").notNull(), // 'GAZE_OFF_SCREEN', 'MULTIPLE_FACES', 'NO_FACE', 'TAB_BLUR', 'VOICE_ANOMALY'
+  timestampSeconds: integer("timestamp_seconds").notNull(),
+  durationSeconds: real("duration_seconds"),
+  severity: varchar("severity").default("low").notNull(), // 'low', 'medium', 'high'
+  metadata: jsonb("metadata"),
+  createdAt: timestamp("created_at").defaultNow(),
+}, (table) => [
+  index("idx_proctoring_logs_interview_id").on(table.interviewId),
+  index("idx_proctoring_logs_event_type").on(table.eventType),
 ]);
 
 // Interview Questions table
@@ -277,6 +295,14 @@ export const interviewsRelations = relations(interviews, ({ one, many }) => ({
     references: [users.id],
   }),
   questions: many(interviewQuestions),
+  proctoringLogs: many(proctoringLogs),
+}));
+
+export const proctoringLogsRelations = relations(proctoringLogs, ({ one }) => ({
+  interview: one(interviews, {
+    fields: [proctoringLogs.interviewId],
+    references: [interviews.id],
+  }),
 }));
 
 export const interviewQuestionsRelations = relations(interviewQuestions, ({ one }) => ({
@@ -382,6 +408,11 @@ export const insertScheduledCampaignSchema = createInsertSchema(scheduledCampaig
   createdAt: true,
 });
 
+export const insertProctoringLogSchema = createInsertSchema(proctoringLogs).omit({
+  id: true,
+  createdAt: true,
+});
+
 // Types
 export type UpsertUser = typeof users.$inferInsert;
 export type User = typeof users.$inferSelect;
@@ -398,6 +429,9 @@ export type InsertInterview = z.infer<typeof insertInterviewSchema>;
 
 export type InterviewQuestion = typeof interviewQuestions.$inferSelect;
 export type InsertInterviewQuestion = z.infer<typeof insertInterviewQuestionSchema>;
+
+export type ProctoringLog = typeof proctoringLogs.$inferSelect;
+export type InsertProctoringLog = z.infer<typeof insertProctoringLogSchema>;
 
 export type PersonalityAssessment = typeof personalityAssessments.$inferSelect;
 export type InsertPersonalityAssessment = z.infer<typeof insertPersonalityAssessmentSchema>;
