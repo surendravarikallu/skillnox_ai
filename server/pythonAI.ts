@@ -582,3 +582,35 @@ export async function generateInterviewFeedback(data: {
     };
   }
 }
+
+export interface AgentInterviewTurnPayload {
+  interview_id: string;
+  candidate_answer: string;
+  current_topic?: string;
+  interview_type?: string;
+  time_elapsed_seconds?: number;
+  total_duration_seconds?: number;
+  skill_graph?: any;
+  conversation_history?: Array<{ interviewer: string; candidate: string }>;
+  resume_context?: string;
+}
+
+export interface AgentInterviewTurnResponse {
+  decision: 'PROBE' | 'HINT' | 'ADVANCE' | 'WRAPUP';
+  reasoning: string;
+  score: number;
+  evidence_quote: string;
+  next_topic: string;
+  spoken_question: string;
+  is_complete: boolean;
+}
+
+export async function agentInterviewTurn(payload: AgentInterviewTurnPayload): Promise<AgentInterviewTurnResponse | null> {
+  try {
+    const result = await callPythonService('/api/agent/interview-turn', 'POST', payload);
+    return result?.data || null;
+  } catch (error) {
+    console.error('[Agentic Turn] Error calling Python AI agent turn:', error);
+    return null;
+  }
+}
