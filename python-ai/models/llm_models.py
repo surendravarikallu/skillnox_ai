@@ -97,23 +97,37 @@ class OllamaLLM:
     # ------------------------------------------------------------------
 
     def _verify_connection(self):
-        """Verify NVIDIA NIM API is configured and accessible."""
-        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
-        if keys_str:
-            nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
-        else:
-            single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
-            nvidia_keys = [single_k] if single_k else []
-        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
+        """Verify Groq Cloud / NVIDIA NIM API is configured and accessible."""
+        groq_keys = self._get_groq_keys()
+        groq_model = os.environ.get("GROQ_LLM_MODEL", "qwen/qwen3.8-27b")
+        if groq_keys:
+            print(f"[OK] Groq LLM Cloud API ready: {groq_model} ({len(groq_keys)} API keys in load-balanced pool)")
+            return
 
+        nvidia_keys = self._get_nvidia_keys()
+        nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
         if nvidia_keys:
             print(f"[OK] NVIDIA NIM Cloud API ready: {nvidia_model} ({len(nvidia_keys)} API keys in load-balanced pool)")
             return
 
-        print("[WARN] No NVIDIA API keys found. Please set NVIDIA_API_KEYS in .env.")
+        print("[WARN] No Groq or NVIDIA API keys found. Please set GROQ_API_KEYS or NVIDIA_API_KEYS in .env.")
+
+    def _get_groq_keys(self) -> List[str]:
+        keys_str = os.environ.get("GROQ_API_KEYS", "")
+        if keys_str:
+            return [k.strip() for k in keys_str.split(",") if k.strip()]
+        single_k = os.environ.get("GROQ_API_KEY", "").strip()
+        return [single_k] if single_k else []
+
+    def _get_nvidia_keys(self) -> List[str]:
+        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
+        if keys_str:
+            return [k.strip() for k in keys_str.split(",") if k.strip()]
+        single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
+        return [single_k] if single_k else []
 
     # ------------------------------------------------------------------
-    # Core generation (Async & Sync with NVIDIA NIM Cloud)
+    # Core generation (Async & Sync with Groq Cloud & NVIDIA NIM Fallback)
     # ------------------------------------------------------------------
 
     async def generate_async(
@@ -124,14 +138,58 @@ class OllamaLLM:
         system_prompt: Optional[str] = None,
         json_format: bool = False,
     ) -> str:
-        """Generate text using NVIDIA NIM API with multi-key pool failover."""
-        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
-        if keys_str:
-            nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
-        else:
-            single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
-            nvidia_keys = [single_k] if single_k else []
+        """Generate text using Groq Cloud API (ultra-low latency) with failover to NVIDIA NIM."""
+        # 1. Primary: Groq Cloud ultra-fast inference
+        groq_keys = self._get_groq_keys()
+        groq_model = os.environ.get("GROQ_LLM_MODEL", "qwen/qwen3.8-27b")
 
+        if groq_keys:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            payload: Dict = {
+                "model": groq_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_length,
+                "top_p": 0.9
+            }
+            if json_format:
+                payload["response_format"] = {"type": "json_object"}
+
+            for key_idx, groq_key in enumerate(groq_keys, 1):
+                headers = {
+                    "Authorization": f"Bearer {groq_key}",
+                    "Content-Type": "application/json"
+                }
+
+                for attempt in range(2):
+                    is_rate_limited = False
+                    try:
+                        assert self._async_client is not None, "Async client closed"
+                        async with LLM_SEMAPHORE:
+                            resp = await self._async_client.post(url, headers=headers, json=payload, timeout=12.0)
+                            if resp.status_code == 429:
+                                is_rate_limited = True
+                            else:
+                                resp.raise_for_status()
+                                data = resp.json()
+                                return data["choices"][0]["message"]["content"].strip()
+                    except Exception as e:
+                        if not is_rate_limited:
+                            print(f"[Groq LLM Key {key_idx}] Attempt {attempt+1} failed ({e}), checking next...")
+                            await asyncio.sleep(0.1)
+
+                    if is_rate_limited:
+                        backoff = (attempt + 1) * 0.4
+                        print(f"[Groq LLM Key {key_idx} 429] Rate limit hit. Retrying key after {backoff}s...")
+                        await asyncio.sleep(backoff)
+
+        # 2. Secondary Fallback: NVIDIA NIM Cloud API
+        nvidia_keys = self._get_nvidia_keys()
         nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
 
         if nvidia_keys:
@@ -151,7 +209,6 @@ class OllamaLLM:
             if json_format:
                 payload["response_format"] = {"type": "json_object"}
 
-            # Iterate through key pool with retry
             for key_idx, nvidia_key in enumerate(nvidia_keys, 1):
                 headers = {
                     "Authorization": f"Bearer {nvidia_key}",
@@ -181,18 +238,45 @@ class OllamaLLM:
                         await asyncio.sleep(backoff)
 
         # Fallback to local heuristic if all cloud keys are unreachable
-        print("[WARN] All NVIDIA NIM keys exhausted or unavailable. Using rule-based fallback.")
+        print("[WARN] All Groq and NVIDIA keys exhausted or unavailable. Using rule-based fallback.")
         return self._fallback_generate(prompt)
 
     def generate(self, prompt, max_length=300, temperature=0.7, system_prompt=None):
-        """Synchronous generation using NVIDIA NIM API pool."""
-        keys_str = os.environ.get("NVIDIA_API_KEYS", "")
-        if keys_str:
-            nvidia_keys = [k.strip() for k in keys_str.split(",") if k.strip()]
-        else:
-            single_k = os.environ.get("NVIDIA_API_KEY", "").strip()
-            nvidia_keys = [single_k] if single_k else []
+        """Synchronous generation using Groq Cloud API pool with failover to NVIDIA NIM."""
+        groq_keys = self._get_groq_keys()
+        groq_model = os.environ.get("GROQ_LLM_MODEL", "qwen/qwen3.8-27b")
 
+        if groq_keys:
+            url = "https://api.groq.com/openai/v1/chat/completions"
+            messages = []
+            if system_prompt:
+                messages.append({"role": "system", "content": system_prompt})
+            messages.append({"role": "user", "content": prompt})
+
+            payload = {
+                "model": groq_model,
+                "messages": messages,
+                "temperature": temperature,
+                "max_tokens": max_length,
+                "top_p": 0.9
+            }
+
+            for key in groq_keys:
+                try:
+                    headers = {
+                        "Authorization": f"Bearer {key}",
+                        "Content-Type": "application/json"
+                    }
+                    assert self._session is not None, "Session closed"
+                    resp = self._session.post(url, headers=headers, json=payload, timeout=min(self.timeout, 12))
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        return data["choices"][0]["message"]["content"].strip()
+                except Exception as e:
+                    print(f"[WARN] Groq LLM sync call failed on key ({e}), trying next...")
+                    continue
+
+        nvidia_keys = self._get_nvidia_keys()
         nvidia_model = os.environ.get("NVIDIA_MODEL", "meta/llama-3.2-11b-vision-instruct")
 
         if nvidia_keys:
@@ -406,6 +490,103 @@ class OllamaLLM:
         if score_match: score = int(score_match.group(1))
         
         return {"score": score, "feedback": evaluation}
+
+    # ------------------------------------------------------------------
+    # Agentic Adaptive Interview Turn (Two-Way Socratic Flow)
+    # ------------------------------------------------------------------
+
+    async def agentic_turn_async(
+        self,
+        candidate_answer: str,
+        current_topic: str,
+        interview_type: str = "technical",
+        time_elapsed_seconds: int = 0,
+        total_duration_seconds: int = 1200,
+        skill_graph: Optional[Dict[str, Any]] = None,
+        conversation_history: Optional[List[Dict[str, str]]] = None,
+        resume_context: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Agentic Socratic Turn: Evaluates candidate utterance, dynamically updates skill graph,
+        and decides whether to PROBE (edge cases), HINT (guidance), ADVANCE (next domain), or WRAPUP.
+        Outputs evidence-backed quotes conforming to enterprise Explainable AI standards.
+        """
+        trimmed = (candidate_answer or "").strip()
+        time_left = max(0, total_duration_seconds - time_elapsed_seconds)
+        
+        system_prompt = (
+            "You are an expert, encouraging AI Senior Technical Interviewer conducting a real-time conversational placement interview.\n"
+            "You do NOT read from a static list of questions. You act as an autonomous agent using Bloom's Cognitive Taxonomy.\n\n"
+            "YOUR OBJECTIVE:\n"
+            "1. Evaluate the candidate's spoken answer against the current technical topic.\n"
+            "2. Make an autonomous tactical decision:\n"
+            "   - 'PROBE': Candidate gave a good or partial answer, but you need to test architectural depth, trade-offs, edge-cases, or internal mechanics.\n"
+            "   - 'HINT': Candidate is stuck, hesitated, or provided an incomplete answer. Give a 1-sentence supportive hint and ask them to complete it.\n"
+            "   - 'ADVANCE': Candidate thoroughly mastered the topic (or after 2 probing turns on this topic). Move to the next relevant core skill domain.\n"
+            "   - 'WRAPUP': If time is nearly up or all core domains have been tested, deliver a warm closing statement.\n"
+            "3. Ground your scoring in VERBATIM transcript evidence. Extract the exact words the candidate said.\n"
+            "4. Formulate the next spoken question in a natural, conversational voice. Keep it concise (1-2 sentences) so spoken audio is snappy.\n\n"
+            "STRICT JSON OUTPUT FORMAT (No markdown, no preamble):\n"
+            "{\n"
+            '  "decision": "PROBE" | "HINT" | "ADVANCE" | "WRAPUP",\n'
+            '  "reasoning": "1-2 sentence internal rationale",\n'
+            '  "score": 75,\n'
+            '  "evidence_quote": "Exact verbatim quote from candidate answer",\n'
+            '  "next_topic": "Next skill topic to explore",\n'
+            '  "spoken_question": "Your next conversational question or remark to the candidate",\n'
+            '  "is_complete": false\n'
+            "}"
+        )
+
+        history_summary = ""
+        if conversation_history:
+            history_summary = "\nRecent Conversation Turns:\n"
+            for turn in conversation_history[-4:]:
+                history_summary += f"- Interviewer: {turn.get('interviewer', '')}\n"
+                history_summary += f"- Candidate: {turn.get('candidate', '')}\n"
+
+        prompt = (
+            f"Interview Type: {interview_type.upper()}\n"
+            f"Current Topic: {current_topic}\n"
+            f"Time Remaining: {time_left // 60}m {time_left % 60}s (Total: {total_duration_seconds // 60}m)\n"
+            f"Active Skill Graph: {json.dumps(skill_graph or {})}\n"
+            f"Candidate Resume Highlights: {resume_context or 'Computer Science / Engineering placement candidate'}\n"
+            f"{history_summary}\n"
+            f"Candidate Spoken Answer: \"{trimmed}\"\n\n"
+            "Evaluate now and return strictly valid JSON."
+        )
+
+        try:
+            raw_response = await self.generate_async(prompt, max_length=500, temperature=0.35, system_prompt=system_prompt, json_format=True)
+            clean_str = re.sub(r'<think>.*?</think>', '', raw_response, flags=re.DOTALL).strip()
+            if "```" in clean_str:
+                parts = clean_str.split("```")
+                clean_str = parts[1]
+                if clean_str.startswith("json"):
+                    clean_str = clean_str[4:]
+                clean_str = clean_str.strip()
+
+            parsed = json.loads(clean_str)
+            return {
+                "decision": parsed.get("decision", "ADVANCE"),
+                "reasoning": parsed.get("reasoning", "Answer analyzed."),
+                "score": max(0, min(100, int(parsed.get("score", 70)))),
+                "evidence_quote": parsed.get("evidence_quote", trimmed[:120]),
+                "next_topic": parsed.get("next_topic", current_topic),
+                "spoken_question": parsed.get("spoken_question", "Could you elaborate more on your practical experience with this?"),
+                "is_complete": bool(parsed.get("is_complete", time_left <= 60 or parsed.get("decision") == "WRAPUP")),
+            }
+        except Exception as e:
+            print(f"[Agentic Turn Error]: {e}")
+            return {
+                "decision": "ADVANCE",
+                "reasoning": "Fallback progression",
+                "score": 65 if len(trimmed.split()) > 10 else 30,
+                "evidence_quote": trimmed[:100],
+                "next_topic": "Software Engineering Fundamentals",
+                "spoken_question": "Thank you. Let's move on: can you describe the difference between processes and threads?",
+                "is_complete": time_left <= 60,
+            }
 
     # ------------------------------------------------------------------
     # Communication Evaluation (Async)
