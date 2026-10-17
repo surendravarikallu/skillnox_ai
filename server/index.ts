@@ -7,6 +7,7 @@ import compression from "compression";
 import { registerRoutes } from "./routes";
 import { serveStatic } from "./static";
 import { createServer } from "http";
+import { setupInterviewWebSocket } from "./websocket";
 import { evaluationQueue } from "./evaluation-queue";
 import { storage } from "./storage";
 import { createFullInterviewWithQuestions } from "./questionGenerator";
@@ -76,6 +77,7 @@ app.use((req, res, next) => {
 
 (async () => {
   await registerRoutes(httpServer, app);
+  setupInterviewWebSocket(httpServer);
 
   app.use((err: any, _req: Request, res: Response, _next: NextFunction) => {
     const status = err.status || err.statusCode || 500;
