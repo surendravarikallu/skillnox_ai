@@ -242,15 +242,15 @@ export async function evaluateAnswer(answer: string, question?: string): Promise
       feedback = "Good answer. Could add more detail.";
     }
 
-    // Add relevance check in fallback only
+    // Add strict relevance check in fallback only
     if (question) {
       const stopwords = new Set(["the", "a", "an", "and", "or", "but", "if", "in", "on", "at", "to", "for", "of", "is", "are", "am", "you", "your", "why", "what", "how", "who", "when", "where", "i", "me", "my"]);
       const qTokens = question.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(t => t && !stopwords.has(t));
       const aSet = new Set(trimmed.toLowerCase().replace(/[^a-z0-9\s]/g, " ").split(/\s+/).filter(Boolean));
       const relevance = qTokens.reduce((acc, t) => acc + (aSet.has(t) ? 1 : 0), 0);
       if (relevance === 0) {
-        score = Math.min(score, 35);
-        feedback += " Your answer doesn't clearly address the question.";
+        score = 15;
+        feedback = "Response does not address the technical subject matter of the question.";
       }
     }
   }
