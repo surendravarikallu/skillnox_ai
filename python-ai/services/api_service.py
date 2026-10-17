@@ -171,6 +171,18 @@ class TTSRequest(BaseModel):
     voice: Optional[str] = "en-US-AriaNeural"  # edge-tts voice name
 
 
+class AgentInterviewTurnRequest(BaseModel):
+    interview_id: str
+    candidate_answer: str
+    current_topic: str = "Technical Fundamentals"
+    interview_type: str = "technical"
+    time_elapsed_seconds: int = 0
+    total_duration_seconds: int = 1200
+    skill_graph: Optional[Dict[str, Any]] = None
+    conversation_history: Optional[List[Dict[str, str]]] = None
+    resume_context: Optional[str] = None
+
+
 class InterviewFeedbackRequest(BaseModel):
     student_name: str
     interview_types: List[str]
@@ -425,46 +437,101 @@ def get_nvidia_keys() -> List[str]:
 
 
 # ---------------------------------------------------------------------------
-# TTS — Text-to-Speech (High-Speed Neural Indian Voice)
+# TTS — Text-to-Speech (Multi-Tier Cloud with Instant Browser Fallback)
 # ---------------------------------------------------------------------------
 
 @app.post("/api/tts")
 async def text_to_speech(request: TTSRequest):
-    """Convert text to speech audio. Returns MP3 audio bytes.
-    Uses high-quality Neural Indian English Voice (en-IN-NeerjaNeural) with smooth natural pacing.
-    """
+    """Convert text to speech audio. Returns audio bytes or clean browser fallback."""
     text = request.text.strip()
     if not text:
         raise HTTPException(status_code=400, detail="Text is required")
 
-    # Limit text length to prevent abuse
     if len(text) > 2000:
         text = text[:2000]
 
+    # Attempt 1: Deepgram Aura (if key provided)
+    deepgram_key = os.environ.get("DEEPGRAM_API_KEY", "").strip()
+    if deepgram_key:
+        try:
+            import httpx
+            dg_url = "https://api.deepgram.com/v1/speak?model=aura-asteria-en"
+            headers = {"Authorization": f"Token {deepgram_key}", "Content-Type": "application/json"}
+            async with httpx.AsyncClient(timeout=10.0) as client:
+                res = await client.post(dg_url, headers=headers, json={"text": text})
+                if res.status_code == 200 and len(res.content) > 100:
+                    from fastapi.responses import Response
+                    return Response(content=res.content, media_type="audio/mp3", headers={"Content-Disposition": "inline; filename=speech.mp3"})
+        except Exception as dg_err:
+            print(f"[TTS Deepgram Aura Error]: {dg_err}")
+
+    # Attempt 2: Groq Cloud TTS (if terms accepted)
+    groq_keys = get_groq_keys()
+    if groq_keys:
+        try:
+            import httpx
+            key = get_next_groq_key()
+            groq_url = "https://api.groq.com/openai/v1/audio/speech"
+            headers = {"Authorization": f"Bearer {key}", "Content-Type": "application/json"}
+            payload = {
+                "model": "canopylabs/orpheus-v1-english",
+                "input": text,
+                "voice": "autumn"
+            }
+            async with httpx.AsyncClient(timeout=8.0) as client:
+                res = await client.post(groq_url, headers=headers, json=payload)
+                if res.status_code == 200 and len(res.content) > 100:
+                    from fastapi.responses import Response
+                    return Response(content=res.content, media_type="audio/wav", headers={"Content-Disposition": "inline; filename=speech.wav"})
+        except Exception as groq_err:
+            print(f"[TTS Groq Cloud Error]: {groq_err}")
+
+    # Attempt 3: Edge-TTS
     try:
         import edge_tts
-        # Indian English Female voice (Neerja) with natural smooth flow
         voice = request.voice if request.voice and "Neerja" in request.voice else "en-IN-NeerjaNeural"
         communicate = edge_tts.Communicate(text, voice, rate="+0%")
-
         audio_bytes = b""
         async for chunk in communicate.stream():
             if chunk["type"] == "audio":
                 audio_bytes += chunk["data"]
 
         if len(audio_bytes) > 0:
-            print(f"[TTS] Generated audio via {voice} ({len(audio_bytes)} bytes)")
             from fastapi.responses import Response
-            return Response(
-                content=audio_bytes,
-                media_type="audio/mp3",
-                headers={"Content-Disposition": "inline; filename=speech.mp3"}
-            )
-        else:
-            raise HTTPException(status_code=500, detail="edge-tts produced empty audio")
+            return Response(content=audio_bytes, media_type="audio/mp3", headers={"Content-Disposition": "inline; filename=speech.mp3"})
+    except Exception as edge_err:
+        print(f"[TTS Edge-TTS Error (Fallback to high-quality local Browser TTS)]: {edge_err}")
+
+    # Graceful 0ms fallback: Tell frontend to speak with browser local natural voice
+    return JSONResponse(
+        status_code=200,
+        content={"fallback_browser_tts": True, "text": text}
+    )
+
+
+# ---------------------------------------------------------------------------
+# Agentic Socratic Interview Turn Endpoint
+# ---------------------------------------------------------------------------
+
+@app.post("/api/agent/interview-turn")
+async def agent_interview_turn(request: AgentInterviewTurnRequest):
+    """Agentic Socratic interview turn with dynamic Bloom's Taxonomy probing."""
+    try:
+        result = await llm.agentic_turn_async(
+            candidate_answer=request.candidate_answer,
+            current_topic=request.current_topic,
+            interview_type=request.interview_type,
+            time_elapsed_seconds=request.time_elapsed_seconds,
+            total_duration_seconds=request.total_duration_seconds,
+            skill_graph=request.skill_graph,
+            conversation_history=request.conversation_history,
+            resume_context=request.resume_context
+        )
+        return {"success": True, "data": result}
     except Exception as e:
-        print(f"[TTS] edge-tts error: {e}")
-        raise HTTPException(status_code=500, detail=f"TTS failed: {str(e)}")
+        print(f"[Agentic Turn Route Error]: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 
 # Rate Limiter Semaphore for Groq STT (max 10 parallel API requests)
