@@ -1842,10 +1842,10 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
   });
 
   // Admin-only: Create interview for a student
-  app.post('/api/interviews', isAuthenticated, isAdmin, async (req: any, res) => {
+  app.post('/api/interviews', isAuthenticated, async (req: any, res) => {
     try {
       const { studentId, type, types, difficulty, company, simulationMode, trendingEnabled } = req.body;
-      const userId = studentId; // Use the student's ID, not admin's ID
+      const userId = req.user?.role === 'admin' ? (studentId || req.user?.id) : req.user?.id;
 
       if (!userId) {
         return res.status(400).json({ message: "Student ID is required" });
@@ -1853,8 +1853,8 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
 
       // Verify the student exists
       const student = await storage.getUser(userId);
-      if (!student || student.role !== 'student') {
-        return res.status(400).json({ message: "Invalid student ID" });
+      if (!student) {
+        return res.status(400).json({ message: "Invalid student account" });
       }
 
       const difficultyLevel: 'easy' | 'medium' | 'hard' = difficulty || 'medium';
@@ -2175,9 +2175,9 @@ export async function registerRoutes(server: Server, app: Express): Promise<Serv
         return res.status(400).json({ message: `Interview is already ${interview.status}` });
       }
 
-      // Check student slot schedule permission
+      // Check student slot schedule permission (only for scheduled placement drive interviews, allow autonomous practice mocks)
       const user = await storage.getUser(userId);
-      if (user && user.role !== 'admin' && user.slotDate) {
+      if (user && user.role !== 'admin' && user.slotDate && interview.scheduledAt) {
         const d = new Date();
         const year = d.getFullYear().toString();
         const month = (d.getMonth() + 1).toString().padStart(2, '0');
