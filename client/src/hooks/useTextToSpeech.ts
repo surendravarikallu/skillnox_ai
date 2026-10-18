@@ -79,8 +79,19 @@ export function useTextToSpeech(): UseTextToSpeechReturn {
     try {
       window.speechSynthesis.cancel();
       const utterance = new SpeechSynthesisUtterance(text);
-      utterance.rate = 0.95;
+      utterance.rate = 0.98;
       utterance.lang = 'en-US';
+
+      // Select highest quality natural voice available in Chrome/Edge
+      const voices = window.speechSynthesis.getVoices();
+      const naturalVoice = voices.find(v => 
+        v.lang.startsWith('en') && (v.name.includes('Natural') || v.name.includes('Online') || v.name.includes('Google') || v.name.includes('Neural') || v.name.includes('Neerja') || v.name.includes('Jenny') || v.name.includes('Guy'))
+      ) || voices.find(v => v.lang.startsWith('en'));
+
+      if (naturalVoice) {
+        utterance.voice = naturalVoice;
+      }
+
       utterance.onend = () => cleanup(gen);
       utterance.onerror = () => cleanup(gen);
 
@@ -90,10 +101,10 @@ export function useTextToSpeech(): UseTextToSpeechReturn {
           try { window.speechSynthesis.cancel(); } catch (e) {}
           cleanup(gen);
         }
-      }, 15000);
+      }, 25000);
 
       window.speechSynthesis.speak(utterance);
-      console.log("[TTS] Instant browser SpeechSynthesis started");
+      console.log(`[TTS] Instant browser SpeechSynthesis started with voice: ${naturalVoice?.name || 'Default'}`);
     } catch (e) {
       console.error("[TTS] Browser SpeechSynthesis failed:", e);
       cleanup(gen);

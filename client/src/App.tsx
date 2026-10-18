@@ -12,22 +12,37 @@ import Login from "@/pages/login";
 import Dashboard from "@/pages/dashboard";
 import NotFound from "@/pages/not-found";
 
+function lazyWithRetry<T extends React.ComponentType<any>>(factory: () => Promise<{ default: T }>) {
+  return lazy(() =>
+    factory().catch((error) => {
+      const key = "skillnox_chunk_reload";
+      if (!sessionStorage.getItem(key)) {
+        sessionStorage.setItem(key, "1");
+        window.location.reload();
+        return new Promise<{ default: T }>(() => {});
+      }
+      sessionStorage.removeItem(key);
+      throw error;
+    })
+  );
+}
+
 // Code splitting: Lazy load heavy routes
-const InterviewStart = lazy(() => import("@/pages/interview-start"));
-const InterviewRoom = lazy(() => import("@/pages/interview-room"));
-const InterviewResults = lazy(() => import("@/pages/interview-results"));
-const Interviews = lazy(() => import("@/pages/interviews"));
-const ResumePage = lazy(() => import("@/pages/resume"));
-const PersonalityPage = lazy(() => import("@/pages/personality"));
-const PlacementPage = lazy(() => import("@/pages/placement"));
-const AdminPage = lazy(() => import("@/pages/admin"));
-const AdminStudentsPage = lazy(() => import("@/pages/admin-students"));
-const AdminAssignPage = lazy(() => import("@/pages/admin-assign"));
-const AIStatusPage = lazy(() => import("@/pages/ai-status"));
-const Settings = lazy(() => import("@/pages/settings"));
-const AdminScheduler = lazy(() => import("@/pages/admin-scheduler"));
-const AdminAnalyticsPage = lazy(() => import("@/pages/admin-analytics"));
-const SharedReport = lazy(() => import("@/pages/shared-report"));
+const InterviewStart = lazyWithRetry(() => import("@/pages/interview-start"));
+const InterviewRoom = lazyWithRetry(() => import("@/pages/interview-room"));
+const InterviewResults = lazyWithRetry(() => import("@/pages/interview-results"));
+const Interviews = lazyWithRetry(() => import("@/pages/interviews"));
+const ResumePage = lazyWithRetry(() => import("@/pages/resume"));
+const PersonalityPage = lazyWithRetry(() => import("@/pages/personality"));
+const PlacementPage = lazyWithRetry(() => import("@/pages/placement"));
+const AdminPage = lazyWithRetry(() => import("@/pages/admin"));
+const AdminStudentsPage = lazyWithRetry(() => import("@/pages/admin-students"));
+const AdminAssignPage = lazyWithRetry(() => import("@/pages/admin-assign"));
+const AIStatusPage = lazyWithRetry(() => import("@/pages/ai-status"));
+const Settings = lazyWithRetry(() => import("@/pages/settings"));
+const AdminScheduler = lazyWithRetry(() => import("@/pages/admin-scheduler"));
+const AdminAnalyticsPage = lazyWithRetry(() => import("@/pages/admin-analytics"));
+const SharedReport = lazyWithRetry(() => import("@/pages/shared-report"));
 
 // Loading fallback component
 function PageLoader() {
@@ -93,12 +108,14 @@ function Router() {
     <Switch>
       {!isAuthenticated ? (
         <>
+          <Route path="/landing" component={Landing} />
           <Route path="/" component={Landing} />
           <Route path="/login" component={Login} />
           <Route path="/shared/report/:shareToken" component={SharedReport} />
         </>
       ) : (
         <>
+          <Route path="/landing" component={Landing} />
           <Route path="/shared/report/:shareToken" component={SharedReport} />
           <Route path="/*?" component={AuthenticatedRoutes} />
         </>
@@ -111,7 +128,7 @@ function Router() {
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider defaultTheme="system" storageKey="skillnox-theme">
+      <ThemeProvider defaultTheme="dark" storageKey="skillnox-theme">
         <TooltipProvider>
           <Toaster />
           <Router />
