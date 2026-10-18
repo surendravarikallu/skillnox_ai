@@ -123,7 +123,7 @@ export default function Login() {
                 </div>
               </div>
 
-              <Button type="submit" className="w-full h-14 rounded-2xl bg-primary hover:bg-primary/90 text-sm font-bold shadow-lg shadow-primary/20 transition-all active:scale-[0.98]" disabled={isLoading}>
+              <Button type="submit" className="w-full h-14 rounded-2xl bg-indigo-600 hover:bg-indigo-500 text-white text-sm font-bold shadow-lg shadow-indigo-600/25 transition-all active:scale-[0.98]" disabled={isLoading}>
                 {isLoading ? (
                   <div className="flex items-center gap-2">
                     <Loader2 className="w-4 h-4 animate-spin" />
