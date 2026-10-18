@@ -163,12 +163,16 @@ export default function ResumePage() {
     <div className="max-w-[1400px] mx-auto space-y-10 pb-12">
       {/* Header Section */}
       <section>
-        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-primary/10 border border-primary/20 text-primary text-[10px] font-black uppercase tracking-widest mb-4">
-          <Sparkles className="w-3 h-3" />
-          AI Portfolio Intelligence
+        <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 border border-indigo-500/20 text-cyan-400 text-[10px] font-mono font-bold uppercase tracking-wider mb-3">
+          <Sparkles className="w-3.5 h-3.5" />
+          Campus Recruiter ATS Scanner • JD Compatibility
         </div>
-        <h1 className="text-4xl font-black tracking-tight mb-2">Resume Architecture</h1>
-        <p className="text-muted-foreground text-lg">Align your professional identity with global industry standards.</p>
+        <h1 className="font-heading text-3xl md:text-4xl font-black tracking-tight mb-2 text-foreground">
+          Resume Architecture & ATS Engine
+        </h1>
+        <p className="text-muted-foreground text-sm max-w-2xl">
+          Align your engineering resume with campus placement rubrics (TCS, Infosys, Amazon, Wipro) and extract missing core competencies.
+        </p>
       </section>
 
       <div className="grid lg:grid-cols-12 gap-8 items-start">
