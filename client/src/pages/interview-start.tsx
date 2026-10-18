@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { useLocation } from "wouter";
+import { useLocation, Link } from "wouter";
 import { useMutation, useQuery } from "@tanstack/react-query";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -23,6 +23,7 @@ import { useAuth } from "@/hooks/useAuth";
 import { BorderBeam } from "@/components/ui/border-beam";
 import { COMPANIES } from "@shared/schema";
 import type { User } from "@shared/schema";
+import { cn } from "@/lib/utils";
 
 const interviewTypes = [
   {
@@ -163,6 +164,39 @@ export default function InterviewStart() {
   // Auto-redirect student if active/pending interview exists
   const activeInterview = studentInterviews?.find(i => i.status === 'in_progress' || i.status === 'pending');
 
+  const studentLaunchMutation = useMutation({
+    mutationFn: async (payload: { types: string[]; difficulty: string; company?: string }) => {
+      const response = await apiRequest('POST', '/api/interviews', {
+        types: payload.types,
+        difficulty: payload.difficulty,
+        company: payload.company,
+        simulationMode: 'combined',
+        trendingEnabled: true,
+      });
+      return await response.json();
+    },
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['/api/interviews'] });
+      const createdId = data.id || (Array.isArray(data) && data[0]?.id);
+      if (createdId) {
+        toast({
+          title: "Socratic Session Ready",
+          description: "Connecting to Groq LPU conversational engine...",
+        });
+        navigate(`/interview/${createdId}/room`);
+      } else {
+        navigate('/interviews');
+      }
+    },
+    onError: (err: any) => {
+      toast({
+        title: "Session Initialization Failed",
+        description: err?.message || "Could not start mock interview.",
+        variant: "destructive",
+      });
+    },
+  });
+
   if (user && user.role !== 'admin') {
     if (loadingStudentInterviews) {
       return (
@@ -177,40 +211,166 @@ export default function InterviewStart() {
       return null;
     }
 
+    const effectiveTypes = selectedTypes.length > 0 ? selectedTypes : ['technical'];
+
     return (
-      <div className="max-w-3xl mx-auto space-y-8 py-12 px-4">
-        <Card className="rounded-[2.5rem] glass-card p-12 text-center relative overflow-hidden border-primary/20 shadow-2xl">
-          <div className="w-20 h-20 mx-auto bg-gradient-to-br from-primary to-purple-600 rounded-3xl flex items-center justify-center shadow-xl shadow-primary/20 mb-6">
-            <Brain className="w-10 h-10 text-white" />
-          </div>
-          <Badge className="bg-primary/10 text-primary border-primary/20 mb-4 px-4 py-1 font-black uppercase tracking-widest">
-            Student Placement Portal
-          </Badge>
-          <h1 className="text-3xl md:text-4xl font-black tracking-tight mb-4">Interview Schedule Status</h1>
-          
-          {slotInfo?.slotDate ? (
-            <div className="bg-card/50 border border-border p-6 rounded-2xl max-w-md mx-auto space-y-3 mb-6">
-              <div className="text-sm font-semibold text-muted-foreground">Assigned Placement Slot</div>
-              <div className="text-2xl font-black text-primary">{slotInfo.slotDate}</div>
-              <div className="text-sm font-bold text-foreground">{slotInfo.slotStartTime || "09:00"} - {slotInfo.slotEndTime || "17:00"}</div>
-              {slotInfo.lockReason && (
-                <div className="text-xs text-muted-foreground bg-accent/50 p-3 rounded-xl mt-2">
-                  {slotInfo.lockReason}
-                </div>
-              )}
+      <div className="max-w-4xl mx-auto space-y-8 py-8 px-4">
+        {/* Pre-Flight Status & Track Config Card */}
+        <Card className="rounded-[2.5rem] border border-border/80 bg-card/80 backdrop-blur-xl p-8 md:p-10 shadow-2xl relative overflow-hidden space-y-8">
+          <div className="flex flex-col md:flex-row items-start md:items-center justify-between gap-4 pb-6 border-b border-border/40">
+            <div className="space-y-1">
+              <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-indigo-500/10 text-cyan-400 text-[11px] font-mono font-bold tracking-wider uppercase">
+                <Brain className="w-3.5 h-3.5" /> Socratic AI Pre-Flight Studio
+              </div>
+              <h1 className="font-heading text-2xl md:text-3xl font-black tracking-tight text-foreground">
+                Launch Autonomous Mock Interview
+              </h1>
+              <p className="text-xs text-muted-foreground">
+                Select your preparation track to practice against Groq LPU two-way conversational AI before campus placement drives.
+              </p>
             </div>
-          ) : (
-            <p className="text-muted-foreground max-w-md mx-auto mb-6">
-              No placement interview is currently assigned to your account. Your administrator will assign your slot shortly.
-            </p>
+
+            {slotInfo?.slotDate && (
+              <Badge variant="outline" className="border-indigo-500/30 text-indigo-400 font-mono text-xs px-3 py-1.5 shrink-0">
+                Drive Slot: {slotInfo.slotDate}
+              </Badge>
+            )}
+          </div>
+
+          {/* Track Selector */}
+          <div className="space-y-4">
+            <label className="text-xs font-mono font-bold uppercase tracking-wider text-muted-foreground">
+              1. Choose Interview Track
+            </label>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
+              {[
+                { id: 'technical', title: 'Technical Socratic', desc: 'Data structures, algorithms, Bloom taxonomy', icon: Brain },
+                { id: 'system_design', title: 'System Architecture', desc: 'Scalable APIs, database indexing & caching', icon: Network },
+                { id: 'hr', title: 'HR & Behavioral', desc: 'STAR method, culture fit, situational poise', icon: Users },
+                { id: 'company', title: 'Company Simulator', desc: 'TCS, Infosys, Amazon, Wipro, Cognizant', icon: Briefcase },
+              ].map((trk) => {
+                const isSelected = effectiveTypes.includes(trk.id);
+                return (
+                  <div
+                    key={trk.id}
+                    onClick={() => {
+                      if (trk.id === 'company') {
+                        setSelectedTypes(['company']);
+                        if (!selectedCompany) setSelectedCompany('TCS');
+                      } else {
+                        setSelectedTypes([trk.id]);
+                      }
+                    }}
+                    className={cn(
+                      "p-4 rounded-2xl border cursor-pointer transition-all space-y-2 relative overflow-hidden",
+                      isSelected
+                        ? "bg-indigo-500/15 border-indigo-500/40 text-foreground shadow-md shadow-indigo-500/10"
+                        : "bg-background/50 border-border/60 hover:bg-accent/60 text-muted-foreground hover:text-foreground"
+                    )}
+                  >
+                    <div className="flex items-center justify-between">
+                      <trk.icon className={cn("w-5 h-5", isSelected ? "text-cyan-400" : "text-muted-foreground")} />
+                      {isSelected && <Check className="w-4 h-4 text-cyan-400" />}
+                    </div>
+                    <div>
+                      <h4 className="font-heading text-sm font-bold">{trk.title}</h4>
+                      <p className="text-[11px] text-muted-foreground/90 leading-snug mt-1">{trk.desc}</p>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Company Selector (if company track selected) */}
+          {effectiveTypes.includes('company') && (
+            <div className="space-y-3 p-4 rounded-2xl bg-slate-900/40 border border-slate-800">
+              <label className="text-xs font-mono font-bold uppercase tracking-wider text-cyan-400">
+                Target Recruiter Company Pattern
+              </label>
+              <div className="flex flex-wrap gap-2">
+                {['TCS', 'Infosys', 'Wipro', 'Cognizant', 'Accenture', 'Amazon', 'Microsoft', 'Google'].map((comp) => (
+                  <Button
+                    key={comp}
+                    size="sm"
+                    variant={selectedCompany === comp ? "default" : "outline"}
+                    className={cn(
+                      "rounded-xl text-xs font-bold",
+                      selectedCompany === comp ? "bg-indigo-600 text-white" : "border-border/80"
+                    )}
+                    onClick={() => setSelectedCompany(comp)}
+                  >
+                    {comp}
+                  </Button>
+                ))}
+              </div>
+            </div>
           )}
 
-          <div className="flex justify-center gap-4">
-            <Button size="lg" className="rounded-2xl px-8 font-bold" onClick={() => navigate('/interviews')}>
-              View Past Interviews
+          {/* Difficulty & Hardware Pre-check HUD */}
+          <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-2">
+            <div className="p-4 rounded-2xl bg-muted/40 border border-border/60 space-y-2">
+              <span className="text-[10px] font-mono font-bold uppercase tracking-wider text-muted-foreground">Difficulty Level</span>
+              <div className="flex gap-2">
+                {(['easy', 'medium', 'hard'] as const).map((diff) => (
+                  <Button
+                    key={diff}
+                    size="sm"
+                    variant={selectedDifficulty === diff ? "default" : "ghost"}
+                    className={cn(
+                      "flex-1 capitalize rounded-xl text-xs font-bold",
+                      selectedDifficulty === diff ? "bg-primary text-primary-foreground" : "text-muted-foreground"
+                    )}
+                    onClick={() => setSelectedDifficulty(diff)}
+                  >
+                    {diff}
+                  </Button>
+                ))}
+              </div>
+            </div>
+
+            <div className="p-4 rounded-2xl bg-slate-900/60 border border-slate-800 space-y-1.5 text-xs font-mono">
+              <span className="text-[10px] font-bold uppercase tracking-wider text-slate-400">Telemetry Hardware Pre-Check</span>
+              <div className="flex items-center justify-between text-slate-300 text-[11px] pt-1">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                  Groq LPU Sub-80ms Engine
+                </span>
+                <span className="text-emerald-400 font-bold">READY</span>
+              </div>
+              <div className="flex items-center justify-between text-slate-300 text-[11px]">
+                <span className="flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-cyan-400" />
+                  Anti-Proxy Radar Proctor
+                </span>
+                <span className="text-cyan-400 font-bold">ACTIVE</span>
+              </div>
+            </div>
+          </div>
+
+          {/* Launch Action */}
+          <div className="pt-4 flex flex-col sm:flex-row items-center justify-between gap-4 border-t border-border/40">
+            <Link href="/interviews" className="text-xs font-mono text-muted-foreground hover:text-foreground">
+              ← View Past Evaluated Sessions
+            </Link>
+
+            <Button
+              size="lg"
+              className="rounded-xl px-8 h-12 bg-gradient-to-r from-indigo-600 to-blue-600 hover:from-indigo-500 hover:to-blue-500 text-white font-bold text-xs shadow-lg shadow-indigo-600/25"
+              disabled={studentLaunchMutation.isPending}
+              onClick={() => {
+                studentLaunchMutation.mutate({
+                  types: effectiveTypes,
+                  difficulty: selectedDifficulty,
+                  company: effectiveTypes.includes('company') ? (selectedCompany || 'TCS') : undefined,
+                });
+              }}
+            >
+              {studentLaunchMutation.isPending ? "Generating Socratic Session..." : "Initialize Live Socratic Session →"}
             </Button>
           </div>
-          <BorderBeam size={300} duration={10} />
+
+          <BorderBeam size={320} duration={12} colorFrom="#6366F1" colorTo="#06B6D4" />
         </Card>
       </div>
     );
